@@ -1,0 +1,50 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    @apply bg-tesla-bg text-tesla-text antialiased;
+  }
+
+  body {
+    @apply min-h-screen overflow-hidden;
+  }
+
+  * {
+    @apply border-tesla-border;
+  }
+}
+
+@layer utilities {
+  .panel-fade-in {
+    animation: panelFadeIn 200ms ease-out;
+  }
+}
+
+@keyframes panelFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel-fade-in {
+    animation: none;
+  }
+}
+
+.react-flow__background {
+  background-color: #0a0a0a !important;
+}
+
+.react-flow__minimap {
+  background-color: #141414 !important;
+}
