@@ -10,6 +10,8 @@ export function TopBar() {
   const wireMode = useAppStore((s) => s.wireMode);
   const setWireMode = useAppStore((s) => s.setWireMode);
   const setShowNetManager = useAppStore((s) => s.setShowNetManager);
+  const setShowLibraryManager = useAppStore((s) => s.setShowLibraryManager);
+  const setLibraryTab = useAppStore((s) => s.setLibraryTab);
   const mode = useAppStore((s) => s.mode);
 
   return (
@@ -35,6 +37,16 @@ export function TopBar() {
             className="rounded-md border border-tesla-border px-2 py-1 text-xs text-tesla-muted transition hover:border-tesla-accent hover:text-tesla-text"
           >
             Nets
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setLibraryTab("connector");
+              setShowLibraryManager(true);
+            }}
+            className="rounded-md border border-tesla-border px-2 py-1 text-xs text-tesla-muted transition hover:border-tesla-accent hover:text-tesla-text"
+          >
+            Connector Library
           </button>
         </div>
       )}

@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.v1 import (
     connector_templates,
+    dev_tools,
     graph,
     hierarchy,
     instances,
@@ -20,6 +21,7 @@ from app.api.v1 import (
 
 api_router = APIRouter()
 api_router.include_router(session.router)
+api_router.include_router(dev_tools.router)
 api_router.include_router(connector_templates.router)
 api_router.include_router(vehicles.router)
 api_router.include_router(templates.router)

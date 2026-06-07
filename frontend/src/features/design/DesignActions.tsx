@@ -1,9 +1,8 @@
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createConnectorTemplate, fetchConnectorTemplates } from "@/api/connectorTemplates";
+import { fetchConnectorTemplates } from "@/api/connectorTemplates";
 import { createConnector, createEnclosure, createPcb } from "@/api/instances";
 import {
-  createEnclosureTemplate,
-  createPcbTemplate,
   fetchEnclosureTemplates,
   fetchPcbTemplates,
 } from "@/api/templates";
@@ -16,6 +15,13 @@ export function DesignActions() {
   const vehicleId = useAppStore((s) => s.selectedVehicleId);
   const revisionId = useAppStore((s) => s.selectedRevisionId);
   const selectVehicle = useAppStore((s) => s.selectVehicle);
+  const [selectedEnclosureTemplateId, setSelectedEnclosureTemplateId] = useState<string>("");
+  const [selectedPcbTemplateId, setSelectedPcbTemplateId] = useState<string>("");
+  const [selectedInlineTemplateId, setSelectedInlineTemplateId] = useState<string>("");
+  const [selectedInlineGender, setSelectedInlineGender] = useState<
+    "male" | "female" | "hermaphroditic"
+  >("male");
+  const [inlineNickname, setInlineNickname] = useState("");
 
   const { data: connectors = [] } = useQuery({
     queryKey: ["connector-templates"],
@@ -40,49 +46,16 @@ export function DesignActions() {
     queryClient.invalidateQueries({ queryKey: ["topology-summary"] });
   };
 
-  const seedConnector = useMutation({
-    mutationFn: () =>
-      createConnectorTemplate({
-        name: `Conn-${connectors.length + 1}`,
-        pin_count: 4,
-        pins: [
-          { pin_number: 1, name: "1" },
-          { pin_number: 2, name: "2" },
-          { pin_number: 3, name: "3" },
-          { pin_number: 4, name: "4" },
-        ],
-      }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["connector-templates"] }),
-  });
-
-  const seedPcbTemplate = useMutation({
-    mutationFn: async () => {
-      if (!vehicleId || !connectors[0]) return;
-      await createPcbTemplate(vehicleId, {
-        name: `PCB-T${pcbTemplates.length + 1}`,
-        slots: [{ slot_key: "J1", connector_template_id: connectors[0].id }],
-      });
-    },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["pcb-templates", vehicleId] }),
-  });
-
-  const seedEncTemplate = useMutation({
-    mutationFn: async () => {
-      if (!vehicleId || !connectors[0]) return;
-      await createEnclosureTemplate(vehicleId, {
-        name: `ENC-T${encTemplates.length + 1}`,
-        slots: [{ slot_key: "PM1", connector_template_id: connectors[0].id }],
-      });
-    },
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: ["enclosure-templates", vehicleId] }),
-  });
+  const inlineTemplates = useMemo(
+    () => connectors.filter((c) => Boolean(c.is_inline_template)),
+    [connectors],
+  );
 
   const addEnclosure = useMutation({
     mutationFn: async () => {
-      if (!vehicleId || !revisionId || !encTemplates[0]) return;
+      if (!vehicleId || !revisionId || !selectedEnclosureTemplateId) return;
       await createEnclosure(vehicleId, revisionId, {
-        enclosure_template_id: encTemplates[0].id,
+        enclosure_template_id: selectedEnclosureTemplateId,
       });
     },
     onSuccess: invalidate,
@@ -90,11 +63,11 @@ export function DesignActions() {
 
   const addPcb = useMutation({
     mutationFn: async () => {
-      if (!vehicleId || !revisionId || !pcbTemplates[0]) return;
+      if (!vehicleId || !revisionId || !selectedPcbTemplateId) return;
       const hierarchy = await fetchHierarchy(vehicleId, revisionId);
       const enc = hierarchy.root.children[0];
       await createPcb(vehicleId, revisionId, {
-        pcb_template_id: pcbTemplates[0].id,
+        pcb_template_id: selectedPcbTemplateId,
         enclosure_instance_id: enc?.id,
       });
     },
@@ -103,13 +76,18 @@ export function DesignActions() {
 
   const addInlineConnector = useMutation({
     mutationFn: async () => {
-      if (!vehicleId || !revisionId || !connectors[0]) return;
+      if (!vehicleId || !revisionId || !selectedInlineTemplateId) return;
       await createConnector(vehicleId, revisionId, {
-        connector_template_id: connectors[0].id,
+        connector_template_id: selectedInlineTemplateId,
         is_panel_mount: false,
+        inline_gender: selectedInlineGender,
+        nickname: inlineNickname.trim() || undefined,
       });
     },
-    onSuccess: invalidate,
+    onSuccess: () => {
+      setInlineNickname("");
+      invalidate();
+    },
   });
 
   const publish = useMutation({
@@ -129,34 +107,84 @@ export function DesignActions() {
 
   return (
     <div className="space-y-3 text-sm">
-      <p className="text-xs uppercase tracking-wider text-tesla-muted">Quick setup</p>
-      <div className="flex flex-wrap gap-2">
-        <ActionButton label="+ Connector TPL" onClick={() => seedConnector.mutate()} />
-        <ActionButton
-          label="+ PCB TPL"
-          disabled={!connectors.length}
-          onClick={() => seedPcbTemplate.mutate()}
-        />
-        <ActionButton
-          label="+ Enc TPL"
-          disabled={!connectors.length}
-          onClick={() => seedEncTemplate.mutate()}
-        />
-      </div>
-      <div className="flex flex-wrap gap-2">
+      <p className="text-xs uppercase tracking-wider text-tesla-muted">Add from library</p>
+      <div className="space-y-2 rounded border border-tesla-border p-2">
+        <label className="block text-xs text-tesla-muted">Enclosure template</label>
+        <select
+          value={selectedEnclosureTemplateId}
+          onChange={(e) => setSelectedEnclosureTemplateId(e.target.value)}
+          className="w-full rounded border border-tesla-border bg-tesla-bg px-2 py-1 text-xs text-tesla-text"
+        >
+          <option value="">Select enclosure template</option>
+          {encTemplates.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.name}
+            </option>
+          ))}
+        </select>
         <ActionButton
           label="+ Enclosure"
-          disabled={!encTemplates.length}
+          disabled={!selectedEnclosureTemplateId}
           onClick={() => addEnclosure.mutate()}
         />
+      </div>
+      <div className="space-y-2 rounded border border-tesla-border p-2">
+        <label className="block text-xs text-tesla-muted">PCB template</label>
+        <select
+          value={selectedPcbTemplateId}
+          onChange={(e) => setSelectedPcbTemplateId(e.target.value)}
+          className="w-full rounded border border-tesla-border bg-tesla-bg px-2 py-1 text-xs text-tesla-text"
+        >
+          <option value="">Select PCB template</option>
+          {pcbTemplates.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.name}
+            </option>
+          ))}
+        </select>
         <ActionButton
           label="+ PCB"
-          disabled={!pcbTemplates.length}
+          disabled={!selectedPcbTemplateId}
           onClick={() => addPcb.mutate()}
+        />
+      </div>
+      <div className="space-y-2 rounded border border-tesla-border p-2">
+        <label className="block text-xs text-tesla-muted">Inline connector template</label>
+        <select
+          value={selectedInlineTemplateId}
+          onChange={(e) => setSelectedInlineTemplateId(e.target.value)}
+          className="w-full rounded border border-tesla-border bg-tesla-bg px-2 py-1 text-xs text-tesla-text"
+        >
+          <option value="">Select inline template</option>
+          {inlineTemplates.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.name}
+            </option>
+          ))}
+        </select>
+        <label className="block text-xs text-tesla-muted">Inline gender</label>
+        <select
+          value={selectedInlineGender}
+          onChange={(e) =>
+            setSelectedInlineGender(
+              e.target.value as "male" | "female" | "hermaphroditic",
+            )
+          }
+          className="w-full rounded border border-tesla-border bg-tesla-bg px-2 py-1 text-xs text-tesla-text"
+        >
+          <option value="male">Male</option>
+          <option value="female">Female</option>
+          <option value="hermaphroditic">Hermaphroditic</option>
+        </select>
+        <input
+          value={inlineNickname}
+          onChange={(e) => setInlineNickname(e.target.value)}
+          placeholder="Inline nickname (optional)"
+          className="w-full rounded border border-tesla-border bg-tesla-bg px-2 py-1 text-xs text-tesla-text"
         />
         <ActionButton
           label="+ Inline connector"
-          disabled={!connectors.length}
+          disabled={!selectedInlineTemplateId}
           onClick={() => addInlineConnector.mutate()}
         />
       </div>

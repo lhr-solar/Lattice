@@ -20,7 +20,11 @@ export interface ConnectorInstance {
   connector_template_id: string;
   pcb_instance_id: string | null;
   enclosure_instance_id: string | null;
+  source_pcb_template_slot_id?: string | null;
+  source_pcb_instance_id?: string | null;
+  pin_origin_note?: string | null;
   is_panel_mount: boolean;
+  inline_gender?: "male" | "female" | "hermaphroditic" | "unknown" | null;
   pin_ids: string[];
 }
 
@@ -65,6 +69,7 @@ export function createConnector(
     enclosure_instance_id?: string | null;
     pcb_instance_id?: string | null;
     is_panel_mount?: boolean;
+    inline_gender?: "male" | "female" | "hermaphroditic";
     nickname?: string;
     use_template_name?: boolean;
   },

@@ -112,15 +112,18 @@ class HierarchyService:
         result = await self.db.execute(q)
         for conn in result.scalars().all():
             tmpl = await self.db.get(ConnectorTemplate, conn.connector_template_id)
+            label = resolve_display_name(
+                template_name=tmpl.name if tmpl else "?",
+                nickname=conn.nickname,
+                use_template_name=conn.use_template_name,
+            )
+            if panel_only and conn.source_pcb_instance_id:
+                label = f"{label} (from PCB)"
             parent.children.append(
                 HierarchyNode(
                     id=conn.id,
                     kind="panelMount" if conn.is_panel_mount else "connector",
-                    label=resolve_display_name(
-                        template_name=tmpl.name if tmpl else "?",
-                        nickname=conn.nickname,
-                        use_template_name=conn.use_template_name,
-                    ),
+                    label=label,
                     children=[],
                 )
             )

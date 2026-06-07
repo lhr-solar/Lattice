@@ -88,6 +88,8 @@ export function HierarchyNav() {
   const selectVehicle = useAppStore((s) => s.selectVehicle);
   const setFocus = useAppStore((s) => s.setFocus);
   const setProjectionLevel = useAppStore((s) => s.setProjectionLevel);
+  const setShowLibraryManager = useAppStore((s) => s.setShowLibraryManager);
+  const setLibraryTab = useAppStore((s) => s.setLibraryTab);
   const searchQuery = useAppStore((s) => s.searchQuery).toLowerCase();
   const [renameTarget, setRenameTarget] = useState<{ id: string; currentName: string } | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -221,6 +223,33 @@ export function HierarchyNav() {
             </li>
           ))}
         </ul>
+        <div className="border-b border-tesla-border p-2">
+          <p className="mb-2 px-2 text-xs uppercase tracking-wider text-tesla-muted">Libraries</p>
+          <div className="space-y-1">
+            <button
+              type="button"
+              disabled={!vehicleId}
+              className="w-full rounded border border-tesla-border px-2 py-1 text-left text-xs text-tesla-muted transition hover:border-tesla-accent hover:text-tesla-text disabled:opacity-40"
+              onClick={() => {
+                setLibraryTab("pcb");
+                setShowLibraryManager(true);
+              }}
+            >
+              PCB Library
+            </button>
+            <button
+              type="button"
+              disabled={!vehicleId}
+              className="w-full rounded border border-tesla-border px-2 py-1 text-left text-xs text-tesla-muted transition hover:border-tesla-accent hover:text-tesla-text disabled:opacity-40"
+              onClick={() => {
+                setLibraryTab("enclosure");
+                setShowLibraryManager(true);
+              }}
+            >
+              Enclosure Library
+            </button>
+          </div>
+        </div>
         <div className="flex-1 overflow-y-auto p-2">
           <p className="mb-2 px-2 text-xs uppercase tracking-wider text-tesla-muted">
             Topology

@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -21,8 +21,13 @@ class ConnectorTemplate(Base, TimestampMixin):
     # Unified mating-pair connector: male/female share pin numbering; store both sides' data.
     male_part_number: Mapped[str | None] = mapped_column(String(128))
     female_part_number: Mapped[str | None] = mapped_column(String(128))
+    male_crimp_part_number: Mapped[str | None] = mapped_column(String(128))
+    female_crimp_part_number: Mapped[str | None] = mapped_column(String(128))
     male_image_url: Mapped[str | None] = mapped_column(Text)
     female_image_url: Mapped[str | None] = mapped_column(Text)
+    key_code: Mapped[str | None] = mapped_column(String(128))
+    default_is_panel_mount: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_inline_template: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     metadata_: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, server_default="{}")
 
     pins: Mapped[list["ConnectorTemplatePin"]] = relationship(back_populates="connector_template")

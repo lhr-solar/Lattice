@@ -6,9 +6,10 @@ interface ModalProps {
   children?: ReactNode;
   footer?: ReactNode;
   onClose: () => void;
+  panelClassName?: string;
 }
 
-export function Modal({ open, title, children, footer, onClose }: ModalProps) {
+export function Modal({ open, title, children, footer, onClose, panelClassName }: ModalProps) {
   if (!open) return null;
 
   return (
@@ -24,7 +25,9 @@ export function Modal({ open, title, children, footer, onClose }: ModalProps) {
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="relative z-10 w-full max-w-md rounded-lg border border-tesla-border bg-tesla-surface shadow-2xl"
+        className={`relative z-10 w-full max-w-md rounded-lg border border-tesla-border bg-tesla-surface shadow-2xl ${
+          panelClassName ?? ""
+        }`}
       >
         <header className="border-b border-tesla-border px-4 py-3">
           <h2 className="text-base font-semibold text-tesla-text">{title}</h2>

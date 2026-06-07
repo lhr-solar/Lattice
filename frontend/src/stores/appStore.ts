@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { ProjectionLevel } from "@/api/types";
 
 export type AppMode = "design" | "manufacturing";
+export type LibraryTab = "connector" | "pcb" | "enclosure";
 
 interface AppState {
   mode: AppMode;
@@ -14,6 +15,8 @@ interface AppState {
   wireMode: boolean;
   pairingPinAId: string | null;
   showNetManager: boolean;
+  showLibraryManager: boolean;
+  libraryTab: LibraryTab;
   searchQuery: string;
   setMode: (mode: AppMode) => void;
   selectVehicle: (vehicleId: string | null, revisionId: string | null) => void;
@@ -23,6 +26,8 @@ interface AppState {
   setWireMode: (enabled: boolean) => void;
   setPairingPinA: (pinId: string | null) => void;
   setShowNetManager: (show: boolean) => void;
+  setShowLibraryManager: (show: boolean) => void;
+  setLibraryTab: (tab: LibraryTab) => void;
   clearPairing: () => void;
   setSearchQuery: (query: string) => void;
 }
@@ -38,6 +43,8 @@ export const useAppStore = create<AppState>((set) => ({
   wireMode: false,
   pairingPinAId: null,
   showNetManager: false,
+  showLibraryManager: false,
+  libraryTab: "connector",
   searchQuery: "",
   setMode: (mode) => set({ mode }),
   selectVehicle: (vehicleId, revisionId) =>
@@ -56,6 +63,8 @@ export const useAppStore = create<AppState>((set) => ({
     set(wireMode ? { wireMode } : { wireMode: false, pairingPinAId: null }),
   setPairingPinA: (pairingPinAId) => set({ pairingPinAId }),
   setShowNetManager: (showNetManager) => set({ showNetManager }),
+  setShowLibraryManager: (showLibraryManager) => set({ showLibraryManager }),
+  setLibraryTab: (libraryTab) => set({ libraryTab }),
   clearPairing: () => set({ pairingPinAId: null }),
   setSearchQuery: (searchQuery) => set({ searchQuery }),
 }));

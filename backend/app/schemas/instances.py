@@ -3,7 +3,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from app.infrastructure.db.enums import ConnectorRole
+from app.infrastructure.db.enums import ConnectorGender, ConnectorRole
 from app.schemas.common import SchemaBase
 
 
@@ -26,6 +26,7 @@ class ConnectorInstanceCreate(InstanceCreateBase):
     enclosure_instance_id: UUID | None = None
     pcb_instance_id: UUID | None = None
     is_panel_mount: bool = False
+    inline_gender: ConnectorGender | None = None
     role: ConnectorRole | None = None
 
 
@@ -55,7 +56,11 @@ class ConnectorInstanceResponse(InstanceResponse):
     connector_template_id: UUID
     pcb_instance_id: UUID | None
     enclosure_instance_id: UUID | None
+    source_pcb_template_slot_id: UUID | None = None
+    source_pcb_instance_id: UUID | None = None
+    pin_origin_note: str | None = None
     is_panel_mount: bool
+    inline_gender: ConnectorGender | None = None
     role: ConnectorRole | None
     pin_ids: list[UUID] = []
 

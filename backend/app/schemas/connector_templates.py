@@ -29,8 +29,13 @@ class ConnectorTemplateCreate(BaseModel):
     default_role: ConnectorRole | None = None
     male_part_number: str | None = None
     female_part_number: str | None = None
+    male_crimp_part_number: str | None = None
+    female_crimp_part_number: str | None = None
     male_image_url: str | None = None
     female_image_url: str | None = None
+    key_code: str | None = None
+    default_is_panel_mount: bool = False
+    is_inline_template: bool = False
     pins: list[ConnectorTemplatePinCreate] = []
     pin_shorts: list[TemplatePinShortCreate] = []
 
@@ -43,6 +48,28 @@ class ConnectorTemplateResponse(TimestampSchema):
     default_role: ConnectorRole | None
     male_part_number: str | None
     female_part_number: str | None
+    male_crimp_part_number: str | None
+    female_crimp_part_number: str | None
     male_image_url: str | None
     female_image_url: str | None
+    key_code: str | None
+    default_is_panel_mount: bool
+    is_inline_template: bool
     pins: list[ConnectorTemplatePinResponse] = []
+
+
+class ConnectorTemplateUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    manufacturer: str | None = None
+    pin_count: int = Field(gt=0)
+    default_role: ConnectorRole | None = None
+    male_part_number: str | None = None
+    female_part_number: str | None = None
+    male_crimp_part_number: str | None = None
+    female_crimp_part_number: str | None = None
+    male_image_url: str | None = None
+    female_image_url: str | None = None
+    key_code: str | None = None
+    default_is_panel_mount: bool = False
+    is_inline_template: bool = False
+    pins: list[ConnectorTemplatePinCreate] = []

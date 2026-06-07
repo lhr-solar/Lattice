@@ -17,6 +17,7 @@ from app.infrastructure.db.models.instances import (
 )
 from app.infrastructure.db.models.templates import (
     EnclosureTemplate,
+    EnclosureTemplatePcbSlot,
     EnclosureTemplatePanelSlot,
     PcbTemplate,
     PcbTemplateConnectorSlot,
@@ -64,7 +65,13 @@ class InstanceService:
                 EnclosureTemplatePanelSlot.enclosure_template_id == template.id
             )
         )
+        pcb_slots_result = await self.db.execute(
+            select(EnclosureTemplatePcbSlot).where(
+                EnclosureTemplatePcbSlot.enclosure_template_id == template.id
+            )
+        )
         connector_ids: list[UUID] = []
+        pcb_ids: list[UUID] = []
         for slot in slots_result.scalars().all():
             conn = await self._create_connector_from_slot(
                 revision_id=revision_id,
@@ -76,6 +83,17 @@ class InstanceService:
                 now=now,
             )
             connector_ids.append(conn.id)
+        for pcb_slot in pcb_slots_result.scalars().all():
+            pcb_response = await self.instantiate_pcb(
+                vehicle_id=vehicle_id,
+                revision_id=revision_id,
+                payload=PcbInstanceCreate(
+                    pcb_template_id=pcb_slot.pcb_template_id,
+                    enclosure_instance_id=instance.id,
+                ),
+            )
+            pcb_ids.append(pcb_response.id)
+            connector_ids.extend(pcb_response.connector_instance_ids)
 
         display = resolve_display_name(
             template_name=template.name,
@@ -92,7 +110,7 @@ class InstanceService:
             created_at=now,
             enclosure_template_id=template.id,
             connector_instance_ids=connector_ids,
-            pcb_instance_ids=[],
+            pcb_instance_ids=pcb_ids,
         )
 
     async def instantiate_pcb(
@@ -136,8 +154,11 @@ class InstanceService:
                 pcb_instance_id=instance.id,
                 pcb_template_slot_id=slot.id,
                 enclosure_instance_id=payload.enclosure_instance_id,
-                is_panel_mount=False,
+                is_panel_mount=bool(slot.export_to_enclosure),
                 role=slot.default_role,
+                source_pcb_template_slot_id=slot.id if slot.export_to_enclosure else None,
+                source_pcb_instance_id=instance.id if slot.export_to_enclosure else None,
+                pin_origin_note="Exposed from PCB connector slot" if slot.export_to_enclosure else None,
                 now=now,
             )
             connector_ids.append(conn.id)
@@ -170,6 +191,22 @@ class InstanceService:
         template = await self.db.get(ConnectorTemplate, payload.connector_template_id)
         if not template:
             raise HTTPException(status_code=404, detail="Connector template not found")
+        if payload.inline_gender is not None and not template.is_inline_template:
+            raise HTTPException(
+                status_code=400,
+                detail="Inline gender can only be set for inline connector templates",
+            )
+        if payload.is_panel_mount and payload.inline_gender is not None:
+            raise HTTPException(
+                status_code=400,
+                detail="Panel mount connectors cannot specify inline gender",
+            )
+        inline_gender = payload.inline_gender
+        if template.is_inline_template and inline_gender is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Inline connector templates require inline gender",
+            )
 
         now = utc_now()
         instance = ConnectorInstance(
@@ -179,6 +216,7 @@ class InstanceService:
             enclosure_instance_id=payload.enclosure_instance_id,
             pcb_instance_id=payload.pcb_instance_id,
             is_panel_mount=payload.is_panel_mount,
+            inline_gender=inline_gender,
             nickname=payload.nickname,
             use_template_name=payload.use_template_name,
             role=payload.role or template.default_role,
@@ -207,7 +245,11 @@ class InstanceService:
             connector_template_id=template.id,
             pcb_instance_id=payload.pcb_instance_id,
             enclosure_instance_id=payload.enclosure_instance_id,
+            source_pcb_template_slot_id=instance.source_pcb_template_slot_id,
+            source_pcb_instance_id=instance.source_pcb_instance_id,
+            pin_origin_note=instance.pin_origin_note,
             is_panel_mount=payload.is_panel_mount,
+            inline_gender=instance.inline_gender,
             role=instance.role,
             pin_ids=pin_ids,
         )
@@ -254,6 +296,9 @@ class InstanceService:
         enclosure_panel_slot_id: UUID | None = None,
         is_panel_mount: bool = False,
         role=None,
+        source_pcb_template_slot_id: UUID | None = None,
+        source_pcb_instance_id: UUID | None = None,
+        pin_origin_note: str | None = None,
     ) -> ConnectorInstance:
         template = await self.db.get(ConnectorTemplate, connector_template_id)
         if not template:
@@ -266,6 +311,9 @@ class InstanceService:
             enclosure_instance_id=enclosure_instance_id,
             pcb_template_slot_id=pcb_template_slot_id,
             enclosure_panel_slot_id=enclosure_panel_slot_id,
+            source_pcb_template_slot_id=source_pcb_template_slot_id,
+            source_pcb_instance_id=source_pcb_instance_id,
+            pin_origin_note=pin_origin_note,
             is_panel_mount=is_panel_mount,
             use_template_name=True,
             role=role or template.default_role,

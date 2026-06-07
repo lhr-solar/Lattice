@@ -20,6 +20,7 @@ from app.infrastructure.db.models.manufacturing import (
 from app.infrastructure.db.models.revision import RevisionChange, RevisionSnapshot, UserSession
 from app.infrastructure.db.models.templates import (
     EnclosureTemplate,
+    EnclosureTemplatePcbSlot,
     EnclosureTemplatePanelSlot,
     PcbTemplate,
     PcbTemplateConnectorSlot,
@@ -46,6 +47,7 @@ __all__ = [
     "PcbTemplateConnectorSlot",
     "EnclosureTemplate",
     "EnclosureTemplatePanelSlot",
+    "EnclosureTemplatePcbSlot",
     "PcbInstance",
     "EnclosureInstance",
     "ConnectorInstance",

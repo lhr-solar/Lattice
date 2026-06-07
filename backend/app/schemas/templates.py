@@ -11,6 +11,7 @@ class PcbSlotCreate(BaseModel):
     connector_template_id: UUID
     position_index: int | None = None
     default_role: ConnectorRole | None = None
+    export_to_enclosure: bool = False
 
 
 class PcbTemplateCreate(BaseModel):
@@ -19,12 +20,17 @@ class PcbTemplateCreate(BaseModel):
     slots: list[PcbSlotCreate] = []
 
 
+class PcbTemplateUpdate(PcbTemplateCreate):
+    pass
+
+
 class PcbSlotResponse(SchemaBase):
     id: UUID
     slot_key: str
     connector_template_id: UUID
     position_index: int | None
     default_role: ConnectorRole | None
+    export_to_enclosure: bool
 
 
 class PcbTemplateResponse(TimestampSchema):
@@ -41,9 +47,20 @@ class PanelSlotCreate(BaseModel):
     panel_side: str | None = None
 
 
+class EnclosurePcbSlotCreate(BaseModel):
+    slot_key: str = Field(min_length=1, max_length=128)
+    pcb_template_id: UUID
+    position_index: int | None = None
+
+
 class EnclosureTemplateCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     slots: list[PanelSlotCreate] = []
+    pcb_slots: list[EnclosurePcbSlotCreate] = []
+
+
+class EnclosureTemplateUpdate(EnclosureTemplateCreate):
+    pass
 
 
 class PanelSlotResponse(SchemaBase):
@@ -53,8 +70,16 @@ class PanelSlotResponse(SchemaBase):
     panel_side: str | None
 
 
+class EnclosurePcbSlotResponse(SchemaBase):
+    id: UUID
+    slot_key: str
+    pcb_template_id: UUID
+    position_index: int | None
+
+
 class EnclosureTemplateResponse(TimestampSchema):
     id: UUID
     vehicle_id: UUID
     name: str
     slots: list[PanelSlotResponse] = []
+    pcb_slots: list[EnclosurePcbSlotResponse] = []

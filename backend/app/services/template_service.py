@@ -3,18 +3,23 @@ from uuid import UUID
 from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 from app.infrastructure.db.models.templates import (
     EnclosureTemplate,
+    EnclosureTemplatePcbSlot,
     EnclosureTemplatePanelSlot,
     PcbTemplate,
     PcbTemplateConnectorSlot,
 )
 from app.schemas.templates import (
     EnclosureTemplateCreate,
+    EnclosureTemplateUpdate,
+    EnclosurePcbSlotResponse,
     EnclosureTemplateResponse,
     PanelSlotResponse,
     PcbSlotResponse,
     PcbTemplateCreate,
+    PcbTemplateUpdate,
     PcbTemplateResponse,
 )
 
@@ -35,6 +40,37 @@ class TemplateService:
                     connector_template_id=slot.connector_template_id,
                     position_index=slot.position_index,
                     default_role=slot.default_role,
+                    export_to_enclosure=slot.export_to_enclosure,
+                )
+            )
+        await self.db.flush()
+        return await self.get_pcb_template(template.id)
+
+    async def update_pcb_template(
+        self, vehicle_id: UUID, template_id: UUID, payload: PcbTemplateUpdate
+    ) -> PcbTemplateResponse:
+        template = await self.db.get(PcbTemplate, template_id)
+        if not template or template.vehicle_id != vehicle_id:
+            raise HTTPException(status_code=404, detail="PCB template not found")
+        template.name = payload.name
+        template.description = payload.description
+
+        existing = await self.db.execute(
+            select(PcbTemplateConnectorSlot).where(PcbTemplateConnectorSlot.pcb_template_id == template_id)
+        )
+        for slot in existing.scalars().all():
+            await self.db.delete(slot)
+        await self.db.flush()
+
+        for slot in payload.slots:
+            self.db.add(
+                PcbTemplateConnectorSlot(
+                    pcb_template_id=template.id,
+                    slot_key=slot.slot_key,
+                    connector_template_id=slot.connector_template_id,
+                    position_index=slot.position_index,
+                    default_role=slot.default_role,
+                    export_to_enclosure=slot.export_to_enclosure,
                 )
             )
         await self.db.flush()
@@ -46,6 +82,16 @@ class TemplateService:
         )
         templates = result.scalars().all()
         return [await self.get_pcb_template(t.id) for t in templates]
+
+    async def delete_pcb_template(self, vehicle_id: UUID, template_id: UUID) -> None:
+        template = await self.db.get(PcbTemplate, template_id)
+        if not template or template.vehicle_id != vehicle_id:
+            raise HTTPException(status_code=404, detail="PCB template not found")
+        try:
+            await self.db.delete(template)
+            await self.db.flush()
+        except IntegrityError as exc:
+            raise HTTPException(status_code=409, detail="PCB template is in use and cannot be deleted") from exc
 
     async def get_pcb_template(self, template_id: UUID) -> PcbTemplateResponse:
         result = await self.db.execute(
@@ -71,6 +117,7 @@ class TemplateService:
                     connector_template_id=s.connector_template_id,
                     position_index=s.position_index,
                     default_role=s.default_role,
+                    export_to_enclosure=s.export_to_enclosure,
                 )
                 for s in slots_map.values()
             ],
@@ -81,6 +128,10 @@ class TemplateService:
     async def create_enclosure_template(
         self, vehicle_id: UUID, payload: EnclosureTemplateCreate
     ) -> EnclosureTemplateResponse:
+        for pcb_slot in payload.pcb_slots:
+            pcb_template = await self.db.get(PcbTemplate, pcb_slot.pcb_template_id)
+            if not pcb_template or pcb_template.vehicle_id != vehicle_id:
+                raise HTTPException(status_code=404, detail="PCB template not found")
         template = EnclosureTemplate(vehicle_id=vehicle_id, name=payload.name)
         self.db.add(template)
         await self.db.flush()
@@ -93,6 +144,65 @@ class TemplateService:
                     panel_side=slot.panel_side,
                 )
             )
+        for pcb_slot in payload.pcb_slots:
+            self.db.add(
+                EnclosureTemplatePcbSlot(
+                    enclosure_template_id=template.id,
+                    slot_key=pcb_slot.slot_key,
+                    pcb_template_id=pcb_slot.pcb_template_id,
+                    position_index=pcb_slot.position_index,
+                )
+            )
+        await self.db.flush()
+        return await self.get_enclosure_template(template.id)
+
+    async def update_enclosure_template(
+        self, vehicle_id: UUID, template_id: UUID, payload: EnclosureTemplateUpdate
+    ) -> EnclosureTemplateResponse:
+        for pcb_slot in payload.pcb_slots:
+            pcb_template = await self.db.get(PcbTemplate, pcb_slot.pcb_template_id)
+            if not pcb_template or pcb_template.vehicle_id != vehicle_id:
+                raise HTTPException(status_code=404, detail="PCB template not found")
+
+        template = await self.db.get(EnclosureTemplate, template_id)
+        if not template or template.vehicle_id != vehicle_id:
+            raise HTTPException(status_code=404, detail="Enclosure template not found")
+        template.name = payload.name
+
+        existing_panels = await self.db.execute(
+            select(EnclosureTemplatePanelSlot).where(
+                EnclosureTemplatePanelSlot.enclosure_template_id == template_id
+            )
+        )
+        for slot in existing_panels.scalars().all():
+            await self.db.delete(slot)
+        existing_pcbs = await self.db.execute(
+            select(EnclosureTemplatePcbSlot).where(
+                EnclosureTemplatePcbSlot.enclosure_template_id == template_id
+            )
+        )
+        for slot in existing_pcbs.scalars().all():
+            await self.db.delete(slot)
+        await self.db.flush()
+
+        for slot in payload.slots:
+            self.db.add(
+                EnclosureTemplatePanelSlot(
+                    enclosure_template_id=template.id,
+                    slot_key=slot.slot_key,
+                    connector_template_id=slot.connector_template_id,
+                    panel_side=slot.panel_side,
+                )
+            )
+        for pcb_slot in payload.pcb_slots:
+            self.db.add(
+                EnclosureTemplatePcbSlot(
+                    enclosure_template_id=template.id,
+                    slot_key=pcb_slot.slot_key,
+                    pcb_template_id=pcb_slot.pcb_template_id,
+                    position_index=pcb_slot.position_index,
+                )
+            )
         await self.db.flush()
         return await self.get_enclosure_template(template.id)
 
@@ -102,12 +212,29 @@ class TemplateService:
         )
         return [await self.get_enclosure_template(t.id) for t in result.scalars().all()]
 
+    async def delete_enclosure_template(self, vehicle_id: UUID, template_id: UUID) -> None:
+        template = await self.db.get(EnclosureTemplate, template_id)
+        if not template or template.vehicle_id != vehicle_id:
+            raise HTTPException(status_code=404, detail="Enclosure template not found")
+        try:
+            await self.db.delete(template)
+            await self.db.flush()
+        except IntegrityError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail="Enclosure template is in use and cannot be deleted",
+            ) from exc
+
     async def get_enclosure_template(self, template_id: UUID) -> EnclosureTemplateResponse:
         result = await self.db.execute(
-            select(EnclosureTemplate, EnclosureTemplatePanelSlot)
+            select(EnclosureTemplate, EnclosureTemplatePanelSlot, EnclosureTemplatePcbSlot)
             .outerjoin(
                 EnclosureTemplatePanelSlot,
                 EnclosureTemplatePanelSlot.enclosure_template_id == EnclosureTemplate.id,
+            )
+            .outerjoin(
+                EnclosureTemplatePcbSlot,
+                EnclosureTemplatePcbSlot.enclosure_template_id == EnclosureTemplate.id,
             )
             .where(EnclosureTemplate.id == template_id)
         )
@@ -116,6 +243,7 @@ class TemplateService:
             raise HTTPException(status_code=404, detail="Enclosure template not found")
         template = rows[0][0]
         slots = {r[1].id: r[1] for r in rows if r[1] is not None}
+        pcb_slots = {r[2].id: r[2] for r in rows if r[2] is not None}
         return EnclosureTemplateResponse(
             id=template.id,
             vehicle_id=template.vehicle_id,
@@ -128,6 +256,15 @@ class TemplateService:
                     panel_side=s.panel_side,
                 )
                 for s in slots.values()
+            ],
+            pcb_slots=[
+                EnclosurePcbSlotResponse(
+                    id=s.id,
+                    slot_key=s.slot_key,
+                    pcb_template_id=s.pcb_template_id,
+                    position_index=s.position_index,
+                )
+                for s in pcb_slots.values()
             ],
             created_at=template.created_at,
             updated_at=template.updated_at,

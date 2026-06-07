@@ -5,6 +5,7 @@ import { TopBar } from "@/components/shell/TopBar";
 import { TopologyCanvas } from "@/components/graph/TopologyCanvas";
 import { ManufacturingPanel } from "@/features/manufacturing/ManufacturingPanel";
 import { NetManager } from "@/features/nets/NetManager";
+import { LibraryBuilders } from "@/features/library/LibraryBuilders";
 import { useAppStore } from "@/stores/appStore";
 
 export function AppShell() {
@@ -13,6 +14,7 @@ export function AppShell() {
   return (
     <div className="flex h-screen flex-col">
       <NetManager />
+      <LibraryBuilders />
       <TopBar />
       <div className="flex min-h-0 flex-1">
         <HierarchyNav />

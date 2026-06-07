@@ -36,17 +36,19 @@ If `make install` failed earlier with `python: command not found`, pull latest M
 
 ## API layout
 
-| Area | Path | Purpose |
-|------|------|---------|
-| Catalog | `/connector-templates` | Global mating-pair connectors (unified pinout, M/F part # & images) |
-| Vehicle templates | `/vehicles/{id}/pcb-templates`, `enclosure-templates` | Per-vehicle definitions |
-| Instances | `/vehicles/{id}/revisions/{rev}/instances/...` | Enclosures, PCBs, connectors |
-| **Nets** | `/vehicles/{id}/revisions/{rev}/nets/...` | Logical nets, pin pairing, pin list |
-| **Topology** | `/vehicles/{id}/revisions/{rev}/topology/...` | Physical wires (edges) + summary counts |
-| Shorts | `.../instances/connectors/{id}/shorts` | Intra-connector pin bonds |
-| Graph | `.../graph/trace`, `.../graph/impact-analysis` | Traversal & delete preview |
-| Manufacturing | `.../manufacturing/...` | Harness groups & build records |
-| Revisions | `.../revisions/{rev}/publish` | Immutable snapshot + draft clone |
+
+| Area              | Path                                                  | Purpose                                                             |
+| ----------------- | ----------------------------------------------------- | ------------------------------------------------------------------- |
+| Catalog           | `/connector-templates`                                | Global mating-pair connectors (unified pinout, M/F part # & images) |
+| Vehicle templates | `/vehicles/{id}/pcb-templates`, `enclosure-templates` | Per-vehicle definitions                                             |
+| Instances         | `/vehicles/{id}/revisions/{rev}/instances/...`        | Enclosures, PCBs, connectors                                        |
+| **Nets**          | `/vehicles/{id}/revisions/{rev}/nets/...`             | Logical nets, pin pairing, pin list                                 |
+| **Topology**      | `/vehicles/{id}/revisions/{rev}/topology/...`         | Physical wires (edges) + summary counts                             |
+| Shorts            | `.../instances/connectors/{id}/shorts`                | Intra-connector pin bonds                                           |
+| Graph             | `.../graph/trace`, `.../graph/impact-analysis`        | Traversal & delete preview                                          |
+| Manufacturing     | `.../manufacturing/...`                               | Harness groups & build records                                      |
+| Revisions         | `.../revisions/{rev}/publish`                         | Immutable snapshot + draft clone                                    |
+
 
 ## Design workflow
 
@@ -69,3 +71,4 @@ backend/app/domains/     graph, validation, net naming, pin shorts
 backend/app/services/    application logic
 frontend/src/features/   design, nets, manufacturing
 ```
+
