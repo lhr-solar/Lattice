@@ -73,6 +73,9 @@ export function PinPairingPanel() {
           </button>
         )}
       </div>
+      <p className="mb-2 text-xs text-tesla-muted">
+        Wire mode: click pin A, then pin B on the graph or list to create/update a harness wire.
+      </p>
 
       {!connectorId && (
         <p className="text-sm text-tesla-muted">
@@ -188,6 +191,7 @@ function PinRow({
   disabled: boolean;
   onSelect: () => void;
 }) {
+  const isDefaultName = pin.pin_name.trim() === String(pin.pin_number);
   return (
     <li>
       <button
@@ -200,7 +204,8 @@ function PinRow({
         )}
       >
         <span>
-          {pin.pin_number}: {pin.pin_name}
+          {pin.pin_number}:{" "}
+          <span className={isDefaultName ? "text-tesla-muted" : ""}>{pin.pin_name}</span>
         </span>
         <span className="truncate pl-2 text-xs text-tesla-muted">
           {pin.primary_net_name ?? "—"}

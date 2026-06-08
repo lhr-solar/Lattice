@@ -71,3 +71,7 @@ class PinResponse(SchemaBase):
     pin_number: int
     name: str
     role: ConnectorRole | None
+
+
+class PinUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=128)

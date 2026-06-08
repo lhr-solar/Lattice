@@ -9,6 +9,8 @@ from app.schemas.instances import (
     ConnectorInstanceResponse,
     EnclosureInstanceCreate,
     EnclosureInstanceResponse,
+    PinResponse,
+    PinUpdate,
     PcbInstanceCreate,
     PcbInstanceResponse,
 )
@@ -53,3 +55,21 @@ async def create_connector(
     db: AsyncSession = Depends(get_db),
 ) -> ConnectorInstanceResponse:
     return await InstanceService(db).create_connector(vehicle_id, revision_id, payload)
+
+
+@router.patch("/connectors/{connector_instance_id}/pins/{pin_id}", response_model=PinResponse)
+async def update_pin(
+    vehicle_id: UUID,
+    revision_id: UUID,
+    connector_instance_id: UUID,
+    pin_id: UUID,
+    payload: PinUpdate,
+    db: AsyncSession = Depends(get_db),
+) -> PinResponse:
+    return await InstanceService(db).update_pin(
+        vehicle_id,
+        revision_id,
+        connector_instance_id,
+        pin_id,
+        payload,
+    )

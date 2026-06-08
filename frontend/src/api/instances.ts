@@ -28,6 +28,14 @@ export interface ConnectorInstance {
   pin_ids: string[];
 }
 
+export interface PinInstance {
+  id: string;
+  connector_instance_id: string;
+  pin_number: number;
+  name: string;
+  role: string | null;
+}
+
 export function fetchEnclosures(vehicleId: string, revisionId: string) {
   return apiFetch<EnclosureInstance[]>(
     `/vehicles/${vehicleId}/revisions/${revisionId}/instances/enclosures`,
@@ -77,5 +85,18 @@ export function createConnector(
   return apiFetch<ConnectorInstance>(
     `/vehicles/${vehicleId}/revisions/${revisionId}/instances/connectors`,
     { method: "POST", body: JSON.stringify(body) },
+  );
+}
+
+export function updateConnectorPin(
+  vehicleId: string,
+  revisionId: string,
+  connectorInstanceId: string,
+  pinId: string,
+  body: { name: string },
+) {
+  return apiFetch<PinInstance>(
+    `/vehicles/${vehicleId}/revisions/${revisionId}/instances/connectors/${connectorInstanceId}/pins/${pinId}`,
+    { method: "PATCH", body: JSON.stringify(body) },
   );
 }

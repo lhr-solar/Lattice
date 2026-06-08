@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { fetchTopologySummary } from "@/api/topology";
 import { DesignActions } from "@/features/design/DesignActions";
 import { PinPairingPanel } from "@/features/nets/PinPairingPanel";
+import { PinoutEditorPanel } from "@/features/nets/PinoutEditorPanel";
 import { PinShortPanel } from "@/features/nets/PinShortPanel";
 import { useAppStore } from "@/stores/appStore";
 
@@ -53,6 +54,7 @@ export function PropertyPanel() {
           )}
         </dl>
         {mode === "design" && <DesignActions />}
+        {mode === "design" && <PinoutEditorPanel />}
         {mode === "design" && <PinPairingPanel />}
         {mode === "design" && <PinShortPanel />}
       </div>

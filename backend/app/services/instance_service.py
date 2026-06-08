@@ -27,6 +27,8 @@ from app.schemas.instances import (
     ConnectorInstanceResponse,
     EnclosureInstanceCreate,
     EnclosureInstanceResponse,
+    PinResponse,
+    PinUpdate,
     PcbInstanceCreate,
     PcbInstanceResponse,
 )
@@ -284,6 +286,33 @@ class InstanceService:
                 )
             )
         return items
+
+    async def update_pin(
+        self,
+        vehicle_id: UUID,
+        revision_id: UUID,
+        connector_instance_id: UUID,
+        pin_id: UUID,
+        payload: PinUpdate,
+    ) -> PinResponse:
+        await ensure_mutable_revision(self.db, revision_id, vehicle_id)
+        pin = await self.db.get(Pin, pin_id)
+        if (
+            not pin
+            or pin.revision_id != revision_id
+            or pin.connector_instance_id != connector_instance_id
+        ):
+            raise HTTPException(status_code=404, detail="Pin not found")
+
+        pin.name = payload.name.strip()
+        await self.db.flush()
+        return PinResponse(
+            id=pin.id,
+            connector_instance_id=pin.connector_instance_id,
+            pin_number=pin.pin_number,
+            name=pin.name,
+            role=pin.role,
+        )
 
     async def _create_connector_from_slot(
         self,

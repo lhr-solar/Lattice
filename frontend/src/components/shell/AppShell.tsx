@@ -1,4 +1,5 @@
 import { HierarchyNav } from "@/components/shell/HierarchyNav";
+import { HelpModal } from "@/components/shell/HelpModal";
 import { ModeToggle } from "@/components/shell/ModeToggle";
 import { PropertyPanel } from "@/components/shell/PropertyPanel";
 import { TopBar } from "@/components/shell/TopBar";
@@ -13,6 +14,7 @@ export function AppShell() {
 
   return (
     <div className="flex h-screen flex-col">
+      <HelpModal />
       <NetManager />
       <LibraryBuilders />
       <TopBar />

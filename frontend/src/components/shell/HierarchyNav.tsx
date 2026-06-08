@@ -19,6 +19,7 @@ function TreeNode({
   selectedId: string | null;
 }) {
   const levelMap: Record<string, ProjectionLevel> = {
+    vehicle: "vehicle",
     enclosure: "enclosure",
     pcb: "enclosure",
     connector: "connector",
@@ -140,6 +141,11 @@ export function HierarchyNav() {
   });
 
   function handleNodeSelect(id: string, kind: string, level: ProjectionLevel) {
+    if (kind === "vehicle") {
+      setProjectionLevel("vehicle");
+      setFocus(null);
+      return;
+    }
     setProjectionLevel(level);
     setFocus(id, kind);
   }

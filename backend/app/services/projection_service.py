@@ -3,6 +3,7 @@ from uuid import UUID
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.infrastructure.db.models.catalog import ConnectorTemplate
 from app.infrastructure.db.models.instances import (
     ConnectorInstance,
     EnclosureInstance,
@@ -52,40 +53,123 @@ class ProjectionService:
             .join(EnclosureTemplate, EnclosureInstance.enclosure_template_id == EnclosureTemplate.id)
             .where(EnclosureInstance.revision_id == revision_id)
         )
-        nodes: list[DesignNodeDto] = []
-        enc_ids: dict[UUID, str] = {}
+        nodes: list[DesignNodeDto] = [
+            DesignNodeDto(
+                id="vehicle:root",
+                kind="vehicleRoot",
+                label="Vehicle",
+                position={"x": 40, "y": 40},
+                data={"container": True},
+            )
+        ]
+        edge_dtos: list[DesignEdgeDto] = []
+
+        # Boundary nodes are grouped by connector so higher-level views remain readable.
+        pin_to_boundary_node: dict[UUID, str] = {}
+        enclosure_node_ids: dict[UUID, str] = {}
+
         for i, (enc, tmpl) in enumerate(enc_result.all()):
-            node_id = f"enclosure:{enc.id}"
-            enc_ids[enc.id] = node_id
-            pos = layouts.get(node_id)
+            enclosure_node_id = f"enclosure:{enc.id}"
+            enclosure_node_ids[enc.id] = enclosure_node_id
+            pos = layouts.get(enclosure_node_id)
             nodes.append(
                 DesignNodeDto(
-                    id=node_id,
-                    kind="enclosure",
+                    id=enclosure_node_id,
+                    kind="enclosureContainer",
                     label=resolve_display_name(
                         template_name=tmpl.name,
                         nickname=enc.nickname,
                         use_template_name=enc.use_template_name,
                     ),
-                    position={"x": pos[0], "y": pos[1]} if pos else {"x": 100 + i * 220, "y": 200},
-                    data={"enclosureInstanceId": str(enc.id)},
+                    parent_id="vehicle:root",
+                    position={"x": pos[0], "y": pos[1]} if pos else {"x": 80 + i * 460, "y": 120},
+                    data={"enclosureInstanceId": str(enc.id), "container": True},
                 )
             )
 
-        edges_result = await self.db.execute(
-            select(ConnectionEdge).where(
-                ConnectionEdge.revision_id == revision_id,
-                ConnectionEdge.enclosure_a_id.isnot(None),
-                ConnectionEdge.enclosure_b_id.isnot(None),
+            connector_rows = await self.db.execute(
+                select(ConnectorInstance, ConnectorTemplate).join(
+                    ConnectorTemplate, ConnectorInstance.connector_template_id == ConnectorTemplate.id
+                ).where(
+                    ConnectorInstance.revision_id == revision_id,
+                    ConnectorInstance.enclosure_instance_id == enc.id,
+                )
             )
-        )
-        edge_dtos: list[DesignEdgeDto] = []
+            pcb_rows = await self.db.execute(
+                select(PcbInstance, PcbTemplate)
+                .join(PcbTemplate, PcbInstance.pcb_template_id == PcbTemplate.id)
+                .where(PcbInstance.revision_id == revision_id, PcbInstance.enclosure_instance_id == enc.id)
+            )
+
+            pcb_node_ids: dict[UUID, str] = {}
+            for pcb_idx, (pcb, pcb_tmpl) in enumerate(pcb_rows.all()):
+                pcb_node_id = f"pcb:{pcb.id}"
+                pcb_node_ids[pcb.id] = pcb_node_id
+                nodes.append(
+                    DesignNodeDto(
+                        id=pcb_node_id,
+                        kind="pcbContainer",
+                        label=resolve_display_name(
+                            template_name=pcb_tmpl.name,
+                            nickname=pcb.nickname,
+                            use_template_name=pcb.use_template_name,
+                        ),
+                        parent_id=enclosure_node_id,
+                        position={"x": 40, "y": 210 + pcb_idx * 190},
+                        data={"pcbInstanceId": str(pcb.id), "container": True},
+                    )
+                )
+
+            boundary_index = 0
+            internal_index_by_pcb: dict[UUID, int] = {}
+            for conn, conn_tmpl in connector_rows.all():
+                display = resolve_display_name(
+                    template_name=conn_tmpl.name,
+                    nickname=conn.nickname,
+                    use_template_name=conn.use_template_name,
+                )
+                if self._connector_visible_outside_pcb(conn, conn_tmpl):
+                    boundary_node_id = f"boundary-connector:{conn.id}"
+                    nodes.append(
+                        DesignNodeDto(
+                            id=boundary_node_id,
+                            kind="boundaryConnector",
+                            label=f"{display}",
+                            parent_id=enclosure_node_id,
+                            position={"x": 28 + (boundary_index % 3) * 140, "y": 62 + (boundary_index // 3) * 56},
+                            data={
+                                "connectorInstanceId": str(conn.id),
+                                "groupedBoundaryPins": True,
+                                "isPanelMount": conn.is_panel_mount,
+                            },
+                        )
+                    )
+                    boundary_index += 1
+                    pins_result = await self.db.execute(
+                        select(Pin.id).where(Pin.revision_id == revision_id, Pin.connector_instance_id == conn.id)
+                    )
+                    for pin_id in pins_result.scalars().all():
+                        pin_to_boundary_node[pin_id] = boundary_node_id
+
+                if conn.pcb_instance_id and conn.pcb_instance_id in pcb_node_ids:
+                    idx = internal_index_by_pcb.get(conn.pcb_instance_id, 0)
+                    internal_index_by_pcb[conn.pcb_instance_id] = idx + 1
+                    nodes.append(
+                        DesignNodeDto(
+                            id=f"connector:{conn.id}",
+                            kind="connector",
+                            label=display,
+                            parent_id=pcb_node_ids[conn.pcb_instance_id],
+                            position={"x": 28 + (idx % 3) * 140, "y": 46 + (idx // 3) * 56},
+                            data={"connectorInstanceId": str(conn.id), "internalToPcb": True},
+                        )
+                    )
+
+        edges_result = await self.db.execute(select(ConnectionEdge).where(ConnectionEdge.revision_id == revision_id))
         seen_pairs: set[tuple[str, str]] = set()
         for edge in edges_result.scalars().all():
-            if not edge.enclosure_a_id or not edge.enclosure_b_id:
-                continue
-            src = enc_ids.get(edge.enclosure_a_id)
-            tgt = enc_ids.get(edge.enclosure_b_id)
+            src = pin_to_boundary_node.get(edge.pin_a_id)
+            tgt = pin_to_boundary_node.get(edge.pin_b_id)
             if not src or not tgt or src == tgt:
                 continue
             pair = tuple(sorted((src, tgt)))
@@ -135,59 +219,110 @@ class ProjectionService:
                 meta={"error": "focus_id required for enclosure level"},
             )
 
-        nodes: list[DesignNodeDto] = []
-        node_map: dict[UUID, str] = {}
+        enclosure = await self.db.get(EnclosureInstance, enclosure_id)
+        if not enclosure:
+            return DesignGraphProjectionDto(
+                revision_id=revision_id, level="enclosure", view_key=view_key, nodes=[], edges=[]
+            )
+        enc_tmpl = await self.db.get(EnclosureTemplate, enclosure.enclosure_template_id)
+        enclosure_node_id = f"enclosure:{enclosure_id}"
+        nodes: list[DesignNodeDto] = [
+            DesignNodeDto(
+                id=enclosure_node_id,
+                kind="enclosureContainer",
+                label=resolve_display_name(
+                    template_name=enc_tmpl.name if enc_tmpl else "Enclosure",
+                    nickname=enclosure.nickname,
+                    use_template_name=enclosure.use_template_name,
+                ),
+                position={"x": 80, "y": 60},
+                data={"enclosureInstanceId": str(enclosure_id), "container": True},
+            )
+        ]
+        pin_to_node: dict[UUID, str] = {}
 
         pcb_result = await self.db.execute(
             select(PcbInstance, PcbTemplate)
             .join(PcbTemplate, PcbInstance.pcb_template_id == PcbTemplate.id)
             .where(PcbInstance.revision_id == revision_id, PcbInstance.enclosure_instance_id == enclosure_id)
         )
+        pcb_node_ids: dict[UUID, str] = {}
         for i, (pcb, tmpl) in enumerate(pcb_result.all()):
             nid = f"pcb:{pcb.id}"
-            node_map[pcb.id] = nid
+            pcb_node_ids[pcb.id] = nid
             pos = layouts.get(nid)
             nodes.append(
                 DesignNodeDto(
                     id=nid,
-                    kind="pcb",
+                    kind="pcbContainer",
                     label=resolve_display_name(
                         template_name=tmpl.name,
                         nickname=pcb.nickname,
                         use_template_name=pcb.use_template_name,
                     ),
-                    position={"x": pos[0], "y": pos[1]} if pos else {"x": 80, "y": 80 + i * 100},
-                    data={"pcbInstanceId": str(pcb.id)},
+                    parent_id=enclosure_node_id,
+                    position={"x": pos[0], "y": pos[1]} if pos else {"x": 36, "y": 220 + i * 200},
+                    data={"pcbInstanceId": str(pcb.id), "container": True},
                 )
             )
 
         conn_result = await self.db.execute(
-            select(ConnectorInstance)
+            select(ConnectorInstance, ConnectorTemplate)
+            .join(ConnectorTemplate, ConnectorInstance.connector_template_id == ConnectorTemplate.id)
             .where(
                 ConnectorInstance.revision_id == revision_id,
                 ConnectorInstance.enclosure_instance_id == enclosure_id,
             )
         )
-        from app.infrastructure.db.models.catalog import ConnectorTemplate
-
-        for i, conn in enumerate(conn_result.scalars().all()):
-            tmpl = await self.db.get(ConnectorTemplate, conn.connector_template_id)
-            nid = f"connector:{conn.id}"
-            node_map[conn.id] = nid
-            pos = layouts.get(nid)
-            nodes.append(
-                DesignNodeDto(
-                    id=nid,
-                    kind="panelMount" if conn.is_panel_mount else "connector",
-                    label=resolve_display_name(
-                        template_name=tmpl.name if tmpl else "?",
-                        nickname=conn.nickname,
-                        use_template_name=conn.use_template_name,
-                    ),
-                    position={"x": pos[0], "y": pos[1]} if pos else {"x": 280, "y": 80 + i * 80},
-                    data={"connectorInstanceId": str(conn.id), "isPanelMount": conn.is_panel_mount},
-                )
+        boundary_index = 0
+        connector_index_by_pcb: dict[UUID, int] = {}
+        for conn, tmpl in conn_result.all():
+            display = resolve_display_name(
+                template_name=tmpl.name,
+                nickname=conn.nickname,
+                use_template_name=conn.use_template_name,
             )
+            if self._connector_visible_outside_pcb(conn, tmpl):
+                boundary_nid = f"boundary-connector:{conn.id}"
+                nodes.append(
+                    DesignNodeDto(
+                        id=boundary_nid,
+                        kind="boundaryConnector",
+                        label=display,
+                        parent_id=enclosure_node_id,
+                        position={"x": 24 + (boundary_index % 4) * 130, "y": 72 + (boundary_index // 4) * 56},
+                        data={
+                            "connectorInstanceId": str(conn.id),
+                            "groupedBoundaryPins": True,
+                            "isPanelMount": conn.is_panel_mount,
+                        },
+                    )
+                )
+                boundary_index += 1
+                pins_result = await self.db.execute(
+                    select(Pin.id).where(Pin.revision_id == revision_id, Pin.connector_instance_id == conn.id)
+                )
+                for pin_id in pins_result.scalars().all():
+                    pin_to_node[pin_id] = boundary_nid
+
+            if conn.pcb_instance_id and conn.pcb_instance_id in pcb_node_ids:
+                idx = connector_index_by_pcb.get(conn.pcb_instance_id, 0)
+                connector_index_by_pcb[conn.pcb_instance_id] = idx + 1
+                nid = f"connector:{conn.id}"
+                pos = layouts.get(nid)
+                nodes.append(
+                    DesignNodeDto(
+                        id=nid,
+                        kind="connector",
+                        label=display,
+                        parent_id=pcb_node_ids[conn.pcb_instance_id],
+                        position={"x": pos[0], "y": pos[1]} if pos else {"x": 24 + (idx % 3) * 130, "y": 54 + (idx // 3) * 60},
+                        data={"connectorInstanceId": str(conn.id), "internalToPcb": True},
+                    )
+                )
+
+        for pin_id, connector_node in (await self._pin_node_map(revision_id, enclosure_id)).items():
+            pin_to_node.setdefault(pin_id, connector_node)
 
         edges_result = await self.db.execute(
             select(ConnectionEdge).where(
@@ -196,12 +331,11 @@ class ProjectionService:
                 ConnectionEdge.enclosure_b_id == enclosure_id,
             )
         )
-        pin_to_node = await self._pin_node_map(revision_id, enclosure_id)
         edge_dtos = []
         for edge in edges_result.scalars().all():
             src = pin_to_node.get(edge.pin_a_id)
             tgt = pin_to_node.get(edge.pin_b_id)
-            if src and tgt:
+            if src and tgt and src != tgt:
                 edge_dtos.append(
                     DesignEdgeDto(
                         id=str(edge.id),
@@ -243,13 +377,19 @@ class ProjectionService:
             nid = f"pin:{pin.id}"
             pin_ids[pin.id] = nid
             pos = layouts.get(nid)
+            is_default_name = pin.name.strip() == str(pin.pin_number)
             nodes.append(
                 DesignNodeDto(
                     id=nid,
                     kind="pin",
                     label=f"{pin.pin_number}: {pin.name}",
                     position={"x": pos[0], "y": pos[1]} if pos else {"x": 120, "y": 60 + i * 50},
-                    data={"pinId": str(pin.id), "pinNumber": pin.pin_number},
+                    data={
+                        "pinId": str(pin.id),
+                        "pinNumber": pin.pin_number,
+                        "pinName": pin.name,
+                        "isDefaultName": is_default_name,
+                    },
                 )
             )
 
@@ -369,21 +509,20 @@ class ProjectionService:
     async def _pin_node_map(self, revision_id: UUID, enclosure_id: UUID) -> dict[UUID, str]:
         mapping: dict[UUID, str] = {}
         pins = await self.db.execute(
-            select(Pin, ConnectorInstance)
+            select(Pin, ConnectorInstance, ConnectorTemplate)
             .join(ConnectorInstance, Pin.connector_instance_id == ConnectorInstance.id)
+            .join(ConnectorTemplate, ConnectorInstance.connector_template_id == ConnectorTemplate.id)
             .where(Pin.revision_id == revision_id, ConnectorInstance.enclosure_instance_id == enclosure_id)
         )
-        for pin, conn in pins.all():
-            mapping[pin.id] = f"connector:{conn.id}"
-        pcb_pins = await self.db.execute(
-            select(Pin, ConnectorInstance, PcbInstance)
-            .join(ConnectorInstance, Pin.connector_instance_id == ConnectorInstance.id)
-            .join(PcbInstance, ConnectorInstance.pcb_instance_id == PcbInstance.id)
-            .where(Pin.revision_id == revision_id, PcbInstance.enclosure_instance_id == enclosure_id)
-        )
-        for pin, conn, _pcb in pcb_pins.all():
+        for pin, conn, tmpl in pins.all():
             mapping[pin.id] = f"connector:{conn.id}"
         return mapping
+
+    @staticmethod
+    def _connector_visible_outside_pcb(conn: ConnectorInstance, tmpl: ConnectorTemplate) -> bool:
+        _ = tmpl
+        # Boundary population is driven only by panel-mount connectors.
+        return conn.is_panel_mount
 
     async def _bus_groups(self, revision_id: UUID) -> list[BusGroupDto]:
         result = await self.db.execute(

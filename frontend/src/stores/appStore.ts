@@ -16,6 +16,7 @@ interface AppState {
   pairingPinAId: string | null;
   showNetManager: boolean;
   showLibraryManager: boolean;
+  showHelpModal: boolean;
   libraryTab: LibraryTab;
   searchQuery: string;
   setMode: (mode: AppMode) => void;
@@ -27,6 +28,7 @@ interface AppState {
   setPairingPinA: (pinId: string | null) => void;
   setShowNetManager: (show: boolean) => void;
   setShowLibraryManager: (show: boolean) => void;
+  setShowHelpModal: (show: boolean) => void;
   setLibraryTab: (tab: LibraryTab) => void;
   clearPairing: () => void;
   setSearchQuery: (query: string) => void;
@@ -44,6 +46,7 @@ export const useAppStore = create<AppState>((set) => ({
   pairingPinAId: null,
   showNetManager: false,
   showLibraryManager: false,
+  showHelpModal: false,
   libraryTab: "connector",
   searchQuery: "",
   setMode: (mode) => set({ mode }),
@@ -64,6 +67,7 @@ export const useAppStore = create<AppState>((set) => ({
   setPairingPinA: (pairingPinAId) => set({ pairingPinAId }),
   setShowNetManager: (showNetManager) => set({ showNetManager }),
   setShowLibraryManager: (showLibraryManager) => set({ showLibraryManager }),
+  setShowHelpModal: (showHelpModal) => set({ showHelpModal }),
   setLibraryTab: (libraryTab) => set({ libraryTab }),
   clearPairing: () => set({ pairingPinAId: null }),
   setSearchQuery: (searchQuery) => set({ searchQuery }),

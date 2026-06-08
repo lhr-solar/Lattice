@@ -11,6 +11,7 @@ export function TopBar() {
   const setWireMode = useAppStore((s) => s.setWireMode);
   const setShowNetManager = useAppStore((s) => s.setShowNetManager);
   const setShowLibraryManager = useAppStore((s) => s.setShowLibraryManager);
+  const setShowHelpModal = useAppStore((s) => s.setShowHelpModal);
   const setLibraryTab = useAppStore((s) => s.setLibraryTab);
   const mode = useAppStore((s) => s.mode);
 
@@ -31,7 +32,7 @@ export function TopBar() {
                 : "border border-tesla-border text-tesla-muted hover:text-tesla-text",
             )}
           >
-            Wire
+            {wireMode ? "Wiring active" : "Wire"}
           </button>
           <button
             type="button"
@@ -49,6 +50,13 @@ export function TopBar() {
             className="rounded-md border border-tesla-border px-2 py-1 text-xs text-tesla-muted transition hover:border-tesla-accent hover:text-tesla-text"
           >
             Connector Library
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowHelpModal(true)}
+            className="rounded-md border border-tesla-border px-2 py-1 text-xs text-tesla-muted transition hover:border-tesla-accent hover:text-tesla-text"
+          >
+            Help
           </button>
         </div>
       )}
