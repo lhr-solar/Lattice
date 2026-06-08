@@ -15,7 +15,7 @@ export function pcbSubtitle(pcb: PcbTemplate) {
 export function enclosureSubtitle(enclosure: EnclosureTemplate) {
   return [
     `${enclosure.slots.length} panel connectors`,
-    `${enclosure.pcb_slots?.length ?? 0} pcbs`,
+    `${enclosure.pcb_slots?.length ?? 0} nodes`,
   ].join(" · ");
 }
 
@@ -33,6 +33,8 @@ function SearchablePicker({
   placeholder,
   searchPlaceholder,
   emptyMessage,
+  addActionLabel,
+  onAddAction,
 }: {
   label: string;
   items: PickerItem[];
@@ -41,6 +43,8 @@ function SearchablePicker({
   placeholder: string;
   searchPlaceholder: string;
   emptyMessage: string;
+  addActionLabel?: string;
+  onAddAction?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -127,6 +131,21 @@ function SearchablePicker({
               ))
             )}
           </ul>
+          {onAddAction && addActionLabel && (
+            <div className="border-t border-tesla-border p-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  setSearch("");
+                  onAddAction();
+                }}
+                className="w-full rounded border border-tesla-border px-2 py-1.5 text-left text-sm text-tesla-muted transition hover:border-tesla-accent hover:text-tesla-text"
+              >
+                + {addActionLabel}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -138,11 +157,13 @@ export function ConnectorTemplatePicker({
   value,
   onChange,
   label = "Connector",
+  onAddAction,
 }: {
   connectors: ConnectorTemplate[];
   value: string;
   onChange: (id: string) => void;
   label?: string;
+  onAddAction?: () => void;
 }) {
   const items = useMemo(
     () =>
@@ -163,6 +184,8 @@ export function ConnectorTemplatePicker({
       placeholder="Select connector…"
       searchPlaceholder="Search by name, manufacturer, key, pins…"
       emptyMessage="No connectors match."
+      addActionLabel="Add connector template"
+      onAddAction={onAddAction}
     />
   );
 }
@@ -171,12 +194,14 @@ export function PcbTemplatePicker({
   pcbs,
   value,
   onChange,
-  label = "PCB",
+  label = "Node",
+  onAddAction,
 }: {
   pcbs: PcbTemplate[];
   value: string;
   onChange: (id: string) => void;
   label?: string;
+  onAddAction?: () => void;
 }) {
   const items = useMemo(
     () =>
@@ -194,9 +219,11 @@ export function PcbTemplatePicker({
       items={items}
       value={value}
       onChange={onChange}
-      placeholder="Select PCB…"
+      placeholder="Select node…"
       searchPlaceholder="Search by name, description, slots…"
-      emptyMessage="No PCBs match."
+      emptyMessage="No nodes match."
+      addActionLabel="Add node template"
+      onAddAction={onAddAction}
     />
   );
 }
@@ -206,11 +233,13 @@ export function EnclosureTemplatePicker({
   value,
   onChange,
   label = "Enclosure",
+  onAddAction,
 }: {
   enclosures: EnclosureTemplate[];
   value: string;
   onChange: (id: string) => void;
   label?: string;
+  onAddAction?: () => void;
 }) {
   const items = useMemo(
     () =>
@@ -231,6 +260,8 @@ export function EnclosureTemplatePicker({
       placeholder="Select enclosure…"
       searchPlaceholder="Search by name, slots…"
       emptyMessage="No enclosures match."
+      addActionLabel="Add enclosure template"
+      onAddAction={onAddAction}
     />
   );
 }
@@ -241,12 +272,16 @@ export function InstancePicker({
   onChange,
   label,
   placeholder,
+  onAddAction,
+  addActionLabel,
 }: {
   instances: Array<{ id: string; label: string }>;
   value: string;
   onChange: (id: string) => void;
   label: string;
   placeholder: string;
+  onAddAction?: () => void;
+  addActionLabel?: string;
 }) {
   const items = useMemo(
     () => instances.map((instance) => ({ id: instance.id, title: instance.label })),
@@ -262,6 +297,8 @@ export function InstancePicker({
       placeholder={placeholder}
       searchPlaceholder="Search instances…"
       emptyMessage="No instances match."
+      onAddAction={onAddAction}
+      addActionLabel={addActionLabel}
     />
   );
 }

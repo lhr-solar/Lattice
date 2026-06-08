@@ -10,6 +10,8 @@ from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
 
+from migration_helpers import column_exists
+
 
 revision: str = "003"
 down_revision: Union[str, None] = "002"
@@ -18,19 +20,22 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "connector_templates",
-        sa.Column("is_inline_template", sa.Boolean(), nullable=False, server_default=sa.text("false")),
-    )
-    op.add_column(
-        "connector_instances",
-        sa.Column(
-            "inline_gender",
-            sa.Enum("male", "female", "hermaphroditic", "unknown", name="connectorgender"),
-            nullable=True,
-        ),
-    )
-    op.alter_column("connector_templates", "is_inline_template", server_default=None)
+    if not column_exists("connector_templates", "is_inline_template"):
+        op.add_column(
+            "connector_templates",
+            sa.Column("is_inline_template", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+        )
+        op.alter_column("connector_templates", "is_inline_template", server_default=None)
+
+    if not column_exists("connector_instances", "inline_gender"):
+        op.add_column(
+            "connector_instances",
+            sa.Column(
+                "inline_gender",
+                sa.Enum("male", "female", "hermaphroditic", "unknown", name="connectorgender"),
+                nullable=True,
+            ),
+        )
 
 
 def downgrade() -> None:

@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.api.v1 import (
+    connections,
     connector_templates,
     dev_tools,
     graph,
@@ -9,6 +10,7 @@ from app.api.v1 import (
     layouts,
     manufacturing,
     nets,
+    pin_names,
     projections,
     revisions,
     shorts,
@@ -30,6 +32,8 @@ api_router.include_router(instances.router)
 api_router.include_router(hierarchy.router)
 api_router.include_router(topology.router)
 api_router.include_router(nets.router)
+api_router.include_router(pin_names.router)
+api_router.include_router(connections.router)
 api_router.include_router(shorts.router)
 api_router.include_router(graph.router)
 api_router.include_router(projections.router)

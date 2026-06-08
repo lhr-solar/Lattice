@@ -1,5 +1,13 @@
 import type { ReactNode } from "react";
 
+export type ModalLayer = "dialog" | "manager" | "stacked";
+
+const MODAL_LAYER_CLASS: Record<ModalLayer, string> = {
+  dialog: "z-[60]",
+  manager: "z-[70]",
+  stacked: "z-[80]",
+};
+
 interface ModalProps {
   open: boolean;
   title: string;
@@ -9,6 +17,7 @@ interface ModalProps {
   panelClassName?: string;
   bodyClassName?: string;
   showCloseButton?: boolean;
+  layer?: ModalLayer;
 }
 
 export function Modal({
@@ -20,11 +29,14 @@ export function Modal({
   panelClassName,
   bodyClassName,
   showCloseButton = false,
+  layer = "dialog",
 }: ModalProps) {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4 panel-fade-in">
+    <div
+      className={`fixed inset-0 ${MODAL_LAYER_CLASS[layer]} flex items-center justify-center bg-black/60 p-4 panel-fade-in`}
+    >
       <div
         className="absolute inset-0"
         onClick={onClose}
@@ -72,6 +84,7 @@ interface ConfirmModalProps {
   onConfirm: () => void;
   onCancel: () => void;
   disabled?: boolean;
+  layer?: ModalLayer;
 }
 
 export function ConfirmModal({
@@ -84,12 +97,14 @@ export function ConfirmModal({
   onConfirm,
   onCancel,
   disabled = false,
+  layer = "stacked",
 }: ConfirmModalProps) {
   return (
     <Modal
       open={open}
       title={title}
       onClose={onCancel}
+      layer={layer}
       footer={
         <>
           <button
@@ -128,6 +143,7 @@ interface PromptModalProps {
   onChange: (next: string) => void;
   onSubmit: () => void;
   onCancel: () => void;
+  layer?: ModalLayer;
 }
 
 export function PromptModal({
@@ -141,12 +157,14 @@ export function PromptModal({
   onChange,
   onSubmit,
   onCancel,
+  layer = "dialog",
 }: PromptModalProps) {
   return (
     <Modal
       open={open}
       title={title}
       onClose={onCancel}
+      layer={layer}
       footer={
         <>
           <button

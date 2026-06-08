@@ -2,7 +2,7 @@ import { create } from "zustand";
 import type { ProjectionLevel } from "@/api/types";
 
 export type AppMode = "design" | "manufacturing";
-export type LibraryTab = "connector" | "pcb" | "enclosure";
+export type LibraryTab = "connector" | "node" | "enclosure";
 
 interface AppState {
   mode: AppMode;
@@ -15,7 +15,10 @@ interface AppState {
   wireMode: boolean;
   pairingPinAId: string | null;
   showNetManager: boolean;
+  showConnectionTable: boolean;
+  connectionScope: { kind: "all" | "vehicle" | "enclosure" | "node" | "connector"; id: string | null };
   showLibraryManager: boolean;
+  showPinNameLibrary: boolean;
   showHelpModal: boolean;
   libraryTab: LibraryTab;
   searchQuery: string;
@@ -27,7 +30,11 @@ interface AppState {
   setWireMode: (enabled: boolean) => void;
   setPairingPinA: (pinId: string | null) => void;
   setShowNetManager: (show: boolean) => void;
+  setShowConnectionTable: (show: boolean) => void;
+  openConnectionTable: (scope?: AppState["connectionScope"]) => void;
+  setConnectionScope: (scope: AppState["connectionScope"]) => void;
   setShowLibraryManager: (show: boolean) => void;
+  setShowPinNameLibrary: (show: boolean) => void;
   setShowHelpModal: (show: boolean) => void;
   setLibraryTab: (tab: LibraryTab) => void;
   clearPairing: () => void;
@@ -45,7 +52,10 @@ export const useAppStore = create<AppState>((set) => ({
   wireMode: false,
   pairingPinAId: null,
   showNetManager: false,
+  showConnectionTable: false,
+  connectionScope: { kind: "all", id: null },
   showLibraryManager: false,
+  showPinNameLibrary: false,
   showHelpModal: false,
   libraryTab: "connector",
   searchQuery: "",
@@ -66,7 +76,12 @@ export const useAppStore = create<AppState>((set) => ({
     set(wireMode ? { wireMode } : { wireMode: false, pairingPinAId: null }),
   setPairingPinA: (pairingPinAId) => set({ pairingPinAId }),
   setShowNetManager: (showNetManager) => set({ showNetManager }),
+  setShowConnectionTable: (showConnectionTable) => set({ showConnectionTable }),
+  openConnectionTable: (scope) =>
+    set(scope ? { showConnectionTable: true, connectionScope: scope } : { showConnectionTable: true }),
+  setConnectionScope: (connectionScope) => set({ connectionScope }),
   setShowLibraryManager: (showLibraryManager) => set({ showLibraryManager }),
+  setShowPinNameLibrary: (showPinNameLibrary) => set({ showPinNameLibrary }),
   setShowHelpModal: (showHelpModal) => set({ showHelpModal }),
   setLibraryTab: (libraryTab) => set({ libraryTab }),
   clearPairing: () => set({ pairingPinAId: null }),

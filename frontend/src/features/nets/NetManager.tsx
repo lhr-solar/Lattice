@@ -88,7 +88,7 @@ export function NetManager() {
   if (!showNetManager) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 panel-fade-in">
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4 panel-fade-in">
       <div className="flex h-[min(640px,90vh)] w-full max-w-4xl flex-col overflow-hidden rounded-lg border border-tesla-border bg-tesla-surface shadow-2xl">
         <header className="flex items-center justify-between border-b border-tesla-border px-4 py-3">
           <div>

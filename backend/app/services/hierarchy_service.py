@@ -46,7 +46,7 @@ class HierarchyService:
             for pcb, pcb_tmpl in pcb_result.all():
                 pcb_node = HierarchyNode(
                     id=pcb.id,
-                    kind="pcb",
+                    kind="node",
                     label=resolve_display_name(
                         template_name=pcb_tmpl.name,
                         nickname=pcb.nickname,

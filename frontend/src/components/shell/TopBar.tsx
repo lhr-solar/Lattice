@@ -1,4 +1,3 @@
-import clsx from "clsx";
 import { useSessionStore } from "@/stores/sessionStore";
 import { useAppStore } from "@/stores/appStore";
 
@@ -7,9 +6,6 @@ export function TopBar() {
   const clearSession = useSessionStore((s) => s.clearSession);
   const searchQuery = useAppStore((s) => s.searchQuery);
   const setSearchQuery = useAppStore((s) => s.setSearchQuery);
-  const wireMode = useAppStore((s) => s.wireMode);
-  const setWireMode = useAppStore((s) => s.setWireMode);
-  const setShowNetManager = useAppStore((s) => s.setShowNetManager);
   const setShowLibraryManager = useAppStore((s) => s.setShowLibraryManager);
   const setShowHelpModal = useAppStore((s) => s.setShowHelpModal);
   const setLibraryTab = useAppStore((s) => s.setLibraryTab);
@@ -22,25 +18,6 @@ export function TopBar() {
       </span>
       {mode === "design" && (
         <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => setWireMode(!wireMode)}
-            className={clsx(
-              "rounded-md px-2 py-1 text-xs transition",
-              wireMode
-                ? "bg-tesla-accent text-white"
-                : "border border-tesla-border text-tesla-muted hover:text-tesla-text",
-            )}
-          >
-            {wireMode ? "Wiring active" : "Wire"}
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowNetManager(true)}
-            className="rounded-md border border-tesla-border px-2 py-1 text-xs text-tesla-muted transition hover:border-tesla-accent hover:text-tesla-text"
-          >
-            Nets
-          </button>
           <button
             type="button"
             onClick={() => {

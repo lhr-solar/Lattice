@@ -73,3 +73,33 @@ async def update_pin(
         pin_id,
         payload,
     )
+
+
+@router.delete("/enclosures/{enclosure_instance_id}", status_code=204)
+async def delete_enclosure(
+    vehicle_id: UUID,
+    revision_id: UUID,
+    enclosure_instance_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    await InstanceService(db).delete_enclosure(vehicle_id, revision_id, enclosure_instance_id)
+
+
+@router.delete("/pcbs/{pcb_instance_id}", status_code=204)
+async def delete_pcb(
+    vehicle_id: UUID,
+    revision_id: UUID,
+    pcb_instance_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    await InstanceService(db).delete_pcb(vehicle_id, revision_id, pcb_instance_id)
+
+
+@router.delete("/connectors/{connector_instance_id}", status_code=204)
+async def delete_connector(
+    vehicle_id: UUID,
+    revision_id: UUID,
+    connector_instance_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    await InstanceService(db).delete_connector(vehicle_id, revision_id, connector_instance_id)

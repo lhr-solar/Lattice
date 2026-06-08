@@ -10,6 +10,8 @@ from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
 
+from migration_helpers import column_exists
+
 
 revision: str = "004"
 down_revision: Union[str, None] = "003"
@@ -18,7 +20,8 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column("connector_templates", sa.Column("wire_gauge_awg", sa.Numeric(4, 1), nullable=True))
+    if not column_exists("connector_templates", "wire_gauge_awg"):
+        op.add_column("connector_templates", sa.Column("wire_gauge_awg", sa.Numeric(4, 1), nullable=True))
 
 
 def downgrade() -> None:

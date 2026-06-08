@@ -100,3 +100,24 @@ export function updateConnectorPin(
     { method: "PATCH", body: JSON.stringify(body) },
   );
 }
+
+export function deleteEnclosure(vehicleId: string, revisionId: string, enclosureInstanceId: string) {
+  return apiFetch<void>(
+    `/vehicles/${vehicleId}/revisions/${revisionId}/instances/enclosures/${enclosureInstanceId}`,
+    { method: "DELETE" },
+  );
+}
+
+export function deletePcb(vehicleId: string, revisionId: string, pcbInstanceId: string) {
+  return apiFetch<void>(
+    `/vehicles/${vehicleId}/revisions/${revisionId}/instances/pcbs/${pcbInstanceId}`,
+    { method: "DELETE" },
+  );
+}
+
+export function deleteConnector(vehicleId: string, revisionId: string, connectorInstanceId: string) {
+  return apiFetch<void>(
+    `/vehicles/${vehicleId}/revisions/${revisionId}/instances/connectors/${connectorInstanceId}`,
+    { method: "DELETE" },
+  );
+}

@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.db.models.catalog import ConnectorTemplate
@@ -13,7 +13,7 @@ from app.infrastructure.db.models.instances import (
 from app.infrastructure.db.models.layout import NodeLayout
 from app.infrastructure.db.models.templates import EnclosureTemplate, PcbTemplate
 from app.infrastructure.db.models.shorts import ConnectorInstancePinShort
-from app.infrastructure.db.models.topology import ConnectionEdge, Signal
+from app.infrastructure.db.models.topology import ConnectionEdge, PinSignalAssignment, Signal
 from app.core.display import resolve_display_name
 from app.schemas.projections import (
     BusGroupDto,
@@ -41,6 +41,8 @@ class ProjectionService:
             return await self._vehicle_projection(revision_id, view_key, layouts)
         if level == "enclosure":
             return await self._enclosure_projection(revision_id, view_key, layouts, focus_id)
+        if level == "node":
+            return await self._node_projection(revision_id, view_key, layouts, focus_id)
         if level == "connector":
             return await self._connector_projection(revision_id, view_key, layouts, focus_id)
         return await self._pin_projection(revision_id, view_key, layouts, focus_id)
@@ -48,158 +50,58 @@ class ProjectionService:
     async def _vehicle_projection(
         self, revision_id: UUID, view_key: str, layouts: dict[str, tuple[float, float]]
     ) -> DesignGraphProjectionDto:
-        enc_result = await self.db.execute(
-            select(EnclosureInstance, EnclosureTemplate)
-            .join(EnclosureTemplate, EnclosureInstance.enclosure_template_id == EnclosureTemplate.id)
-            .where(EnclosureInstance.revision_id == revision_id)
-        )
-        nodes: list[DesignNodeDto] = [
-            DesignNodeDto(
-                id="vehicle:root",
-                kind="vehicleRoot",
-                label="Vehicle",
-                position={"x": 40, "y": 40},
-                data={"container": True},
+        enclosure_rows = (
+            await self.db.execute(
+                select(EnclosureInstance, EnclosureTemplate)
+                .join(EnclosureTemplate, EnclosureInstance.enclosure_template_id == EnclosureTemplate.id)
+                .where(EnclosureInstance.revision_id == revision_id)
             )
-        ]
-        edge_dtos: list[DesignEdgeDto] = []
+        ).all()
+        top_node_rows = (
+            await self.db.execute(
+                select(PcbInstance, PcbTemplate)
+                .join(PcbTemplate, PcbInstance.pcb_template_id == PcbTemplate.id)
+                .where(PcbInstance.revision_id == revision_id, PcbInstance.enclosure_instance_id.is_(None))
+            )
+        ).all()
 
-        # Boundary nodes are grouped by connector so higher-level views remain readable.
-        pin_to_boundary_node: dict[UUID, str] = {}
-        enclosure_node_ids: dict[UUID, str] = {}
-
-        for i, (enc, tmpl) in enumerate(enc_result.all()):
-            enclosure_node_id = f"enclosure:{enc.id}"
-            enclosure_node_ids[enc.id] = enclosure_node_id
-            pos = layouts.get(enclosure_node_id)
-            nodes.append(
-                DesignNodeDto(
-                    id=enclosure_node_id,
-                    kind="enclosureContainer",
-                    label=resolve_display_name(
+        item_specs: list[dict] = []
+        for idx, (enc, tmpl) in enumerate(enclosure_rows):
+            item_specs.append(
+                {
+                    "item_id": f"enclosure:{enc.id}",
+                    "item_kind": "vehicleItem",
+                    "item_label": resolve_display_name(
                         template_name=tmpl.name,
                         nickname=enc.nickname,
                         use_template_name=enc.use_template_name,
                     ),
-                    parent_id="vehicle:root",
-                    position={"x": pos[0], "y": pos[1]} if pos else {"x": 80 + i * 460, "y": 120},
-                    data={"enclosureInstanceId": str(enc.id), "container": True},
-                )
+                    "item_position": layouts.get(f"enclosure:{enc.id}") or (90 + idx * 520, 100),
+                    "connectors": await self._vehicle_level_connectors_for_enclosure(revision_id, enc.id),
+                }
             )
-
-            connector_rows = await self.db.execute(
-                select(ConnectorInstance, ConnectorTemplate).join(
-                    ConnectorTemplate, ConnectorInstance.connector_template_id == ConnectorTemplate.id
-                ).where(
-                    ConnectorInstance.revision_id == revision_id,
-                    ConnectorInstance.enclosure_instance_id == enc.id,
-                )
+        for idx, (node_inst, tmpl) in enumerate(top_node_rows):
+            item_specs.append(
+                {
+                    "item_id": f"node:{node_inst.id}",
+                    "item_kind": "vehicleItem",
+                    "item_label": resolve_display_name(
+                        template_name=tmpl.name,
+                        nickname=node_inst.nickname,
+                        use_template_name=node_inst.use_template_name,
+                    ),
+                    "item_position": layouts.get(f"node:{node_inst.id}") or (90 + idx * 520, 460),
+                    "connectors": await self._connectors_for_node(revision_id, node_inst.id),
+                }
             )
-            pcb_rows = await self.db.execute(
-                select(PcbInstance, PcbTemplate)
-                .join(PcbTemplate, PcbInstance.pcb_template_id == PcbTemplate.id)
-                .where(PcbInstance.revision_id == revision_id, PcbInstance.enclosure_instance_id == enc.id)
-            )
-
-            pcb_node_ids: dict[UUID, str] = {}
-            for pcb_idx, (pcb, pcb_tmpl) in enumerate(pcb_rows.all()):
-                pcb_node_id = f"pcb:{pcb.id}"
-                pcb_node_ids[pcb.id] = pcb_node_id
-                nodes.append(
-                    DesignNodeDto(
-                        id=pcb_node_id,
-                        kind="pcbContainer",
-                        label=resolve_display_name(
-                            template_name=pcb_tmpl.name,
-                            nickname=pcb.nickname,
-                            use_template_name=pcb.use_template_name,
-                        ),
-                        parent_id=enclosure_node_id,
-                        position={"x": 40, "y": 210 + pcb_idx * 190},
-                        data={"pcbInstanceId": str(pcb.id), "container": True},
-                    )
-                )
-
-            boundary_index = 0
-            internal_index_by_pcb: dict[UUID, int] = {}
-            for conn, conn_tmpl in connector_rows.all():
-                display = resolve_display_name(
-                    template_name=conn_tmpl.name,
-                    nickname=conn.nickname,
-                    use_template_name=conn.use_template_name,
-                )
-                if self._connector_visible_outside_pcb(conn, conn_tmpl):
-                    boundary_node_id = f"boundary-connector:{conn.id}"
-                    nodes.append(
-                        DesignNodeDto(
-                            id=boundary_node_id,
-                            kind="boundaryConnector",
-                            label=f"{display}",
-                            parent_id=enclosure_node_id,
-                            position={"x": 28 + (boundary_index % 3) * 140, "y": 62 + (boundary_index // 3) * 56},
-                            data={
-                                "connectorInstanceId": str(conn.id),
-                                "groupedBoundaryPins": True,
-                                "isPanelMount": conn.is_panel_mount,
-                            },
-                        )
-                    )
-                    boundary_index += 1
-                    pins_result = await self.db.execute(
-                        select(Pin.id).where(Pin.revision_id == revision_id, Pin.connector_instance_id == conn.id)
-                    )
-                    for pin_id in pins_result.scalars().all():
-                        pin_to_boundary_node[pin_id] = boundary_node_id
-
-                if conn.pcb_instance_id and conn.pcb_instance_id in pcb_node_ids:
-                    idx = internal_index_by_pcb.get(conn.pcb_instance_id, 0)
-                    internal_index_by_pcb[conn.pcb_instance_id] = idx + 1
-                    nodes.append(
-                        DesignNodeDto(
-                            id=f"connector:{conn.id}",
-                            kind="connector",
-                            label=display,
-                            parent_id=pcb_node_ids[conn.pcb_instance_id],
-                            position={"x": 28 + (idx % 3) * 140, "y": 46 + (idx // 3) * 56},
-                            data={"connectorInstanceId": str(conn.id), "internalToPcb": True},
-                        )
-                    )
-
-        edges_result = await self.db.execute(select(ConnectionEdge).where(ConnectionEdge.revision_id == revision_id))
-        seen_pairs: set[tuple[str, str]] = set()
-        for edge in edges_result.scalars().all():
-            src = pin_to_boundary_node.get(edge.pin_a_id)
-            tgt = pin_to_boundary_node.get(edge.pin_b_id)
-            if not src or not tgt or src == tgt:
-                continue
-            pair = tuple(sorted((src, tgt)))
-            if pair in seen_pairs:
-                continue
-            seen_pairs.add(pair)
-            harness_scope = (
-                edge.harness_scope.value
-                if edge.harness_scope is not None and hasattr(edge.harness_scope, "value")
-                else edge.harness_scope
-            )
-            edge_dtos.append(
-                DesignEdgeDto(
-                    id=str(edge.id),
-                    source=src,
-                    target=tgt,
-                    label=edge.wire_color or edge.signal_type,
-                    data={"edgeIds": [str(edge.id)], "harnessScope": harness_scope},
-                )
-            )
-
-        bus_groups = await self._bus_groups(revision_id)
-        return DesignGraphProjectionDto(
+        return await self._build_grouped_pin_projection(
             revision_id=revision_id,
             level="vehicle",
             view_key=view_key,
-            nodes=nodes,
-            edges=edge_dtos,
-            bus_groups=bus_groups,
-            meta={"nodeCount": len(nodes), "edgeCount": len(edge_dtos)},
+            item_specs=item_specs,
+            harness_scope=None,
+            enclosure_id_for_internal=None,
+            meta={},
         )
 
     async def _enclosure_projection(
@@ -218,141 +120,57 @@ class ProjectionService:
                 edges=[],
                 meta={"error": "focus_id required for enclosure level"},
             )
-
-        enclosure = await self.db.get(EnclosureInstance, enclosure_id)
-        if not enclosure:
-            return DesignGraphProjectionDto(
-                revision_id=revision_id, level="enclosure", view_key=view_key, nodes=[], edges=[]
+        node_rows = (
+            await self.db.execute(
+                select(PcbInstance, PcbTemplate)
+                .join(PcbTemplate, PcbInstance.pcb_template_id == PcbTemplate.id)
+                .where(
+                    PcbInstance.revision_id == revision_id,
+                    PcbInstance.enclosure_instance_id == enclosure_id,
+                )
             )
-        enc_tmpl = await self.db.get(EnclosureTemplate, enclosure.enclosure_template_id)
-        enclosure_node_id = f"enclosure:{enclosure_id}"
-        nodes: list[DesignNodeDto] = [
-            DesignNodeDto(
-                id=enclosure_node_id,
-                kind="enclosureContainer",
-                label=resolve_display_name(
-                    template_name=enc_tmpl.name if enc_tmpl else "Enclosure",
-                    nickname=enclosure.nickname,
-                    use_template_name=enclosure.use_template_name,
-                ),
-                position={"x": 80, "y": 60},
-                data={"enclosureInstanceId": str(enclosure_id), "container": True},
-            )
-        ]
-        pin_to_node: dict[UUID, str] = {}
+        ).all()
 
-        pcb_result = await self.db.execute(
-            select(PcbInstance, PcbTemplate)
-            .join(PcbTemplate, PcbInstance.pcb_template_id == PcbTemplate.id)
-            .where(PcbInstance.revision_id == revision_id, PcbInstance.enclosure_instance_id == enclosure_id)
+        item_specs: list[dict] = []
+        panel_connectors = await self._panel_connectors_for_enclosure(revision_id, enclosure_id)
+        item_specs.append(
+            {
+                "item_id": f"enclosure-panel:{enclosure_id}",
+                "item_kind": "enclosurePanelItem",
+                "item_label": "Panel / Pigtail",
+                "item_position": layouts.get(f"enclosure-panel:{enclosure_id}") or (90, 80),
+                "connectors": panel_connectors,
+            }
         )
-        pcb_node_ids: dict[UUID, str] = {}
-        for i, (pcb, tmpl) in enumerate(pcb_result.all()):
-            nid = f"pcb:{pcb.id}"
-            pcb_node_ids[pcb.id] = nid
-            pos = layouts.get(nid)
-            nodes.append(
-                DesignNodeDto(
-                    id=nid,
-                    kind="pcbContainer",
-                    label=resolve_display_name(
+        for idx, (node_inst, tmpl) in enumerate(node_rows):
+            node_key = f"node:{node_inst.id}"
+            # Exported pigtail connectors are represented in the Panel / Pigtail
+            # item above, so exclude them here to avoid duplicate pin port nodes.
+            node_connectors = [
+                (conn, ctmpl)
+                for conn, ctmpl in await self._connectors_for_node(revision_id, node_inst.id)
+                if conn.source_pcb_instance_id is None
+            ]
+            item_specs.append(
+                {
+                    "item_id": node_key,
+                    "item_kind": "nodeItem",
+                    "item_label": resolve_display_name(
                         template_name=tmpl.name,
-                        nickname=pcb.nickname,
-                        use_template_name=pcb.use_template_name,
+                        nickname=node_inst.nickname,
+                        use_template_name=node_inst.use_template_name,
                     ),
-                    parent_id=enclosure_node_id,
-                    position={"x": pos[0], "y": pos[1]} if pos else {"x": 36, "y": 220 + i * 200},
-                    data={"pcbInstanceId": str(pcb.id), "container": True},
-                )
+                    "item_position": layouts.get(node_key) or (90 + idx * 520, 360),
+                    "connectors": node_connectors,
+                }
             )
-
-        conn_result = await self.db.execute(
-            select(ConnectorInstance, ConnectorTemplate)
-            .join(ConnectorTemplate, ConnectorInstance.connector_template_id == ConnectorTemplate.id)
-            .where(
-                ConnectorInstance.revision_id == revision_id,
-                ConnectorInstance.enclosure_instance_id == enclosure_id,
-            )
-        )
-        boundary_index = 0
-        connector_index_by_pcb: dict[UUID, int] = {}
-        for conn, tmpl in conn_result.all():
-            display = resolve_display_name(
-                template_name=tmpl.name,
-                nickname=conn.nickname,
-                use_template_name=conn.use_template_name,
-            )
-            if self._connector_visible_outside_pcb(conn, tmpl):
-                boundary_nid = f"boundary-connector:{conn.id}"
-                nodes.append(
-                    DesignNodeDto(
-                        id=boundary_nid,
-                        kind="boundaryConnector",
-                        label=display,
-                        parent_id=enclosure_node_id,
-                        position={"x": 24 + (boundary_index % 4) * 130, "y": 72 + (boundary_index // 4) * 56},
-                        data={
-                            "connectorInstanceId": str(conn.id),
-                            "groupedBoundaryPins": True,
-                            "isPanelMount": conn.is_panel_mount,
-                        },
-                    )
-                )
-                boundary_index += 1
-                pins_result = await self.db.execute(
-                    select(Pin.id).where(Pin.revision_id == revision_id, Pin.connector_instance_id == conn.id)
-                )
-                for pin_id in pins_result.scalars().all():
-                    pin_to_node[pin_id] = boundary_nid
-
-            if conn.pcb_instance_id and conn.pcb_instance_id in pcb_node_ids:
-                idx = connector_index_by_pcb.get(conn.pcb_instance_id, 0)
-                connector_index_by_pcb[conn.pcb_instance_id] = idx + 1
-                nid = f"connector:{conn.id}"
-                pos = layouts.get(nid)
-                nodes.append(
-                    DesignNodeDto(
-                        id=nid,
-                        kind="connector",
-                        label=display,
-                        parent_id=pcb_node_ids[conn.pcb_instance_id],
-                        position={"x": pos[0], "y": pos[1]} if pos else {"x": 24 + (idx % 3) * 130, "y": 54 + (idx // 3) * 60},
-                        data={"connectorInstanceId": str(conn.id), "internalToPcb": True},
-                    )
-                )
-
-        for pin_id, connector_node in (await self._pin_node_map(revision_id, enclosure_id)).items():
-            pin_to_node.setdefault(pin_id, connector_node)
-
-        edges_result = await self.db.execute(
-            select(ConnectionEdge).where(
-                ConnectionEdge.revision_id == revision_id,
-                ConnectionEdge.enclosure_a_id == enclosure_id,
-                ConnectionEdge.enclosure_b_id == enclosure_id,
-            )
-        )
-        edge_dtos = []
-        for edge in edges_result.scalars().all():
-            src = pin_to_node.get(edge.pin_a_id)
-            tgt = pin_to_node.get(edge.pin_b_id)
-            if src and tgt and src != tgt:
-                edge_dtos.append(
-                    DesignEdgeDto(
-                        id=str(edge.id),
-                        source=src,
-                        target=tgt,
-                        label=edge.wire_color,
-                        data={"pinA": str(edge.pin_a_id), "pinB": str(edge.pin_b_id)},
-                    )
-                )
-
-        return DesignGraphProjectionDto(
+        return await self._build_grouped_pin_projection(
             revision_id=revision_id,
             level="enclosure",
             view_key=view_key,
-            nodes=nodes,
-            edges=edge_dtos,
-            bus_groups=[],
+            item_specs=item_specs,
+            harness_scope="internal",
+            enclosure_id_for_internal=enclosure_id,
             meta={"enclosureId": str(enclosure_id)},
         )
 
@@ -368,88 +186,42 @@ class ProjectionService:
                 revision_id=revision_id, level="connector", view_key=view_key, nodes=[], edges=[]
             )
 
-        pins_result = await self.db.execute(
-            select(Pin).where(Pin.revision_id == revision_id, Pin.connector_instance_id == connector_id)
-        )
+        pins = (
+            await self.db.execute(
+                select(Pin)
+                .where(Pin.revision_id == revision_id, Pin.connector_instance_id == connector_id)
+                .order_by(Pin.pin_number)
+            )
+        ).scalars().all()
+        pin_ids = [pin.id for pin in pins]
+        net_by_pin = await self._pin_net_names(revision_id, pin_ids)
         nodes = []
-        pin_ids: dict[UUID, str] = {}
-        for i, pin in enumerate(pins_result.scalars().all()):
-            nid = f"pin:{pin.id}"
-            pin_ids[pin.id] = nid
+        for i, pin in enumerate(pins):
+            nid = f"pin-box:{pin.id}"
             pos = layouts.get(nid)
-            is_default_name = pin.name.strip() == str(pin.pin_number)
+            net_name = net_by_pin.get(pin.id, "UNASSIGNED")
             nodes.append(
                 DesignNodeDto(
                     id=nid,
-                    kind="pin",
-                    label=f"{pin.pin_number}: {pin.name}",
-                    position={"x": pos[0], "y": pos[1]} if pos else {"x": 120, "y": 60 + i * 50},
+                    kind="connectorPinBox",
+                    label=f"{pin.pin_number} · {net_name}",
+                    position={"x": pos[0], "y": pos[1]} if pos else {"x": 120, "y": 80 + i * 72},
                     data={
                         "pinId": str(pin.id),
                         "pinNumber": pin.pin_number,
                         "pinName": pin.name,
-                        "isDefaultName": is_default_name,
+                        "netName": net_name,
                     },
                 )
             )
 
-        if not pin_ids:
-            return DesignGraphProjectionDto(
-                revision_id=revision_id, level="connector", view_key=view_key, nodes=[], edges=[]
-            )
-
-        pin_id_list = list(pin_ids.keys())
-        edges_result = await self.db.execute(
-            select(ConnectionEdge).where(
-                ConnectionEdge.revision_id == revision_id,
-                or_(
-                    ConnectionEdge.pin_a_id.in_(pin_id_list),
-                    ConnectionEdge.pin_b_id.in_(pin_id_list),
-                ),
-            )
-        )
-        edge_dtos = []
-        for edge in edges_result.scalars().all():
-            src = pin_ids.get(edge.pin_a_id)
-            tgt = pin_ids.get(edge.pin_b_id)
-            if src and tgt:
-                edge_dtos.append(
-                    DesignEdgeDto(
-                        id=str(edge.id),
-                        source=src,
-                        target=tgt,
-                        label=edge.wire_color,
-                        kind="connection",
-                    )
-                )
-
-        shorts_result = await self.db.execute(
-            select(ConnectorInstancePinShort).where(
-                ConnectorInstancePinShort.revision_id == revision_id,
-                ConnectorInstancePinShort.connector_instance_id == connector_id,
-            )
-        )
-        for short in shorts_result.scalars().all():
-            src = pin_ids.get(short.pin_a_id)
-            tgt = pin_ids.get(short.pin_b_id)
-            if src and tgt:
-                edge_dtos.append(
-                    DesignEdgeDto(
-                        id=f"short:{short.id}",
-                        source=src,
-                        target=tgt,
-                        kind="short",
-                        label="short",
-                        data={"short": True},
-                    )
-                )
-
+        # Connector view is for pin/net assignment only.
         return DesignGraphProjectionDto(
             revision_id=revision_id,
             level="connector",
             view_key=view_key,
             nodes=nodes,
-            edges=edge_dtos,
+            edges=[],
             meta={"connectorId": str(connector_id)},
         )
 
@@ -480,49 +252,308 @@ class ProjectionService:
                 data={"pinId": str(pin.id)},
             )
         ]
-        edges_result = await self.db.execute(
-            select(ConnectionEdge).where(
-                ConnectionEdge.revision_id == revision_id,
-                (ConnectionEdge.pin_a_id == pin_id) | (ConnectionEdge.pin_b_id == pin_id),
-            )
+        return DesignGraphProjectionDto(
+            revision_id=revision_id, level="pin", view_key=view_key, nodes=nodes, edges=[], meta={}
         )
-        edge_dtos = []
-        for i, edge in enumerate(edges_result.scalars().all()):
-            other = edge.pin_b_id if edge.pin_a_id == pin_id else edge.pin_a_id
-            other_nid = f"pin:{other}"
-            edge_dtos.append(
-                DesignEdgeDto(id=str(edge.id), source=nid, target=other_nid, label=edge.wire_color)
+
+    async def _node_projection(
+        self,
+        revision_id: UUID,
+        view_key: str,
+        layouts: dict[str, tuple[float, float]],
+        node_id: UUID | None,
+    ) -> DesignGraphProjectionDto:
+        if not node_id:
+            return DesignGraphProjectionDto(
+                revision_id=revision_id,
+                level="node",
+                view_key=view_key,
+                nodes=[],
+                edges=[],
+                meta={"error": "focus_id required for node level"},
             )
+        node = await self.db.get(PcbInstance, node_id)
+        if not node or node.revision_id != revision_id:
+            return DesignGraphProjectionDto(
+                revision_id=revision_id,
+                level="node",
+                view_key=view_key,
+                nodes=[],
+                edges=[],
+                meta={"error": "node not found"},
+            )
+        tmpl = await self.db.get(PcbTemplate, node.pcb_template_id)
+        connectors = await self._connectors_for_node(revision_id, node_id)
+        base = await self._build_grouped_pin_projection(
+            revision_id=revision_id,
+            level="node",
+            view_key=view_key,
+            item_specs=[
+                {
+                    "item_id": f"node:{node.id}",
+                    "item_kind": "nodeItem",
+                    "item_label": resolve_display_name(
+                        template_name=tmpl.name if tmpl else "?",
+                        nickname=node.nickname,
+                        use_template_name=node.use_template_name,
+                    ),
+                    "item_position": layouts.get(f"node:{node.id}") or (120, 120),
+                    "connectors": connectors,
+                }
+            ],
+            harness_scope=None,
+            enclosure_id_for_internal=None,
+            meta={"nodeId": str(node_id)},
+        )
+        displayed_pin_ids = {
+            UUID(str(n.data.get("pinId")))
+            for n in base.nodes
+            if n.kind == "pinPort" and n.data.get("pinId") is not None
+        }
+        short_edges = await self._short_edges_for_displayed_pins(revision_id, displayed_pin_ids)
+        return DesignGraphProjectionDto(
+            revision_id=base.revision_id,
+            level=base.level,
+            view_key=base.view_key,
+            nodes=base.nodes,
+            edges=short_edges,
+            bus_groups=base.bus_groups,
+            meta=base.meta,
+        )
+
+    async def _build_grouped_pin_projection(
+        self,
+        *,
+        revision_id: UUID,
+        level: ProjectionLevel,
+        view_key: str,
+        item_specs: list[dict],
+        harness_scope: str | None,
+        enclosure_id_for_internal: UUID | None,
+        meta: dict,
+    ) -> DesignGraphProjectionDto:
+        nodes: list[DesignNodeDto] = []
+        edges: list[DesignEdgeDto] = []
+        pin_to_port_node: dict[UUID, str] = {}
+
+        all_pin_ids: list[UUID] = []
+        for item in item_specs:
+            for conn, _tmpl in item["connectors"]:
+                pins = await self._pins_for_connector(revision_id, conn.id)
+                all_pin_ids.extend([pin.id for pin in pins])
+        net_by_pin = await self._pin_net_names(revision_id, all_pin_ids)
+
+        for item in item_specs:
+            item_id = item["item_id"]
+            ix, iy = item["item_position"]
             nodes.append(
                 DesignNodeDto(
-                    id=other_nid,
-                    kind="pin",
-                    label=f"peer",
-                    position={"x": 360, "y": 120 + i * 60},
-                    data={"pinId": str(other)},
+                    id=item_id,
+                    kind=item["item_kind"],
+                    label=item["item_label"],
+                    position={"x": ix, "y": iy},
+                    data={"container": True},
                 )
             )
+            group_index = 0
+            for conn, tmpl in item["connectors"]:
+                connector_label = resolve_display_name(
+                    template_name=tmpl.name,
+                    nickname=conn.nickname,
+                    use_template_name=conn.use_template_name,
+                )
+                group_id = f"group:{item_id}:{conn.id}"
+                group_y = 50 + group_index * 94
+                nodes.append(
+                    DesignNodeDto(
+                        id=group_id,
+                        kind="connectorGroup",
+                        label=connector_label,
+                        parent_id=item_id,
+                        position={"x": 18, "y": group_y},
+                        data={
+                            "connectorInstanceId": str(conn.id),
+                            "isPigtail": bool(conn.source_pcb_instance_id),
+                            "isPanelMount": conn.is_panel_mount,
+                            "groupBorder": "dotted" if conn.source_pcb_instance_id else "solid",
+                        },
+                    )
+                )
+                pins = await self._pins_for_connector(revision_id, conn.id)
+                for pin_idx, pin in enumerate(pins):
+                    port_id = f"port:{pin.id}"
+                    net_name = net_by_pin.get(pin.id, "UNASSIGNED")
+                    nodes.append(
+                        DesignNodeDto(
+                            id=port_id,
+                            kind="pinPort",
+                            label=f"{pin.pin_number} · {net_name}",
+                            parent_id=group_id,
+                            position={"x": 218, "y": 16 + pin_idx * 20},
+                            data={
+                                "pinId": str(pin.id),
+                                "pinNumber": pin.pin_number,
+                                "pinName": pin.name,
+                                "netName": net_name,
+                                "connectorInstanceId": str(conn.id),
+                            },
+                        )
+                    )
+                    pin_to_port_node[pin.id] = port_id
+                group_index += 1
+
+        edges_result = await self.db.execute(select(ConnectionEdge).where(ConnectionEdge.revision_id == revision_id))
+        seen_pairs: set[tuple[str, str]] = set()
+        for edge in edges_result.scalars().all():
+            if harness_scope is not None:
+                scope = edge.harness_scope.value if hasattr(edge.harness_scope, "value") else edge.harness_scope
+                if scope != harness_scope:
+                    continue
+            if enclosure_id_for_internal is not None and (
+                edge.enclosure_a_id != enclosure_id_for_internal
+                or edge.enclosure_b_id != enclosure_id_for_internal
+            ):
+                continue
+            src = pin_to_port_node.get(edge.pin_a_id)
+            tgt = pin_to_port_node.get(edge.pin_b_id)
+            if not src or not tgt or src == tgt:
+                continue
+            pair = tuple(sorted((src, tgt)))
+            if pair in seen_pairs:
+                continue
+            seen_pairs.add(pair)
+            edges.append(
+                DesignEdgeDto(
+                    id=str(edge.id),
+                    source=src,
+                    target=tgt,
+                    label=edge.wire_color or edge.signal_type,
+                    data={"edgeIds": [str(edge.id)]},
+                )
+            )
+
         return DesignGraphProjectionDto(
-            revision_id=revision_id, level="pin", view_key=view_key, nodes=nodes, edges=edge_dtos, meta={}
+            revision_id=revision_id,
+            level=level,
+            view_key=view_key,
+            nodes=nodes,
+            edges=edges,
+            bus_groups=await self._bus_groups(revision_id),
+            meta=meta | {"nodeCount": len(nodes), "edgeCount": len(edges)},
         )
 
-    async def _pin_node_map(self, revision_id: UUID, enclosure_id: UUID) -> dict[UUID, str]:
+    async def _vehicle_level_connectors_for_enclosure(
+        self, revision_id: UUID, enclosure_id: UUID
+    ) -> list[tuple[ConnectorInstance, ConnectorTemplate]]:
+        rows = (
+            await self.db.execute(
+                select(ConnectorInstance, ConnectorTemplate)
+                .join(ConnectorTemplate, ConnectorInstance.connector_template_id == ConnectorTemplate.id)
+                .where(
+                    ConnectorInstance.revision_id == revision_id,
+                    ConnectorInstance.enclosure_instance_id == enclosure_id,
+                )
+            )
+        ).all()
+        return [
+            (conn, tmpl)
+            for conn, tmpl in rows
+            if conn.pcb_instance_id is None or conn.source_pcb_instance_id is not None
+        ]
+
+    async def _panel_connectors_for_enclosure(
+        self, revision_id: UUID, enclosure_id: UUID
+    ) -> list[tuple[ConnectorInstance, ConnectorTemplate]]:
+        rows = (
+            await self.db.execute(
+                select(ConnectorInstance, ConnectorTemplate)
+                .join(ConnectorTemplate, ConnectorInstance.connector_template_id == ConnectorTemplate.id)
+                .where(
+                    ConnectorInstance.revision_id == revision_id,
+                    ConnectorInstance.enclosure_instance_id == enclosure_id,
+                )
+            )
+        ).all()
+        return [
+            (conn, tmpl)
+            for conn, tmpl in rows
+            if conn.is_panel_mount or conn.source_pcb_instance_id is not None
+        ]
+
+    async def _connectors_for_node(
+        self, revision_id: UUID, node_id: UUID
+    ) -> list[tuple[ConnectorInstance, ConnectorTemplate]]:
+        return (
+            await self.db.execute(
+                select(ConnectorInstance, ConnectorTemplate)
+                .join(ConnectorTemplate, ConnectorInstance.connector_template_id == ConnectorTemplate.id)
+                .where(
+                    ConnectorInstance.revision_id == revision_id,
+                    ConnectorInstance.pcb_instance_id == node_id,
+                )
+            )
+        ).all()
+
+    async def _pins_for_connector(self, revision_id: UUID, connector_id: UUID) -> list[Pin]:
+        return (
+            await self.db.execute(
+                select(Pin)
+                .where(Pin.revision_id == revision_id, Pin.connector_instance_id == connector_id)
+                .order_by(Pin.pin_number)
+            )
+        ).scalars().all()
+
+    async def _pin_net_names(self, revision_id: UUID, pin_ids: list[UUID]) -> dict[UUID, str]:
+        if not pin_ids:
+            return {}
+        rows = (
+            await self.db.execute(
+                select(PinSignalAssignment.pin_id, Signal.name)
+                .join(Signal, PinSignalAssignment.signal_id == Signal.id)
+                .where(
+                    PinSignalAssignment.revision_id == revision_id,
+                    PinSignalAssignment.assignment_role == "primary",
+                    PinSignalAssignment.pin_id.in_(pin_ids),
+                )
+            )
+        ).all()
         mapping: dict[UUID, str] = {}
-        pins = await self.db.execute(
-            select(Pin, ConnectorInstance, ConnectorTemplate)
-            .join(ConnectorInstance, Pin.connector_instance_id == ConnectorInstance.id)
-            .join(ConnectorTemplate, ConnectorInstance.connector_template_id == ConnectorTemplate.id)
-            .where(Pin.revision_id == revision_id, ConnectorInstance.enclosure_instance_id == enclosure_id)
-        )
-        for pin, conn, tmpl in pins.all():
-            mapping[pin.id] = f"connector:{conn.id}"
+        for pin_id, net_name in rows:
+            mapping[pin_id] = net_name
         return mapping
 
-    @staticmethod
-    def _connector_visible_outside_pcb(conn: ConnectorInstance, tmpl: ConnectorTemplate) -> bool:
-        _ = tmpl
-        # Boundary population is driven only by panel-mount connectors.
-        return conn.is_panel_mount
+    async def _short_edges_for_displayed_pins(
+        self, revision_id: UUID, pin_ids: set[UUID]
+    ) -> list[DesignEdgeDto]:
+        if not pin_ids:
+            return []
+        conn_rows = (await self.db.execute(select(Pin.connector_instance_id).where(Pin.id.in_(list(pin_ids))))).all()
+        connector_ids = {row[0] for row in conn_rows if row[0] is not None}
+        if not connector_ids:
+            return []
+        shorts = (
+            await self.db.execute(
+                select(ConnectorInstancePinShort).where(
+                    ConnectorInstancePinShort.revision_id == revision_id,
+                    ConnectorInstancePinShort.connector_instance_id.in_(list(connector_ids)),
+                )
+            )
+        ).scalars().all()
+        edge_dtos: list[DesignEdgeDto] = []
+        for short in shorts:
+            if short.pin_a_id not in pin_ids or short.pin_b_id not in pin_ids:
+                continue
+            edge_dtos.append(
+                DesignEdgeDto(
+                    id=f"short:{short.id}",
+                    source=f"port:{short.pin_a_id}",
+                    target=f"port:{short.pin_b_id}",
+                    kind="short",
+                    label="no-harness short",
+                    data={"short": True},
+                )
+            )
+        return edge_dtos
 
     async def _bus_groups(self, revision_id: UUID) -> list[BusGroupDto]:
         result = await self.db.execute(

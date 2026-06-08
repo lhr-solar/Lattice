@@ -2,7 +2,7 @@ from datetime import datetime
 from uuid import UUID
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.display import resolve_display_name
@@ -15,12 +15,20 @@ from app.infrastructure.db.models.instances import (
     PcbInstance,
     Pin,
 )
+from app.infrastructure.db.models.layout import NodeLayout
+from app.infrastructure.db.models.manufacturing import HarnessGroup, HarnessGroupEdge
 from app.infrastructure.db.models.templates import (
     EnclosureTemplate,
     EnclosureTemplatePcbSlot,
     EnclosureTemplatePanelSlot,
     PcbTemplate,
     PcbTemplateConnectorSlot,
+)
+from app.infrastructure.db.models.topology import (
+    ConnectionEdge,
+    PinSignalAssignment,
+    Signal,
+    SpliceConnection,
 )
 from app.schemas.instances import (
     ConnectorInstanceCreate,
@@ -206,11 +214,6 @@ class InstanceService:
                 detail="Panel mount connectors cannot specify inline gender",
             )
         inline_gender = payload.inline_gender
-        if template.is_inline_template and inline_gender is None:
-            raise HTTPException(
-                status_code=400,
-                detail="Inline connector templates require inline gender",
-            )
 
         now = utc_now()
         instance = ConnectorInstance(
@@ -312,6 +315,145 @@ class InstanceService:
             pin_number=pin.pin_number,
             name=pin.name,
             role=pin.role,
+        )
+
+    async def delete_connector(
+        self, vehicle_id: UUID, revision_id: UUID, connector_instance_id: UUID
+    ) -> None:
+        await ensure_mutable_revision(self.db, revision_id, vehicle_id)
+        conn = await self.db.get(ConnectorInstance, connector_instance_id)
+        if not conn or conn.revision_id != revision_id or conn.vehicle_id != vehicle_id:
+            raise HTTPException(status_code=404, detail="Connector instance not found")
+
+        pin_ids = await self._pin_ids_for_connectors([connector_instance_id])
+        await self._cleanup_pins_topology(revision_id, pin_ids)
+        await self._delete_node_layouts(revision_id, [connector_instance_id])
+        await self.db.delete(conn)
+        await self.db.flush()
+        await self._prune_orphan_signals(revision_id)
+
+    async def delete_pcb(self, vehicle_id: UUID, revision_id: UUID, pcb_instance_id: UUID) -> None:
+        await ensure_mutable_revision(self.db, revision_id, vehicle_id)
+        pcb = await self.db.get(PcbInstance, pcb_instance_id)
+        if not pcb or pcb.revision_id != revision_id or pcb.vehicle_id != vehicle_id:
+            raise HTTPException(status_code=404, detail="PCB instance not found")
+
+        connector_ids = await self._connector_ids_for_pcb(pcb_instance_id)
+        pin_ids = await self._pin_ids_for_connectors(connector_ids)
+        await self._cleanup_pins_topology(revision_id, pin_ids)
+        await self._delete_node_layouts(revision_id, [pcb_instance_id, *connector_ids])
+        await self.db.delete(pcb)
+        await self.db.flush()
+        await self._prune_orphan_signals(revision_id)
+
+    async def delete_enclosure(
+        self, vehicle_id: UUID, revision_id: UUID, enclosure_instance_id: UUID
+    ) -> None:
+        await ensure_mutable_revision(self.db, revision_id, vehicle_id)
+        enc = await self.db.get(EnclosureInstance, enclosure_instance_id)
+        if not enc or enc.revision_id != revision_id or enc.vehicle_id != vehicle_id:
+            raise HTTPException(status_code=404, detail="Enclosure instance not found")
+
+        pcb_ids = await self._pcb_ids_for_enclosure(enclosure_instance_id)
+        connector_ids = await self._connector_ids_for_enclosure(enclosure_instance_id)
+        pin_ids = await self._pin_ids_for_connectors(connector_ids)
+        await self._cleanup_pins_topology(revision_id, pin_ids)
+        await self._delete_node_layouts(
+            revision_id, [enclosure_instance_id, *pcb_ids, *connector_ids]
+        )
+        await self.db.execute(
+            update(HarnessGroup)
+            .where(HarnessGroup.enclosure_instance_id == enclosure_instance_id)
+            .values(enclosure_instance_id=None)
+        )
+        for pcb_id in pcb_ids:
+            pcb = await self.db.get(PcbInstance, pcb_id)
+            if pcb:
+                await self.db.delete(pcb)
+        await self.db.delete(enc)
+        await self.db.flush()
+        await self._prune_orphan_signals(revision_id)
+
+    async def _pin_ids_for_connectors(self, connector_ids: list[UUID]) -> list[UUID]:
+        if not connector_ids:
+            return []
+        result = await self.db.execute(
+            select(Pin.id).where(Pin.connector_instance_id.in_(connector_ids))
+        )
+        return list(result.scalars().all())
+
+    async def _connector_ids_for_pcb(self, pcb_instance_id: UUID) -> list[UUID]:
+        result = await self.db.execute(
+            select(ConnectorInstance.id).where(
+                or_(
+                    ConnectorInstance.pcb_instance_id == pcb_instance_id,
+                    ConnectorInstance.source_pcb_instance_id == pcb_instance_id,
+                )
+            )
+        )
+        return list(result.scalars().all())
+
+    async def _connector_ids_for_enclosure(self, enclosure_instance_id: UUID) -> list[UUID]:
+        pcb_ids = await self._pcb_ids_for_enclosure(enclosure_instance_id)
+        clauses = [ConnectorInstance.enclosure_instance_id == enclosure_instance_id]
+        if pcb_ids:
+            clauses.append(ConnectorInstance.pcb_instance_id.in_(pcb_ids))
+        result = await self.db.execute(select(ConnectorInstance.id).where(or_(*clauses)))
+        return list(result.scalars().all())
+
+    async def _cleanup_pins_topology(self, revision_id: UUID, pin_ids: list[UUID]) -> None:
+        if not pin_ids:
+            return
+        edge_ids = select(ConnectionEdge.id).where(
+            ConnectionEdge.revision_id == revision_id,
+            or_(ConnectionEdge.pin_a_id.in_(pin_ids), ConnectionEdge.pin_b_id.in_(pin_ids)),
+        )
+        await self.db.execute(
+            delete(HarnessGroupEdge).where(HarnessGroupEdge.connection_edge_id.in_(edge_ids))
+        )
+        await self.db.execute(
+            delete(ConnectionEdge).where(
+                ConnectionEdge.revision_id == revision_id,
+                or_(ConnectionEdge.pin_a_id.in_(pin_ids), ConnectionEdge.pin_b_id.in_(pin_ids)),
+            )
+        )
+        await self.db.execute(
+            delete(SpliceConnection).where(
+                SpliceConnection.revision_id == revision_id,
+                SpliceConnection.pin_id.in_(pin_ids),
+            )
+        )
+        await self.db.execute(
+            delete(PinSignalAssignment).where(
+                PinSignalAssignment.revision_id == revision_id,
+                PinSignalAssignment.pin_id.in_(pin_ids),
+            )
+        )
+
+    async def _delete_node_layouts(self, revision_id: UUID, entity_ids: list[UUID]) -> None:
+        if not entity_ids:
+            return
+        await self.db.execute(
+            delete(NodeLayout).where(
+                NodeLayout.revision_id == revision_id,
+                NodeLayout.entity_id.in_(entity_ids),
+            )
+        )
+
+    async def _prune_orphan_signals(self, revision_id: UUID) -> None:
+        assigned = (
+            select(PinSignalAssignment.signal_id)
+            .where(
+                PinSignalAssignment.revision_id == revision_id,
+                PinSignalAssignment.assignment_role == "primary",
+            )
+            .distinct()
+        )
+        await self.db.execute(
+            delete(Signal).where(
+                Signal.revision_id == revision_id,
+                Signal.id.not_in(assigned),
+            )
         )
 
     async def _create_connector_from_slot(

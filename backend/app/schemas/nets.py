@@ -64,3 +64,7 @@ class PinPairResponse(BaseModel):
     net: NetDetail
     edge: ConnectionEdgeResponse | None = None
     assignments_created: int
+
+
+class PinNetAssignmentRequest(BaseModel):
+    net_id: UUID | None = None

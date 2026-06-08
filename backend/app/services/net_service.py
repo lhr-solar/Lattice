@@ -186,44 +186,44 @@ class NetService:
         self,
         vehicle_id: UUID,
         revision_id: UUID,
-        net_id: UUID,
+        net_id: UUID | None,
         pin_id: UUID,
         replace_existing_primary: bool = True,
-    ) -> NetDetail:
+    ) -> NetDetail | None:
         await ensure_mutable_revision(self.db, revision_id, vehicle_id)
-        await self._get_net_or_404(revision_id, net_id)
         pin = await self.db.get(Pin, pin_id)
         if not pin or pin.revision_id != revision_id:
             raise HTTPException(status_code=404, detail="Pin not found")
 
         pin_ids = await expand_pins_with_shorts(self.db, revision_id, [pin_id])
         for expanded_pin in pin_ids:
-            if replace_existing_primary:
-                await self.db.execute(
-                    delete(PinSignalAssignment).where(
-                        PinSignalAssignment.revision_id == revision_id,
-                        PinSignalAssignment.pin_id == expanded_pin,
-                        PinSignalAssignment.assignment_role == "primary",
-                    )
-                )
-            dup = await self.db.execute(
-                select(PinSignalAssignment).where(
+            await self.db.execute(
+                delete(PinSignalAssignment).where(
+                    PinSignalAssignment.revision_id == revision_id,
                     PinSignalAssignment.pin_id == expanded_pin,
-                    PinSignalAssignment.signal_id == net_id,
                     PinSignalAssignment.assignment_role == "primary",
                 )
             )
-            if not dup.scalar_one_or_none():
-                self.db.add(
-                    PinSignalAssignment(
-                        revision_id=revision_id,
-                        pin_id=expanded_pin,
-                        signal_id=net_id,
-                        assignment_role="primary",
+            if net_id is not None:
+                dup = await self.db.execute(
+                    select(PinSignalAssignment).where(
+                        PinSignalAssignment.pin_id == expanded_pin,
+                        PinSignalAssignment.signal_id == net_id,
+                        PinSignalAssignment.assignment_role == "primary",
                     )
                 )
+                if not dup.scalar_one_or_none():
+                    self.db.add(
+                        PinSignalAssignment(
+                            revision_id=revision_id,
+                            pin_id=expanded_pin,
+                            signal_id=net_id,
+                            assignment_role="primary",
+                        )
+                    )
         await self.db.flush()
-
+        if net_id is None:
+            return None
         signal = await self._get_net_or_404(revision_id, net_id)
         return await self._build_net_detail(signal)
 

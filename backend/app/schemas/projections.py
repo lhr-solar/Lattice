@@ -4,7 +4,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 
-ProjectionLevel = Literal["vehicle", "enclosure", "connector", "pin"]
+ProjectionLevel = Literal["vehicle", "enclosure", "node", "connector", "pin"]
 
 
 class DesignNodeDto(BaseModel):

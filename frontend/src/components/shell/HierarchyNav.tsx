@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import clsx from "clsx";
 import { fetchHierarchy, type HierarchyNode } from "@/api/hierarchy";
+import { deleteConnector, deleteEnclosure, deletePcb } from "@/api/instances";
 import { fetchVehicles, createVehicle, deleteVehicle, updateVehicleName } from "@/api/vehicles";
 import { useAppStore } from "@/stores/appStore";
 import type { ProjectionLevel } from "@/api/types";
@@ -12,41 +13,65 @@ function TreeNode({
   depth = 0,
   onSelect,
   selectedId,
+  onRequestDelete,
 }: {
   node: HierarchyNode;
   depth?: number;
   onSelect: (id: string, kind: string, level: ProjectionLevel) => void;
   selectedId: string | null;
+  onRequestDelete: (node: HierarchyNode) => void;
 }) {
   const levelMap: Record<string, ProjectionLevel> = {
     vehicle: "vehicle",
     enclosure: "enclosure",
     pcb: "enclosure",
+    node: "node",
     connector: "connector",
     panelMount: "connector",
   };
   const hasChildren = node.children.length > 0;
+  const canDelete = node.kind !== "vehicle" && node.kind !== "inlineGroup";
 
   return (
     <li>
-      <button
-        type="button"
-        onClick={() => {
-          const level = levelMap[node.kind];
-          if (level) onSelect(node.id, node.kind, level);
-        }}
-        style={{ paddingLeft: `${depth * 12 + 8}px` }}
+      <div
         className={clsx(
-          "w-full rounded-md py-1.5 pr-2 text-left text-sm transition",
+          "flex items-center gap-1 rounded-md pr-1 transition",
           selectedId === node.id
             ? "bg-tesla-accent/15 text-tesla-text"
             : "text-tesla-muted hover:bg-tesla-border/50 hover:text-tesla-text",
           node.kind === "vehicle" && "font-medium text-tesla-text",
         )}
       >
-        <span className="mr-1 opacity-60">{iconFor(node.kind)}</span>
-        {node.label}
-      </button>
+        <button
+          type="button"
+          onClick={() => {
+            const level = levelMap[node.kind];
+            if (level) onSelect(node.id, node.kind, level);
+          }}
+          style={{ paddingLeft: `${depth * 12 + 8}px` }}
+          className="min-w-0 flex-1 truncate py-1.5 text-left text-sm"
+          title={node.label}
+        >
+          <span className="mr-1 opacity-60">{iconFor(node.kind)}</span>
+          {node.label}
+        </button>
+        {canDelete ? (
+          <button
+            type="button"
+            title={`Delete ${node.label}`}
+            className="shrink-0 rounded px-1.5 py-0.5 text-xs text-tesla-muted transition hover:bg-tesla-border hover:text-tesla-text"
+            onClick={(e) => {
+              e.stopPropagation();
+              onRequestDelete(node);
+            }}
+          >
+            🗑
+          </button>
+        ) : (
+          <span className="w-[26px] shrink-0" aria-hidden />
+        )}
+      </div>
       {hasChildren && (
         <ul>
           {node.children.map((child) => (
@@ -56,6 +81,7 @@ function TreeNode({
               depth={depth + 1}
               onSelect={onSelect}
               selectedId={selectedId}
+              onRequestDelete={onRequestDelete}
             />
           ))}
         </ul>
@@ -71,6 +97,7 @@ function iconFor(kind: string) {
     case "enclosure":
       return "▣";
     case "pcb":
+    case "node":
       return "▤";
     case "panelMount":
       return "◎";
@@ -90,11 +117,14 @@ export function HierarchyNav() {
   const setFocus = useAppStore((s) => s.setFocus);
   const setProjectionLevel = useAppStore((s) => s.setProjectionLevel);
   const setShowLibraryManager = useAppStore((s) => s.setShowLibraryManager);
+  const setShowNetManager = useAppStore((s) => s.setShowNetManager);
+  const setShowPinNameLibrary = useAppStore((s) => s.setShowPinNameLibrary);
   const setLibraryTab = useAppStore((s) => s.setLibraryTab);
   const searchQuery = useAppStore((s) => s.searchQuery).toLowerCase();
   const [renameTarget, setRenameTarget] = useState<{ id: string; currentName: string } | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+  const [deleteTopologyTarget, setDeleteTopologyTarget] = useState<HierarchyNode | null>(null);
 
   const { data: vehicles = [], isLoading } = useQuery({
     queryKey: ["vehicles"],
@@ -137,6 +167,40 @@ export function HierarchyNav() {
         setFocus(null);
         setProjectionLevel("vehicle");
       }
+    },
+  });
+
+  const deleteTopologyMutation = useMutation({
+    mutationFn: async (node: HierarchyNode) => {
+      if (!vehicleId || !revisionId) throw new Error("No vehicle selected");
+      if (node.kind === "enclosure") {
+        await deleteEnclosure(vehicleId, revisionId, node.id);
+        return;
+      }
+      if (node.kind === "node" || node.kind === "pcb") {
+        await deletePcb(vehicleId, revisionId, node.id);
+        return;
+      }
+      if (node.kind === "connector" || node.kind === "panelMount") {
+        await deleteConnector(vehicleId, revisionId, node.id);
+        return;
+      }
+      throw new Error(`Cannot delete ${node.kind}`);
+    },
+    onSuccess: (_, node) => {
+      const root = hierarchy?.root ?? null;
+      const deletedNode = root ? findNode(root, node.id) : null;
+      if (selectedNodeId && deletedNode && subtreeContains(deletedNode, selectedNodeId)) {
+        setFocus(null);
+        setProjectionLevel("vehicle");
+      }
+      queryClient.invalidateQueries({ queryKey: ["hierarchy"] });
+      queryClient.invalidateQueries({ queryKey: ["design-projection"] });
+      queryClient.invalidateQueries({ queryKey: ["topology-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["pins"] });
+      queryClient.invalidateQueries({ queryKey: ["nets"] });
+      queryClient.invalidateQueries({ queryKey: ["connection-table"] });
+      setDeleteTopologyTarget(null);
     },
   });
 
@@ -230,29 +294,45 @@ export function HierarchyNav() {
           ))}
         </ul>
         <div className="border-b border-tesla-border p-2">
-          <p className="mb-2 px-2 text-xs uppercase tracking-wider text-tesla-muted">Libraries</p>
-          <div className="space-y-1">
+          <p className="mb-2 px-2 text-xs uppercase tracking-wider text-tesla-muted">Utilities</p>
+          <div className="grid grid-cols-2 gap-1">
             <button
               type="button"
               disabled={!vehicleId}
-              className="w-full rounded border border-tesla-border px-2 py-1 text-left text-xs text-tesla-muted transition hover:border-tesla-accent hover:text-tesla-text disabled:opacity-40"
+              className="rounded border border-tesla-border px-2 py-1 text-center text-xs leading-tight text-tesla-muted transition hover:border-tesla-accent hover:text-tesla-text disabled:opacity-40"
               onClick={() => {
-                setLibraryTab("pcb");
+                setLibraryTab("node");
                 setShowLibraryManager(true);
               }}
             >
-              PCB Library
+              Node Library
             </button>
             <button
               type="button"
               disabled={!vehicleId}
-              className="w-full rounded border border-tesla-border px-2 py-1 text-left text-xs text-tesla-muted transition hover:border-tesla-accent hover:text-tesla-text disabled:opacity-40"
+              className="rounded border border-tesla-border px-2 py-1 text-center text-xs leading-tight text-tesla-muted transition hover:border-tesla-accent hover:text-tesla-text disabled:opacity-40"
               onClick={() => {
                 setLibraryTab("enclosure");
                 setShowLibraryManager(true);
               }}
             >
               Enclosure Library
+            </button>
+            <button
+              type="button"
+              disabled={!vehicleId}
+              className="rounded border border-tesla-border px-2 py-1 text-center text-xs leading-tight text-tesla-muted transition hover:border-tesla-accent hover:text-tesla-text disabled:opacity-40"
+              onClick={() => setShowNetManager(true)}
+            >
+              Net Manager
+            </button>
+            <button
+              type="button"
+              disabled={!vehicleId}
+              className="rounded border border-tesla-border px-2 py-1 text-center text-xs leading-tight text-tesla-muted transition hover:border-tesla-accent hover:text-tesla-text disabled:opacity-40"
+              onClick={() => setShowPinNameLibrary(true)}
+            >
+              Pin Name Library
             </button>
           </div>
         </div>
@@ -269,6 +349,7 @@ export function HierarchyNav() {
                 node={filteredRoot}
                 onSelect={handleNodeSelect}
                 selectedId={selectedNodeId}
+                onRequestDelete={setDeleteTopologyTarget}
               />
             </ul>
           )}
@@ -323,6 +404,23 @@ export function HierarchyNav() {
           });
         }}
       />
+      <ConfirmModal
+        open={Boolean(deleteTopologyTarget)}
+        title="Delete from topology"
+        message={
+          deleteTopologyTarget
+            ? `Delete "${deleteTopologyTarget.label}"? Connected wires and child instances will be removed.`
+            : ""
+        }
+        confirmLabel={deleteTopologyMutation.isPending ? "Deleting..." : "Delete"}
+        destructive
+        disabled={deleteTopologyMutation.isPending}
+        onCancel={() => setDeleteTopologyTarget(null)}
+        onConfirm={() => {
+          if (!deleteTopologyTarget) return;
+          deleteTopologyMutation.mutate(deleteTopologyTarget);
+        }}
+      />
     </>
   );
 }
@@ -337,4 +435,18 @@ function filterTree(node: HierarchyNode, query: string): HierarchyNode | null {
     return { ...node, children };
   }
   return null;
+}
+
+function findNode(node: HierarchyNode, id: string): HierarchyNode | null {
+  if (node.id === id) return node;
+  for (const child of node.children) {
+    const found = findNode(child, id);
+    if (found) return found;
+  }
+  return null;
+}
+
+function subtreeContains(node: HierarchyNode, targetId: string): boolean {
+  if (node.id === targetId) return true;
+  return node.children.some((child) => subtreeContains(child, targetId));
 }

@@ -110,3 +110,15 @@ export function pairPins(
     { method: "POST", body: JSON.stringify(body) },
   );
 }
+
+export function assignPinNet(
+  vehicleId: string,
+  revisionId: string,
+  pinId: string,
+  netId: string | null,
+) {
+  return apiFetch<NetDetail | { unassigned: boolean }>(
+    `/vehicles/${vehicleId}/revisions/${revisionId}/nets/pins/${pinId}/assignment`,
+    { method: "PUT", body: JSON.stringify({ net_id: netId }) },
+  );
+}

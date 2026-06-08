@@ -29,10 +29,10 @@ import { clearVehicleData } from "@/api/devTools";
 import { useAppStore } from "@/stores/appStore";
 import { ConfirmModal, Modal } from "@/components/ui/Modal";
 
-type Tab = "connector" | "pcb" | "enclosure";
+type Tab = "connector" | "node" | "enclosure";
 type DeletionTarget =
   | { id: string; kind: "connector"; label: string }
-  | { id: string; kind: "pcb"; label: string }
+  | { id: string; kind: "node"; label: string }
   | { id: string; kind: "enclosure"; label: string };
 
 export function LibraryBuilders() {
@@ -155,12 +155,13 @@ export function LibraryBuilders() {
         onClose={() => setShowLibraryManager(false)}
         title="Library Manager"
         showCloseButton
+        layer="manager"
         panelClassName="flex h-[90vh] w-full max-w-[calc(100vw-2rem)] flex-col"
         bodyClassName="flex min-h-0 flex-1 flex-col overflow-hidden"
       >
         <div className="flex min-h-0 flex-1 flex-col space-y-3">
           <div className="flex items-center gap-2">
-            {(["connector", "pcb", "enclosure"] as Tab[]).map((tab) => (
+            {(["connector", "node", "enclosure"] as Tab[]).map((tab) => (
               <button
                 key={tab}
                 type="button"
@@ -171,7 +172,7 @@ export function LibraryBuilders() {
                     : "border border-tesla-border text-tesla-muted"
                 }`}
               >
-                {tab === "pcb" ? "PCB" : tab === "connector" ? "Connector" : "Enclosure"}
+                {tab === "node" ? "Node" : tab === "connector" ? "Connector" : "Enclosure"}
               </button>
             ))}
             <button
@@ -183,7 +184,7 @@ export function LibraryBuilders() {
                 setEditingPcbId(null);
                 setEditingEnclosureId(null);
               }}
-              disabled={(activeTab === "pcb" || activeTab === "enclosure") && !vehicleId}
+              disabled={(activeTab === "node" || activeTab === "enclosure") && !vehicleId}
             >
               + Add
             </button>
@@ -233,10 +234,10 @@ export function LibraryBuilders() {
               }}
             />
           )}
-          {activeTab === "pcb" && (
+          {activeTab === "node" && (
             <>
               <p className="rounded border border-tesla-border px-2 py-1 text-xs text-tesla-muted">
-                Editing PCB library for vehicle:{" "}
+                Editing Node library for vehicle:{" "}
                 <span className="font-medium text-tesla-text">{selectedVehicleName}</span>
               </p>
               <LibraryList
@@ -253,10 +254,10 @@ export function LibraryBuilders() {
                   const item = pcbTemplates.find((p) => p.id === id);
                   if (!item) return;
                   setDeleteError(null);
-                  setDeleting({ id, kind: "pcb", label: item.name });
+                  setDeleting({ id, kind: "node", label: item.name });
                 }}
                 onEdit={(id) => {
-                  setActiveTab("pcb");
+                  setActiveTab("node");
                   setEditingPcbId(id);
                   setEditingConnectorId(null);
                   setEditingEnclosureId(null);
@@ -318,7 +319,7 @@ export function LibraryBuilders() {
         pending={connectorCreate.isPending || connectorUpdate.isPending}
       />
       <PcbBuilderModal
-        open={showLibraryManager && activeTab === "pcb" && builderMode !== null}
+        open={showLibraryManager && activeTab === "node" && builderMode !== null}
         mode={builderMode === "edit" ? "edit" : "add"}
         initial={pcbEditing}
         onClose={() => {
@@ -326,6 +327,10 @@ export function LibraryBuilders() {
           setEditingPcbId(null);
         }}
         connectors={connectorTemplates}
+        onAddConnectorTemplate={() => {
+          setBuilderMode("add");
+          setActiveTab("connector");
+        }}
         onSubmit={(payload) =>
           builderMode === "edit" && editingPcbId
             ? pcbUpdate.mutate({ id: editingPcbId, payload }, { onSuccess: () => setBuilderMode(null) })
@@ -343,6 +348,14 @@ export function LibraryBuilders() {
         }}
         connectors={connectorTemplates}
         pcbs={pcbTemplates}
+        onAddConnectorTemplate={() => {
+          setBuilderMode("add");
+          setActiveTab("connector");
+        }}
+        onAddPcbTemplate={() => {
+          setBuilderMode("add");
+          setActiveTab("node");
+        }}
         onSubmit={(payload) =>
           builderMode === "edit" && editingEnclosureId
             ? enclosureUpdate.mutate(
@@ -382,7 +395,7 @@ export function LibraryBuilders() {
             });
             return;
           }
-          if (deleting.kind === "pcb") {
+          if (deleting.kind === "node") {
             pcbDelete.mutate(deleting.id, {
               onSuccess: () => {
                 setDeleting(null);
@@ -496,7 +509,7 @@ function ConnectorBuilderModal({
   onSubmit: (payload: Parameters<typeof createConnectorTemplate>[0]) => void;
   pending: boolean;
 }) {
-  type ConnectorType = "pcb" | "panel_mount" | "inline";
+  type ConnectorType = "node" | "panel_mount" | "inline";
   const [name, setName] = useState("");
   const [pinCount, setPinCount] = useState(2);
   const [manufacturer, setManufacturer] = useState("");
@@ -508,7 +521,7 @@ function ConnectorBuilderModal({
   const [maleImage, setMaleImage] = useState("");
   const [femaleImage, setFemaleImage] = useState("");
   const [keyCode, setKeyCode] = useState("");
-  const [connectorType, setConnectorType] = useState<ConnectorType>("pcb");
+  const [connectorType, setConnectorType] = useState<ConnectorType>("node");
   const [voltageClass, setVoltageClass] = useState<"lv" | "hv">("lv");
 
   useEffect(() => {
@@ -534,7 +547,7 @@ function ConnectorBuilderModal({
       } else if (initial.is_inline_template) {
         setConnectorType("inline");
       } else {
-        setConnectorType("pcb");
+        setConnectorType("node");
       }
       setVoltageClass("lv");
       return;
@@ -550,7 +563,7 @@ function ConnectorBuilderModal({
     setMaleImage("");
     setFemaleImage("");
     setKeyCode("");
-    setConnectorType("pcb");
+    setConnectorType("node");
     setVoltageClass("lv");
   }, [open, mode, initial]);
 
@@ -567,6 +580,7 @@ function ConnectorBuilderModal({
       open={open}
       onClose={onClose}
       title={mode === "edit" ? "Edit Connector Template" : "Connector Builder"}
+      layer="stacked"
       panelClassName="max-w-6xl"
       footer={
         <>
@@ -670,12 +684,12 @@ function ConnectorBuilderModal({
             />
             <button
               type="button"
-              onClick={() => setConnectorType("pcb")}
+              onClick={() => setConnectorType("node")}
               className={`relative z-10 flex-1 rounded px-2 py-1.5 text-sm transition-colors ${
-                connectorType === "pcb" ? "text-white" : "text-tesla-muted hover:text-tesla-text"
+                connectorType === "node" ? "text-white" : "text-tesla-muted hover:text-tesla-text"
               }`}
             >
-              PCB
+              Node
             </button>
             <button
               type="button"
@@ -739,6 +753,7 @@ function PcbBuilderModal({
   initial,
   onClose,
   connectors,
+  onAddConnectorTemplate,
   onSubmit,
   pending,
 }: {
@@ -747,6 +762,7 @@ function PcbBuilderModal({
   initial: Awaited<ReturnType<typeof fetchPcbTemplates>>[number] | null;
   onClose: () => void;
   connectors: Awaited<ReturnType<typeof fetchConnectorTemplates>>;
+  onAddConnectorTemplate: () => void;
   onSubmit: (payload: Parameters<typeof createPcbTemplate>[1]) => void;
   pending: boolean;
 }) {
@@ -789,7 +805,8 @@ function PcbBuilderModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={mode === "edit" ? "Edit PCB Template" : "PCB Builder"}
+      title={mode === "edit" ? "Edit Node Template" : "Node Builder"}
+      layer="stacked"
       footer={
         <>
           <button type="button" className="rounded border border-tesla-border px-3 py-1 text-sm" onClick={onClose}>
@@ -821,7 +838,7 @@ function PcbBuilderModal({
       }
     >
       <div className="space-y-2">
-        <Field label="PCB name" value={name} onChange={setName} />
+        <Field label="Node name" value={name} onChange={setName} />
         <Field label="Description" value={description} onChange={setDescription} />
         <button
           type="button"
@@ -864,6 +881,7 @@ function PcbBuilderModal({
                       ),
                     )
                   }
+                  onAddAction={onAddConnectorTemplate}
                 />
               </div>
               <button
@@ -918,6 +936,8 @@ function EnclosureBuilderModal({
   onClose,
   connectors,
   pcbs,
+  onAddConnectorTemplate,
+  onAddPcbTemplate,
   onSubmit,
   pending,
 }: {
@@ -927,6 +947,8 @@ function EnclosureBuilderModal({
   onClose: () => void;
   connectors: Awaited<ReturnType<typeof fetchConnectorTemplates>>;
   pcbs: Awaited<ReturnType<typeof fetchPcbTemplates>>;
+  onAddConnectorTemplate: () => void;
+  onAddPcbTemplate: () => void;
   onSubmit: (payload: Parameters<typeof createEnclosureTemplate>[1]) => void;
   pending: boolean;
 }) {
@@ -966,6 +988,7 @@ function EnclosureBuilderModal({
       open={open}
       onClose={onClose}
       title={mode === "edit" ? "Edit Enclosure Template" : "Enclosure Builder"}
+      layer="stacked"
       footer={
         <>
           <button type="button" className="rounded border border-tesla-border px-3 py-1 text-sm" onClick={onClose}>
@@ -1026,6 +1049,7 @@ function EnclosureBuilderModal({
                     ),
                   )
                 }
+                onAddAction={onAddConnectorTemplate}
               />
             </div>
           ))}
@@ -1035,10 +1059,10 @@ function EnclosureBuilderModal({
             type="button"
             className="rounded border border-tesla-border px-2 py-1 text-xs"
             onClick={() =>
-              setPcbSlots((prev) => [...prev, { slot_key: `PCB${prev.length + 1}`, pcb_template_id: "" }])
+              setPcbSlots((prev) => [...prev, { slot_key: `NODE${prev.length + 1}`, pcb_template_id: "" }])
             }
           >
-            + Add PCB
+            + Add Node
           </button>
           {pcbSlots.map((row, idx) => (
             <div key={`${row.slot_key}-${idx}`} className="mt-2 flex items-start gap-2">
@@ -1060,13 +1084,14 @@ function EnclosureBuilderModal({
                       prev.map((r, i) => (i === idx ? { ...r, pcb_template_id: pcbId } : r)),
                     )
                   }
+                  onAddAction={onAddPcbTemplate}
                 />
               </div>
             </div>
           ))}
         </div>
         <p className="text-xs text-tesla-muted">
-          Enclosure-exposed pins can come from true panel connectors or PCB connectors marked
+          Enclosure-exposed pins can come from true panel connectors or node connectors marked
           as exported (panel/pigtail case by case).
         </p>
       </div>

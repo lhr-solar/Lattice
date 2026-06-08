@@ -7,7 +7,6 @@ import {
   fetchPcbTemplates,
 } from "@/api/templates";
 import { fetchHierarchy } from "@/api/hierarchy";
-import { publishRevision } from "@/api/revisions";
 import { useAppStore } from "@/stores/appStore";
 import { Modal } from "@/components/ui/Modal";
 import {
@@ -17,7 +16,7 @@ import {
   PcbTemplatePicker,
 } from "@/components/library/TemplatePickers";
 
-type AddKind = "enclosure" | "pcb" | "inline";
+type AddKind = "enclosure" | "node" | "inline";
 
 export function DesignActions() {
   const queryClient = useQueryClient();
@@ -25,12 +24,12 @@ export function DesignActions() {
   const revisionId = useAppStore((s) => s.selectedRevisionId);
   const selectedNodeId = useAppStore((s) => s.selectedNodeId);
   const selectedNodeKind = useAppStore((s) => s.selectedNodeKind);
-  const selectVehicle = useAppStore((s) => s.selectVehicle);
+  const setShowLibraryManager = useAppStore((s) => s.setShowLibraryManager);
+  const setLibraryTab = useAppStore((s) => s.setLibraryTab);
   const [activeAdd, setActiveAdd] = useState<AddKind | null>(null);
   const [templateId, setTemplateId] = useState("");
   const [nickname, setNickname] = useState("");
   const [targetEnclosureId, setTargetEnclosureId] = useState("");
-  const [inlineGender, setInlineGender] = useState<"male" | "female" | "hermaphroditic">("male");
 
   const { data: connectors = [] } = useQuery({
     queryKey: ["connector-templates"],
@@ -106,7 +105,6 @@ export function DesignActions() {
       await createConnector(vehicleId, revisionId, {
         connector_template_id: templateId,
         is_panel_mount: false,
-        inline_gender: inlineGender,
         nickname: nickname.trim() || undefined,
       });
     },
@@ -116,17 +114,6 @@ export function DesignActions() {
     },
   });
 
-  const publish = useMutation({
-    mutationFn: async () => {
-      if (!vehicleId || !revisionId) return;
-      const result = await publishRevision(vehicleId, revisionId);
-      selectVehicle(vehicleId, result.new_draft_revision.id);
-      queryClient.invalidateQueries({ queryKey: ["vehicles"] });
-      queryClient.invalidateQueries({ queryKey: ["revisions", vehicleId] });
-    },
-    onSuccess: invalidate,
-  });
-
   const pending =
     addEnclosure.isPending || addPcb.isPending || addInlineConnector.isPending;
 
@@ -134,8 +121,7 @@ export function DesignActions() {
     setActiveAdd(kind);
     setTemplateId("");
     setNickname("");
-    setInlineGender("male");
-    if (kind === "pcb") {
+    if (kind === "node") {
       const preferredEnclosureId =
         selectedNodeKind === "enclosure" && selectedNodeId
           ? selectedNodeId
@@ -151,25 +137,24 @@ export function DesignActions() {
     setTemplateId("");
     setNickname("");
     setTargetEnclosureId("");
-    setInlineGender("male");
   }
 
   function handleAdd() {
     if (activeAdd === "enclosure") addEnclosure.mutate();
-    if (activeAdd === "pcb") addPcb.mutate();
+    if (activeAdd === "node") addPcb.mutate();
     if (activeAdd === "inline") addInlineConnector.mutate();
   }
 
   const canAdd =
     Boolean(templateId) &&
     !pending &&
-    (activeAdd !== "pcb" || Boolean(targetEnclosureId));
+    (activeAdd !== "node" || Boolean(targetEnclosureId));
 
   const addTitle =
     activeAdd === "enclosure"
       ? "Add Enclosure"
-      : activeAdd === "pcb"
-        ? "Add PCB"
+      : activeAdd === "node"
+        ? "Add Node"
         : activeAdd === "inline"
           ? "Add Inline Connector"
           : "";
@@ -183,14 +168,9 @@ export function DesignActions() {
       <p className="text-xs uppercase tracking-wider text-tesla-muted">Add from library</p>
       <div className="grid gap-2">
         <ActionButton label="Add Enclosure" onClick={() => openAddModal("enclosure")} />
-        <ActionButton label="Add PCB" onClick={() => openAddModal("pcb")} />
+        <ActionButton label="Add Node" onClick={() => openAddModal("node")} />
         <ActionButton label="Add Inline Connector" onClick={() => openAddModal("inline")} />
       </div>
-      <ActionButton
-        label="Publish revision"
-        variant="accent"
-        onClick={() => publish.mutate()}
-      />
 
       <Modal
         open={activeAdd !== null}
@@ -222,43 +202,45 @@ export function DesignActions() {
               enclosures={encTemplates}
               value={templateId}
               onChange={setTemplateId}
+              onAddAction={() => {
+                setLibraryTab("enclosure");
+                setShowLibraryManager(true);
+              }}
             />
           )}
-          {activeAdd === "pcb" && (
+          {activeAdd === "node" && (
             <>
-              <PcbTemplatePicker pcbs={pcbTemplates} value={templateId} onChange={setTemplateId} />
+              <PcbTemplatePicker
+                pcbs={pcbTemplates}
+                value={templateId}
+                onChange={setTemplateId}
+                onAddAction={() => {
+                  setLibraryTab("node");
+                  setShowLibraryManager(true);
+                }}
+              />
               <InstancePicker
                 label="Target enclosure"
                 instances={enclosureInstances}
                 value={targetEnclosureId}
                 onChange={setTargetEnclosureId}
                 placeholder="Select enclosure instance…"
+                onAddAction={() => openAddModal("enclosure")}
+                addActionLabel="Add enclosure instance"
               />
             </>
           )}
           {activeAdd === "inline" && (
-            <>
-              <ConnectorTemplatePicker
-                connectors={inlineTemplates}
-                value={templateId}
-                onChange={setTemplateId}
-                label="Inline connector"
-              />
-              <label className="flex flex-col gap-1 text-xs text-tesla-muted">
-                Inline gender
-                <select
-                  value={inlineGender}
-                  onChange={(e) =>
-                    setInlineGender(e.target.value as "male" | "female" | "hermaphroditic")
-                  }
-                  className="rounded border border-tesla-border bg-tesla-bg px-2 py-1 text-sm text-tesla-text"
-                >
-                  <option value="male">Male</option>
-                  <option value="female">Female</option>
-                  <option value="hermaphroditic">Hermaphroditic</option>
-                </select>
-              </label>
-            </>
+            <ConnectorTemplatePicker
+              connectors={inlineTemplates}
+              value={templateId}
+              onChange={setTemplateId}
+              label="Inline connector"
+              onAddAction={() => {
+                setLibraryTab("connector");
+                setShowLibraryManager(true);
+              }}
+            />
           )}
           <label className="flex flex-col gap-1 text-xs text-tesla-muted">
             Name

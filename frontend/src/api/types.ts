@@ -1,4 +1,4 @@
-export type ProjectionLevel = "vehicle" | "enclosure" | "connector" | "pin";
+export type ProjectionLevel = "vehicle" | "enclosure" | "node" | "connector" | "pin";
 
 export interface DesignNodeDto {
   id: string;

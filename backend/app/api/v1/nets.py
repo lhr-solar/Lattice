@@ -8,6 +8,7 @@ from app.schemas.nets import (
     NetCreate,
     NetDeleteResult,
     NetDetail,
+    PinNetAssignmentRequest,
     NetPinInfo,
     NetSummary,
     NetUpdate,
@@ -104,3 +105,17 @@ async def add_pin_to_net(
     db: AsyncSession = Depends(get_db),
 ) -> NetDetail:
     return await NetService(db).assign_pin_to_net(vehicle_id, revision_id, net_id, pin_id)
+
+
+@router.put("/pins/{pin_id}/assignment")
+async def set_pin_assignment(
+    vehicle_id: UUID,
+    revision_id: UUID,
+    pin_id: UUID,
+    payload: PinNetAssignmentRequest,
+    db: AsyncSession = Depends(get_db),
+) -> NetDetail | dict[str, bool]:
+    detail = await NetService(db).assign_pin_to_net(vehicle_id, revision_id, payload.net_id, pin_id)
+    if detail is None:
+        return {"unassigned": True}
+    return detail

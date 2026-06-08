@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { fetchTopologySummary } from "@/api/topology";
 import { DesignActions } from "@/features/design/DesignActions";
+import { PublishRevisionSection } from "@/features/design/PublishRevisionSection";
 import { PinPairingPanel } from "@/features/nets/PinPairingPanel";
 import { PinoutEditorPanel } from "@/features/nets/PinoutEditorPanel";
 import { PinShortPanel } from "@/features/nets/PinShortPanel";
@@ -13,6 +14,20 @@ export function PropertyPanel() {
   const projectionLevel = useAppStore((s) => s.projectionLevel);
   const focusId = useAppStore((s) => s.selectedNodeId);
   const selectedNodeKind = useAppStore((s) => s.selectedNodeKind);
+  const openConnectionTable = useAppStore((s) => s.openConnectionTable);
+
+  const tableScope = (() => {
+    if (!focusId) return null;
+    if (selectedNodeKind === "node") return { kind: "node" as const, id: focusId };
+    if (selectedNodeKind === "enclosure") return { kind: "enclosure" as const, id: focusId };
+    if (
+      selectedNodeKind === "connector" ||
+      selectedNodeKind === "panelMount" ||
+      selectedNodeKind === "group"
+    )
+      return { kind: "connector" as const, id: focusId };
+    return null;
+  })();
 
   const { data: summary } = useQuery({
     queryKey: ["topology-summary", vehicleId, revisionId],
@@ -47,17 +62,27 @@ export function PropertyPanel() {
             <div>
               <dt className="text-tesla-muted">Topology</dt>
               <dd className="text-xs text-tesla-muted">
-                {summary.enclosure_count} enc · {summary.pcb_count} pcb ·{" "}
+                {summary.enclosure_count} enc · {summary.pcb_count} nodes ·{" "}
                 {summary.edge_count} edges · {summary.net_count} nets
               </dd>
             </div>
           )}
         </dl>
+        {mode === "design" && vehicleId && (
+          <button
+            type="button"
+            onClick={() => openConnectionTable(tableScope ?? { kind: "all", id: null })}
+            className="mb-4 w-full rounded-md border border-tesla-border px-3 py-2 text-sm text-tesla-muted transition hover:border-tesla-accent hover:text-tesla-text"
+          >
+            {tableScope ? "Open selection in connection table" : "Open connection table"}
+          </button>
+        )}
         {mode === "design" && <DesignActions />}
         {mode === "design" && <PinoutEditorPanel />}
         {mode === "design" && <PinPairingPanel />}
         {mode === "design" && <PinShortPanel />}
       </div>
+      {mode === "design" && <PublishRevisionSection />}
     </div>
   );
 }

@@ -17,7 +17,7 @@ from app.infrastructure.db.models.manufacturing import (
     HarnessGroupEdge,
     ManufacturingRecord,
 )
-from app.infrastructure.db.models.revision import RevisionChange, RevisionSnapshot, UserSession
+from app.infrastructure.db.models.pin_names import PinNameLibraryEntry
 from app.infrastructure.db.models.templates import (
     EnclosureTemplate,
     EnclosureTemplatePcbSlot,
@@ -66,4 +66,5 @@ __all__ = [
     "UserSession",
     "NodeLayout",
     "SavedView",
+    "PinNameLibraryEntry",
 ]
