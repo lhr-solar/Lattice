@@ -16,7 +16,9 @@ export function TopBar() {
 
   return (
     <header className="flex h-12 items-center gap-4 border-b border-tesla-border bg-tesla-surface px-4">
-      <span className="font-semibold tracking-tight text-tesla-accent">Lattice</span>
+      <span className="font-logo select-none bg-gradient-to-r from-tesla-accent to-[#7db4ff] bg-clip-text text-[1.03rem] font-bold uppercase tracking-[0.08em] text-transparent antialiased">
+        Lattice
+      </span>
       {mode === "design" && (
         <div className="flex gap-2">
           <button

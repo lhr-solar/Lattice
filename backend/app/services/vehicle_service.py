@@ -17,6 +17,7 @@ from app.infrastructure.db.models.revision import RevisionChange, RevisionSnapsh
 from app.infrastructure.db.models.shorts import ConnectorInstancePinShort
 from app.infrastructure.db.models.templates import (
     EnclosureTemplate,
+    EnclosureTemplatePcbSlot,
     EnclosureTemplatePanelSlot,
     PcbTemplate,
     PcbTemplateConnectorSlot,
@@ -191,6 +192,13 @@ class VehicleService:
         await self.db.execute(
             delete(EnclosureTemplatePanelSlot).where(
                 EnclosureTemplatePanelSlot.enclosure_template_id.in_(
+                    select(EnclosureTemplate.id).where(EnclosureTemplate.vehicle_id == vehicle_id)
+                )
+            )
+        )
+        await self.db.execute(
+            delete(EnclosureTemplatePcbSlot).where(
+                EnclosureTemplatePcbSlot.enclosure_template_id.in_(
                     select(EnclosureTemplate.id).where(EnclosureTemplate.vehicle_id == vehicle_id)
                 )
             )

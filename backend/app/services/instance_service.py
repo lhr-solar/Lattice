@@ -158,7 +158,9 @@ class InstanceService:
                 role=slot.default_role,
                 source_pcb_template_slot_id=slot.id if slot.export_to_enclosure else None,
                 source_pcb_instance_id=instance.id if slot.export_to_enclosure else None,
-                pin_origin_note="Exposed from PCB connector slot" if slot.export_to_enclosure else None,
+                pin_origin_note=slot.description
+                or ("Exposed from PCB connector slot" if slot.export_to_enclosure else None),
+                nickname=slot.nickname,
                 now=now,
             )
             connector_ids.append(conn.id)
@@ -299,6 +301,7 @@ class InstanceService:
         source_pcb_template_slot_id: UUID | None = None,
         source_pcb_instance_id: UUID | None = None,
         pin_origin_note: str | None = None,
+        nickname: str | None = None,
     ) -> ConnectorInstance:
         template = await self.db.get(ConnectorTemplate, connector_template_id)
         if not template:
@@ -315,7 +318,8 @@ class InstanceService:
             source_pcb_instance_id=source_pcb_instance_id,
             pin_origin_note=pin_origin_note,
             is_panel_mount=is_panel_mount,
-            use_template_name=True,
+            nickname=nickname,
+            use_template_name=not bool(nickname),
             role=role or template.default_role,
             created_at=now,
         )

@@ -7,9 +7,20 @@ interface ModalProps {
   footer?: ReactNode;
   onClose: () => void;
   panelClassName?: string;
+  bodyClassName?: string;
+  showCloseButton?: boolean;
 }
 
-export function Modal({ open, title, children, footer, onClose, panelClassName }: ModalProps) {
+export function Modal({
+  open,
+  title,
+  children,
+  footer,
+  onClose,
+  panelClassName,
+  bodyClassName,
+  showCloseButton = false,
+}: ModalProps) {
   if (!open) return null;
 
   return (
@@ -25,14 +36,26 @@ export function Modal({ open, title, children, footer, onClose, panelClassName }
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`relative z-10 w-full max-w-md rounded-lg border border-tesla-border bg-tesla-surface shadow-2xl ${
-          panelClassName ?? ""
+        className={`relative z-10 w-full rounded-lg border border-tesla-border bg-tesla-surface shadow-2xl ${
+          panelClassName ?? "max-w-md"
         }`}
       >
-        <header className="border-b border-tesla-border px-4 py-3">
-          <h2 className="text-base font-semibold text-tesla-text">{title}</h2>
+        <header className="relative border-b border-tesla-border px-4 py-3">
+          <h2 className="pr-8 text-base font-semibold text-tesla-text">{title}</h2>
+          {showCloseButton && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="absolute right-3 top-1/2 -translate-y-1/2 rounded p-1 text-lg leading-none text-tesla-muted transition hover:bg-tesla-border hover:text-tesla-text"
+              aria-label="Close"
+            >
+              ×
+            </button>
+          )}
         </header>
-        {children && <div className="px-4 py-3 text-sm text-tesla-muted">{children}</div>}
+        {children && (
+          <div className={`px-4 py-3 text-sm text-tesla-muted ${bodyClassName ?? ""}`}>{children}</div>
+        )}
         {footer && <footer className="flex justify-end gap-2 border-t border-tesla-border px-4 py-3">{footer}</footer>}
       </div>
     </div>

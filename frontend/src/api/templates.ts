@@ -5,6 +5,8 @@ export interface PcbSlotCreate {
   connector_template_id: string;
   position_index?: number;
   export_to_enclosure?: boolean;
+  nickname?: string;
+  description?: string;
 }
 
 export interface PcbTemplate {
@@ -17,6 +19,8 @@ export interface PcbTemplate {
     slot_key: string;
     connector_template_id: string;
     export_to_enclosure?: boolean;
+    nickname?: string | null;
+    description?: string | null;
   }>;
 }
 

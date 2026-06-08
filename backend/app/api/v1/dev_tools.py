@@ -1,11 +1,11 @@
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
 from app.core.config import settings
-from app.infrastructure.db.models.catalog import ConnectorTemplate
-from app.infrastructure.db.models.templates import EnclosureTemplate, PcbTemplate
+from app.services.vehicle_service import VehicleService
 
 router = APIRouter(prefix="/dev-tools", tags=["dev-tools"])
 
@@ -17,13 +17,8 @@ def _assert_dev_mode() -> None:
         raise HTTPException(status_code=403, detail="Dev tools are disabled outside local development")
 
 
-@router.post("/clear-libraries", status_code=204)
-async def clear_libraries(db: AsyncSession = Depends(get_db)) -> None:
+@router.post("/vehicles/{vehicle_id}/clear-all", status_code=204)
+async def clear_vehicle_data(vehicle_id: UUID, db: AsyncSession = Depends(get_db)) -> None:
     _assert_dev_mode()
-
-    # Order matters for FK dependencies.
-    await db.execute(delete(EnclosureTemplate))
-    await db.execute(delete(PcbTemplate))
-    await db.execute(delete(ConnectorTemplate))
-    await db.flush()
+    await VehicleService(db).delete_vehicle(vehicle_id)
     return None

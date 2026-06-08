@@ -9,19 +9,28 @@ import {
 import { fetchHierarchy } from "@/api/hierarchy";
 import { publishRevision } from "@/api/revisions";
 import { useAppStore } from "@/stores/appStore";
+import { Modal } from "@/components/ui/Modal";
+import {
+  ConnectorTemplatePicker,
+  EnclosureTemplatePicker,
+  InstancePicker,
+  PcbTemplatePicker,
+} from "@/components/library/TemplatePickers";
+
+type AddKind = "enclosure" | "pcb" | "inline";
 
 export function DesignActions() {
   const queryClient = useQueryClient();
   const vehicleId = useAppStore((s) => s.selectedVehicleId);
   const revisionId = useAppStore((s) => s.selectedRevisionId);
+  const selectedNodeId = useAppStore((s) => s.selectedNodeId);
+  const selectedNodeKind = useAppStore((s) => s.selectedNodeKind);
   const selectVehicle = useAppStore((s) => s.selectVehicle);
-  const [selectedEnclosureTemplateId, setSelectedEnclosureTemplateId] = useState<string>("");
-  const [selectedPcbTemplateId, setSelectedPcbTemplateId] = useState<string>("");
-  const [selectedInlineTemplateId, setSelectedInlineTemplateId] = useState<string>("");
-  const [selectedInlineGender, setSelectedInlineGender] = useState<
-    "male" | "female" | "hermaphroditic"
-  >("male");
-  const [inlineNickname, setInlineNickname] = useState("");
+  const [activeAdd, setActiveAdd] = useState<AddKind | null>(null);
+  const [templateId, setTemplateId] = useState("");
+  const [nickname, setNickname] = useState("");
+  const [targetEnclosureId, setTargetEnclosureId] = useState("");
+  const [inlineGender, setInlineGender] = useState<"male" | "female" | "hermaphroditic">("male");
 
   const { data: connectors = [] } = useQuery({
     queryKey: ["connector-templates"],
@@ -40,6 +49,12 @@ export function DesignActions() {
     enabled: Boolean(vehicleId),
   });
 
+  const { data: hierarchy } = useQuery({
+    queryKey: ["hierarchy", vehicleId, revisionId],
+    queryFn: () => fetchHierarchy(vehicleId!, revisionId!),
+    enabled: Boolean(vehicleId && revisionId),
+  });
+
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ["hierarchy"] });
     queryClient.invalidateQueries({ queryKey: ["design-projection"] });
@@ -51,41 +66,52 @@ export function DesignActions() {
     [connectors],
   );
 
+  const enclosureInstances = useMemo(
+    () => hierarchy?.root.children.filter((node) => node.kind === "enclosure") ?? [],
+    [hierarchy],
+  );
+
   const addEnclosure = useMutation({
     mutationFn: async () => {
-      if (!vehicleId || !revisionId || !selectedEnclosureTemplateId) return;
+      if (!vehicleId || !revisionId || !templateId) return;
       await createEnclosure(vehicleId, revisionId, {
-        enclosure_template_id: selectedEnclosureTemplateId,
+        enclosure_template_id: templateId,
+        nickname: nickname.trim() || undefined,
       });
     },
-    onSuccess: invalidate,
+    onSuccess: () => {
+      closeAddModal();
+      invalidate();
+    },
   });
 
   const addPcb = useMutation({
     mutationFn: async () => {
-      if (!vehicleId || !revisionId || !selectedPcbTemplateId) return;
-      const hierarchy = await fetchHierarchy(vehicleId, revisionId);
-      const enc = hierarchy.root.children[0];
+      if (!vehicleId || !revisionId || !templateId || !targetEnclosureId) return;
       await createPcb(vehicleId, revisionId, {
-        pcb_template_id: selectedPcbTemplateId,
-        enclosure_instance_id: enc?.id,
+        pcb_template_id: templateId,
+        enclosure_instance_id: targetEnclosureId,
+        nickname: nickname.trim() || undefined,
       });
     },
-    onSuccess: invalidate,
+    onSuccess: () => {
+      closeAddModal();
+      invalidate();
+    },
   });
 
   const addInlineConnector = useMutation({
     mutationFn: async () => {
-      if (!vehicleId || !revisionId || !selectedInlineTemplateId) return;
+      if (!vehicleId || !revisionId || !templateId) return;
       await createConnector(vehicleId, revisionId, {
-        connector_template_id: selectedInlineTemplateId,
+        connector_template_id: templateId,
         is_panel_mount: false,
-        inline_gender: selectedInlineGender,
-        nickname: inlineNickname.trim() || undefined,
+        inline_gender: inlineGender,
+        nickname: nickname.trim() || undefined,
       });
     },
     onSuccess: () => {
-      setInlineNickname("");
+      closeAddModal();
       invalidate();
     },
   });
@@ -101,6 +127,53 @@ export function DesignActions() {
     onSuccess: invalidate,
   });
 
+  const pending =
+    addEnclosure.isPending || addPcb.isPending || addInlineConnector.isPending;
+
+  function openAddModal(kind: AddKind) {
+    setActiveAdd(kind);
+    setTemplateId("");
+    setNickname("");
+    setInlineGender("male");
+    if (kind === "pcb") {
+      const preferredEnclosureId =
+        selectedNodeKind === "enclosure" && selectedNodeId
+          ? selectedNodeId
+          : enclosureInstances[0]?.id ?? "";
+      setTargetEnclosureId(preferredEnclosureId);
+    } else {
+      setTargetEnclosureId("");
+    }
+  }
+
+  function closeAddModal() {
+    setActiveAdd(null);
+    setTemplateId("");
+    setNickname("");
+    setTargetEnclosureId("");
+    setInlineGender("male");
+  }
+
+  function handleAdd() {
+    if (activeAdd === "enclosure") addEnclosure.mutate();
+    if (activeAdd === "pcb") addPcb.mutate();
+    if (activeAdd === "inline") addInlineConnector.mutate();
+  }
+
+  const canAdd =
+    Boolean(templateId) &&
+    !pending &&
+    (activeAdd !== "pcb" || Boolean(targetEnclosureId));
+
+  const addTitle =
+    activeAdd === "enclosure"
+      ? "Add Enclosure"
+      : activeAdd === "pcb"
+        ? "Add PCB"
+        : activeAdd === "inline"
+          ? "Add Inline Connector"
+          : "";
+
   if (!vehicleId || !revisionId) {
     return <p className="text-sm text-tesla-muted">Select a vehicle to design.</p>;
   }
@@ -108,91 +181,96 @@ export function DesignActions() {
   return (
     <div className="space-y-3 text-sm">
       <p className="text-xs uppercase tracking-wider text-tesla-muted">Add from library</p>
-      <div className="space-y-2 rounded border border-tesla-border p-2">
-        <label className="block text-xs text-tesla-muted">Enclosure template</label>
-        <select
-          value={selectedEnclosureTemplateId}
-          onChange={(e) => setSelectedEnclosureTemplateId(e.target.value)}
-          className="w-full rounded border border-tesla-border bg-tesla-bg px-2 py-1 text-xs text-tesla-text"
-        >
-          <option value="">Select enclosure template</option>
-          {encTemplates.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name}
-            </option>
-          ))}
-        </select>
-        <ActionButton
-          label="+ Enclosure"
-          disabled={!selectedEnclosureTemplateId}
-          onClick={() => addEnclosure.mutate()}
-        />
-      </div>
-      <div className="space-y-2 rounded border border-tesla-border p-2">
-        <label className="block text-xs text-tesla-muted">PCB template</label>
-        <select
-          value={selectedPcbTemplateId}
-          onChange={(e) => setSelectedPcbTemplateId(e.target.value)}
-          className="w-full rounded border border-tesla-border bg-tesla-bg px-2 py-1 text-xs text-tesla-text"
-        >
-          <option value="">Select PCB template</option>
-          {pcbTemplates.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name}
-            </option>
-          ))}
-        </select>
-        <ActionButton
-          label="+ PCB"
-          disabled={!selectedPcbTemplateId}
-          onClick={() => addPcb.mutate()}
-        />
-      </div>
-      <div className="space-y-2 rounded border border-tesla-border p-2">
-        <label className="block text-xs text-tesla-muted">Inline connector template</label>
-        <select
-          value={selectedInlineTemplateId}
-          onChange={(e) => setSelectedInlineTemplateId(e.target.value)}
-          className="w-full rounded border border-tesla-border bg-tesla-bg px-2 py-1 text-xs text-tesla-text"
-        >
-          <option value="">Select inline template</option>
-          {inlineTemplates.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name}
-            </option>
-          ))}
-        </select>
-        <label className="block text-xs text-tesla-muted">Inline gender</label>
-        <select
-          value={selectedInlineGender}
-          onChange={(e) =>
-            setSelectedInlineGender(
-              e.target.value as "male" | "female" | "hermaphroditic",
-            )
-          }
-          className="w-full rounded border border-tesla-border bg-tesla-bg px-2 py-1 text-xs text-tesla-text"
-        >
-          <option value="male">Male</option>
-          <option value="female">Female</option>
-          <option value="hermaphroditic">Hermaphroditic</option>
-        </select>
-        <input
-          value={inlineNickname}
-          onChange={(e) => setInlineNickname(e.target.value)}
-          placeholder="Inline nickname (optional)"
-          className="w-full rounded border border-tesla-border bg-tesla-bg px-2 py-1 text-xs text-tesla-text"
-        />
-        <ActionButton
-          label="+ Inline connector"
-          disabled={!selectedInlineTemplateId}
-          onClick={() => addInlineConnector.mutate()}
-        />
+      <div className="grid gap-2">
+        <ActionButton label="Add Enclosure" onClick={() => openAddModal("enclosure")} />
+        <ActionButton label="Add PCB" onClick={() => openAddModal("pcb")} />
+        <ActionButton label="Add Inline Connector" onClick={() => openAddModal("inline")} />
       </div>
       <ActionButton
         label="Publish revision"
         variant="accent"
         onClick={() => publish.mutate()}
       />
+
+      <Modal
+        open={activeAdd !== null}
+        onClose={closeAddModal}
+        title={addTitle}
+        footer={
+          <>
+            <button
+              type="button"
+              className="rounded border border-tesla-border px-3 py-1 text-sm"
+              onClick={closeAddModal}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={!canAdd}
+              className="rounded bg-tesla-accent px-3 py-1 text-sm text-white disabled:opacity-50"
+              onClick={handleAdd}
+            >
+              {pending ? "Adding…" : "Add"}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          {activeAdd === "enclosure" && (
+            <EnclosureTemplatePicker
+              enclosures={encTemplates}
+              value={templateId}
+              onChange={setTemplateId}
+            />
+          )}
+          {activeAdd === "pcb" && (
+            <>
+              <PcbTemplatePicker pcbs={pcbTemplates} value={templateId} onChange={setTemplateId} />
+              <InstancePicker
+                label="Target enclosure"
+                instances={enclosureInstances}
+                value={targetEnclosureId}
+                onChange={setTargetEnclosureId}
+                placeholder="Select enclosure instance…"
+              />
+            </>
+          )}
+          {activeAdd === "inline" && (
+            <>
+              <ConnectorTemplatePicker
+                connectors={inlineTemplates}
+                value={templateId}
+                onChange={setTemplateId}
+                label="Inline connector"
+              />
+              <label className="flex flex-col gap-1 text-xs text-tesla-muted">
+                Inline gender
+                <select
+                  value={inlineGender}
+                  onChange={(e) =>
+                    setInlineGender(e.target.value as "male" | "female" | "hermaphroditic")
+                  }
+                  className="rounded border border-tesla-border bg-tesla-bg px-2 py-1 text-sm text-tesla-text"
+                >
+                  <option value="male">Male</option>
+                  <option value="female">Female</option>
+                  <option value="hermaphroditic">Hermaphroditic</option>
+                </select>
+              </label>
+            </>
+          )}
+          <label className="flex flex-col gap-1 text-xs text-tesla-muted">
+            Name
+            <input
+              value={nickname}
+              onChange={(e) => setNickname(e.target.value)}
+              placeholder="Optional nickname for this instance"
+              className="rounded border border-tesla-border bg-tesla-bg px-2 py-1 text-sm text-tesla-text outline-none focus:border-tesla-accent"
+            />
+          </label>
+        </div>
+      </Modal>
     </div>
   );
 }
@@ -215,8 +293,8 @@ function ActionButton({
       onClick={onClick}
       className={
         variant === "accent"
-          ? "rounded-md bg-tesla-accent px-2 py-1 text-xs text-white disabled:opacity-40"
-          : "rounded-md border border-tesla-border px-2 py-1 text-xs text-tesla-text transition hover:border-tesla-accent disabled:opacity-40"
+          ? "w-full rounded-md bg-tesla-accent px-2 py-1.5 text-xs text-white disabled:opacity-40"
+          : "w-full rounded-md border border-tesla-border px-2 py-1.5 text-xs text-tesla-text transition hover:border-tesla-accent disabled:opacity-40"
       }
     >
       {label}

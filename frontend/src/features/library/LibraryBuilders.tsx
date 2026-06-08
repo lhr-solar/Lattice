@@ -1,4 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
+import {
+  ConnectorTemplatePicker,
+  PcbTemplatePicker,
+  connectorSubtitle,
+  enclosureSubtitle,
+  pcbSubtitle,
+} from "@/components/library/TemplatePickers";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createConnectorTemplate,
@@ -18,7 +25,7 @@ import {
   updatePcbTemplate,
 } from "@/api/templates";
 import { ApiError } from "@/api/client";
-import { clearLibraries } from "@/api/devTools";
+import { clearVehicleData } from "@/api/devTools";
 import { useAppStore } from "@/stores/appStore";
 import { ConfirmModal, Modal } from "@/components/ui/Modal";
 
@@ -42,8 +49,8 @@ export function LibraryBuilders() {
   const [editingEnclosureId, setEditingEnclosureId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<DeletionTarget | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [showClearAllConfirm, setShowClearAllConfirm] = useState(false);
-  const [clearAllError, setClearAllError] = useState<string | null>(null);
+  const [showClearVehicleConfirm, setShowClearVehicleConfirm] = useState(false);
+  const [clearVehicleError, setClearVehicleError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 
   const { data: connectorTemplates = [] } = useQuery({
@@ -111,10 +118,11 @@ export function LibraryBuilders() {
     mutationFn: (id: string) => deleteEnclosureTemplate(vehicleId!, id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["enclosure-templates", vehicleId] }),
   });
-  const clearAllMutation = useMutation({
-    mutationFn: clearLibraries,
+  const clearVehicleMutation = useMutation({
+    mutationFn: (id: string) => clearVehicleData(id),
     onSuccess: async () => {
       await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["vehicles"] }),
         queryClient.invalidateQueries({ queryKey: ["connector-templates"] }),
         queryClient.invalidateQueries({ queryKey: ["pcb-templates"] }),
         queryClient.invalidateQueries({ queryKey: ["enclosure-templates"] }),
@@ -146,16 +154,9 @@ export function LibraryBuilders() {
         open={showLibraryManager}
         onClose={() => setShowLibraryManager(false)}
         title="Library Manager"
-        panelClassName="max-w-[min(96vw,1300px)] h-[min(92vh,920px)] flex flex-col"
-        footer={
-          <button
-            type="button"
-            className="rounded border border-tesla-border px-3 py-1 text-sm"
-            onClick={() => setShowLibraryManager(false)}
-          >
-            Close
-          </button>
-        }
+        showCloseButton
+        panelClassName="flex h-[90vh] w-full max-w-[calc(100vw-2rem)] flex-col"
+        bodyClassName="flex min-h-0 flex-1 flex-col overflow-hidden"
       >
         <div className="flex min-h-0 flex-1 flex-col space-y-3">
           <div className="flex items-center gap-2">
@@ -191,11 +192,12 @@ export function LibraryBuilders() {
                 type="button"
                 className="rounded border border-red-500/50 px-2 py-1 text-xs text-red-300"
                 onClick={() => {
-                  setClearAllError(null);
-                  setShowClearAllConfirm(true);
+                  setClearVehicleError(null);
+                  setShowClearVehicleConfirm(true);
                 }}
+                disabled={!vehicleId}
               >
-                Clear All Libraries (Dev)
+                Clear Vehicle Data (Dev)
               </button>
             )}
           </div>
@@ -211,7 +213,7 @@ export function LibraryBuilders() {
                 .map((c) => ({
                   id: c.id,
                   title: c.name,
-                  subtitle: `${c.pin_count} pins${c.key_code ? ` · key ${c.key_code}` : ""}`,
+                  subtitle: connectorSubtitle(c),
                 }))
                 .filter((item) =>
                   `${item.title} ${item.subtitle}`.toLowerCase().includes(search.toLowerCase()),
@@ -242,7 +244,7 @@ export function LibraryBuilders() {
                   .map((p) => ({
                     id: p.id,
                     title: p.name,
-                    subtitle: `${p.slots.length} connector slots`,
+                    subtitle: pcbSubtitle(p),
                   }))
                   .filter((item) =>
                     `${item.title} ${item.subtitle}`.toLowerCase().includes(search.toLowerCase()),
@@ -274,7 +276,7 @@ export function LibraryBuilders() {
                   .map((e) => ({
                     id: e.id,
                     title: e.name,
-                    subtitle: `${e.slots.length} panel connectors · ${e.pcb_slots?.length ?? 0} pcbs`,
+                    subtitle: enclosureSubtitle(e),
                   }))
                   .filter((item) =>
                     `${item.title} ${item.subtitle}`.toLowerCase().includes(search.toLowerCase()),
@@ -400,27 +402,31 @@ export function LibraryBuilders() {
         }}
       />
       <ConfirmModal
-        open={showClearAllConfirm}
-        title="Clear all libraries (dev)"
-        message={`Delete all connector, PCB, and enclosure library entries? This is for local development only.${
-          clearAllError ? `\n\n${clearAllError}` : ""
+        open={showClearVehicleConfirm}
+        title="Clear vehicle data (dev)"
+        message={`Delete all design data and library items tied to vehicle "${
+          selectedVehicleName
+        }"? This action is for local development only.${
+          clearVehicleError ? `\n\n${clearVehicleError}` : ""
         }`}
-        confirmLabel={clearAllMutation.isPending ? "Clearing..." : "Clear all"}
+        confirmLabel={clearVehicleMutation.isPending ? "Clearing..." : "Clear vehicle"}
         destructive
-        disabled={clearAllMutation.isPending}
+        disabled={clearVehicleMutation.isPending || !vehicleId}
         onCancel={() => {
-          setShowClearAllConfirm(false);
-          setClearAllError(null);
+          setShowClearVehicleConfirm(false);
+          setClearVehicleError(null);
         }}
-        onConfirm={() =>
-          clearAllMutation.mutate(undefined, {
+        onConfirm={() => {
+          if (!vehicleId) return;
+          clearVehicleMutation.mutate(vehicleId, {
             onSuccess: () => {
-              setShowClearAllConfirm(false);
-              setClearAllError(null);
+              setShowClearVehicleConfirm(false);
+              setClearVehicleError(null);
+              setShowLibraryManager(false);
             },
-            onError: (error) => setClearAllError(getApiErrorMessage(error)),
-          })
-        }
+            onError: (error) => setClearVehicleError(getApiErrorMessage(error)),
+          });
+        }}
       />
     </>
   );
@@ -490,9 +496,11 @@ function ConnectorBuilderModal({
   onSubmit: (payload: Parameters<typeof createConnectorTemplate>[0]) => void;
   pending: boolean;
 }) {
+  type ConnectorType = "pcb" | "panel_mount" | "inline";
   const [name, setName] = useState("");
   const [pinCount, setPinCount] = useState(2);
   const [manufacturer, setManufacturer] = useState("");
+  const [wireGaugeAwg, setWireGaugeAwg] = useState("");
   const [malePn, setMalePn] = useState("");
   const [femalePn, setFemalePn] = useState("");
   const [maleCrimpPn, setMaleCrimpPn] = useState("");
@@ -500,8 +508,7 @@ function ConnectorBuilderModal({
   const [maleImage, setMaleImage] = useState("");
   const [femaleImage, setFemaleImage] = useState("");
   const [keyCode, setKeyCode] = useState("");
-  const [defaultPanelMount, setDefaultPanelMount] = useState(false);
-  const [isInlineTemplate, setIsInlineTemplate] = useState(false);
+  const [connectorType, setConnectorType] = useState<ConnectorType>("pcb");
   const [voltageClass, setVoltageClass] = useState<"lv" | "hv">("lv");
 
   useEffect(() => {
@@ -510,6 +517,11 @@ function ConnectorBuilderModal({
       setName(initial.name ?? "");
       setPinCount(initial.pin_count ?? 1);
       setManufacturer(initial.manufacturer ?? "");
+      setWireGaugeAwg(
+        initial.wire_gauge_awg !== null && initial.wire_gauge_awg !== undefined
+          ? String(initial.wire_gauge_awg)
+          : "",
+      );
       setMalePn(initial.male_part_number ?? "");
       setFemalePn(initial.female_part_number ?? "");
       setMaleCrimpPn(initial.male_crimp_part_number ?? "");
@@ -517,14 +529,20 @@ function ConnectorBuilderModal({
       setMaleImage(initial.male_image_url ?? "");
       setFemaleImage(initial.female_image_url ?? "");
       setKeyCode(initial.key_code ?? "");
-      setDefaultPanelMount(Boolean(initial.default_is_panel_mount));
-      setIsInlineTemplate(Boolean(initial.is_inline_template));
+      if (initial.default_is_panel_mount) {
+        setConnectorType("panel_mount");
+      } else if (initial.is_inline_template) {
+        setConnectorType("inline");
+      } else {
+        setConnectorType("pcb");
+      }
       setVoltageClass("lv");
       return;
     }
     setName("");
     setPinCount(2);
     setManufacturer("");
+    setWireGaugeAwg("");
     setMalePn("");
     setFemalePn("");
     setMaleCrimpPn("");
@@ -532,8 +550,7 @@ function ConnectorBuilderModal({
     setMaleImage("");
     setFemaleImage("");
     setKeyCode("");
-    setDefaultPanelMount(false);
-    setIsInlineTemplate(false);
+    setConnectorType("pcb");
     setVoltageClass("lv");
   }, [open, mode, initial]);
 
@@ -545,12 +562,12 @@ function ConnectorBuilderModal({
       })),
     [pinCount],
   );
-
   return (
     <Modal
       open={open}
       onClose={onClose}
       title={mode === "edit" ? "Edit Connector Template" : "Connector Builder"}
+      panelClassName="max-w-6xl"
       footer={
         <>
           <button
@@ -569,6 +586,7 @@ function ConnectorBuilderModal({
                 name: name.trim(),
                 pin_count: pinCount,
                 manufacturer: manufacturer || undefined,
+                wire_gauge_awg: wireGaugeAwg.trim() ? Number(wireGaugeAwg) : undefined,
                 male_part_number: malePn || undefined,
                 female_part_number: femalePn || undefined,
                 male_crimp_part_number: maleCrimpPn || undefined,
@@ -576,8 +594,8 @@ function ConnectorBuilderModal({
                 male_image_url: maleImage || undefined,
                 female_image_url: femaleImage || undefined,
                 key_code: keyCode || undefined,
-                default_is_panel_mount: defaultPanelMount,
-                is_inline_template: isInlineTemplate,
+                default_is_panel_mount: connectorType === "panel_mount",
+                is_inline_template: connectorType === "inline",
                 pins: pins.map((p) => ({
                   ...p,
                   role: voltageClass,
@@ -590,51 +608,126 @@ function ConnectorBuilderModal({
         </>
       }
     >
-      <div className="grid grid-cols-2 gap-2">
-        <Field label="Name" value={name} onChange={setName} />
-        <Field label="Pin count" value={String(pinCount)} onChange={(v) => setPinCount(Math.max(1, Number(v) || 1))} />
-        <Field label="Manufacturer" value={manufacturer} onChange={setManufacturer} />
-        <Field label="Key" value={keyCode} onChange={setKeyCode} />
-        <Field label="Male part #" value={malePn} onChange={setMalePn} />
-        <Field label="Female part #" value={femalePn} onChange={setFemalePn} />
-        <Field label="Male crimp #" value={maleCrimpPn} onChange={setMaleCrimpPn} />
-        <Field label="Female crimp #" value={femaleCrimpPn} onChange={setFemaleCrimpPn} />
-        <Field label="Male image URL" value={maleImage} onChange={setMaleImage} />
-        <Field label="Female image URL" value={femaleImage} onChange={setFemaleImage} />
-        <label className="flex items-center gap-2 text-xs text-tesla-muted">
-          Voltage class
-          <select
-            value={voltageClass}
-            onChange={(e) => setVoltageClass(e.target.value as "lv" | "hv")}
-            className="rounded border border-tesla-border bg-tesla-bg px-2 py-1 text-sm text-tesla-text"
-          >
-            <option value="lv">LV</option>
-            <option value="hv">HV</option>
-          </select>
-        </label>
-        <label className="flex items-center gap-2 text-xs text-tesla-muted">
-          <input
-            type="checkbox"
-            checked={defaultPanelMount}
-            onChange={(e) => setDefaultPanelMount(e.target.checked)}
-            disabled={isInlineTemplate}
+      <div className="space-y-3">
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="Name" value={name} onChange={setName} />
+          <Field
+            label="Pin count"
+            value={String(pinCount)}
+            onChange={(v) => setPinCount(Math.max(1, Number(v) || 1))}
           />
-          Default panel mount
-        </label>
-        <label className="flex items-center gap-2 text-xs text-tesla-muted">
-          <input
-            type="checkbox"
-            checked={isInlineTemplate}
-            onChange={(e) => {
-              const checked = e.target.checked;
-              if (checked) {
-                setDefaultPanelMount(false);
-              }
-              setIsInlineTemplate(checked);
-            }}
+          <Field label="Manufacturer" value={manufacturer} onChange={setManufacturer} />
+          <Field
+            label="Wire gauge (AWG)"
+            value={wireGaugeAwg}
+            onChange={setWireGaugeAwg}
           />
-          Inline-capable template
-        </label>
+          <Field label="Key" value={keyCode} onChange={setKeyCode} />
+        </div>
+        <div>
+          <p className="mb-1 text-xs text-tesla-muted">Voltage class</p>
+          <div className="relative flex rounded-md border border-tesla-border p-0.5">
+            <span
+              aria-hidden
+              className="absolute bottom-0.5 left-0.5 top-0.5 rounded bg-tesla-accent transition-transform duration-200 ease-out"
+              style={{
+                width: "calc((100% - 0.25rem) / 2)",
+                transform: `translateX(${voltageClass === "hv" ? 100 : 0}%)`,
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => setVoltageClass("lv")}
+              className={`relative z-10 flex-1 rounded px-2 py-1.5 text-sm transition-colors ${
+                voltageClass === "lv" ? "text-white" : "text-tesla-muted hover:text-tesla-text"
+              }`}
+            >
+              LV
+            </button>
+            <button
+              type="button"
+              onClick={() => setVoltageClass("hv")}
+              className={`relative z-10 flex-1 rounded px-2 py-1.5 text-sm transition-colors ${
+                voltageClass === "hv" ? "text-white" : "text-tesla-muted hover:text-tesla-text"
+              }`}
+            >
+              HV
+            </button>
+          </div>
+        </div>
+        <div>
+          <p className="mb-1 text-xs text-tesla-muted">Connector type</p>
+          <div className="relative flex rounded-md border border-tesla-border p-0.5">
+            <span
+              aria-hidden
+              className="absolute bottom-0.5 left-0.5 top-0.5 rounded bg-tesla-accent transition-transform duration-200 ease-out"
+              style={{
+                width: "calc((100% - 0.25rem) / 3)",
+                transform: `translateX(${
+                  connectorType === "panel_mount" ? 100 : connectorType === "inline" ? 200 : 0
+                }%)`,
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => setConnectorType("pcb")}
+              className={`relative z-10 flex-1 rounded px-2 py-1.5 text-sm transition-colors ${
+                connectorType === "pcb" ? "text-white" : "text-tesla-muted hover:text-tesla-text"
+              }`}
+            >
+              PCB
+            </button>
+            <button
+              type="button"
+              onClick={() => setConnectorType("panel_mount")}
+              className={`relative z-10 flex-1 rounded px-2 py-1.5 text-sm transition-colors ${
+                connectorType === "panel_mount"
+                  ? "text-white"
+                  : "text-tesla-muted hover:text-tesla-text"
+              }`}
+            >
+              Panel Mount
+            </button>
+            <button
+              type="button"
+              onClick={() => setConnectorType("inline")}
+              className={`relative z-10 flex-1 rounded px-2 py-1.5 text-sm transition-colors ${
+                connectorType === "inline" ? "text-white" : "text-tesla-muted hover:text-tesla-text"
+              }`}
+            >
+              Inline
+            </button>
+          </div>
+        </div>
+        <div className="space-y-2 rounded border border-tesla-border p-3">
+          <p className="text-xs font-medium uppercase tracking-wider text-tesla-muted">
+            Mating pair
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="Male part #" value={malePn} onChange={setMalePn} />
+            <Field label="Female part #" value={femalePn} onChange={setFemalePn} />
+            <Field
+              label="Male crimp #"
+              value={maleCrimpPn}
+              onChange={setMaleCrimpPn}
+            />
+            <Field
+              label="Female crimp #"
+              value={femaleCrimpPn}
+              onChange={setFemaleCrimpPn}
+            />
+            <Field
+              label="Male image URL"
+              value={maleImage}
+              onChange={setMaleImage}
+            />
+            <Field
+              label="Female image URL"
+              value={femaleImage}
+              onChange={setFemaleImage}
+            />
+          </div>
+        </div>
       </div>
     </Modal>
   );
@@ -659,7 +752,15 @@ function PcbBuilderModal({
 }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [rows, setRows] = useState<Array<{ slot_key: string; connector_template_id: string; export_to_enclosure: boolean }>>([]);
+  const [rows, setRows] = useState<
+    Array<{
+      slot_key: string;
+      connector_template_id: string;
+      export_to_enclosure: boolean;
+      nickname: string;
+      description: string;
+    }>
+  >([]);
 
   useEffect(() => {
     if (!open) return;
@@ -671,6 +772,8 @@ function PcbBuilderModal({
           slot_key: s.slot_key,
           connector_template_id: s.connector_template_id,
           export_to_enclosure: Boolean(s.export_to_enclosure),
+          nickname: s.nickname ?? "",
+          description: s.description ?? "",
         })),
       );
       return;
@@ -700,7 +803,15 @@ function PcbBuilderModal({
               onSubmit({
                 name: name.trim(),
                 description: description || undefined,
-                slots: rows.filter((r) => r.slot_key && r.connector_template_id),
+                slots: rows
+                  .filter((r) => r.slot_key && r.connector_template_id)
+                  .map((r) => ({
+                    slot_key: r.slot_key,
+                    connector_template_id: r.connector_template_id,
+                    export_to_enclosure: r.export_to_enclosure,
+                    nickname: r.nickname.trim() || undefined,
+                    description: r.description.trim() || undefined,
+                  })),
               })
             }
           >
@@ -720,8 +831,10 @@ function PcbBuilderModal({
               ...prev,
               {
                 slot_key: `J${prev.length + 1}`,
-                connector_template_id: connectors[0]?.id ?? "",
+                connector_template_id: "",
                 export_to_enclosure: false,
+                nickname: "",
+                description: "",
               },
             ])
           }
@@ -729,34 +842,57 @@ function PcbBuilderModal({
           + Add connector slot
         </button>
         {rows.map((row, idx) => (
-          <div key={`${row.slot_key}-${idx}`} className="grid grid-cols-4 gap-2 rounded border border-tesla-border p-2">
-            <Field
-              label="Slot"
-              value={row.slot_key}
-              onChange={(v) =>
-                setRows((prev) => prev.map((r, i) => (i === idx ? { ...r, slot_key: v } : r)))
-              }
-            />
-            <label className="flex flex-col gap-1 text-xs text-tesla-muted">
-              Connector
-              <select
-                value={row.connector_template_id}
-                onChange={(e) =>
-                  setRows((prev) =>
-                    prev.map((r, i) => (i === idx ? { ...r, connector_template_id: e.target.value } : r)),
-                  )
-                }
-                className="rounded border border-tesla-border bg-tesla-bg px-2 py-1 text-sm text-tesla-text"
+          <div key={`${row.slot_key}-${idx}`} className="space-y-2 rounded border border-tesla-border p-2">
+            <div className="flex items-start gap-2">
+              <div className="w-28 shrink-0">
+                <Field
+                  label="Slot"
+                  value={row.slot_key}
+                  onChange={(v) =>
+                    setRows((prev) => prev.map((r, i) => (i === idx ? { ...r, slot_key: v } : r)))
+                  }
+                />
+              </div>
+              <div className="min-w-0 flex-1">
+                <ConnectorTemplatePicker
+                  connectors={connectors}
+                  value={row.connector_template_id}
+                  onChange={(connectorId) =>
+                    setRows((prev) =>
+                      prev.map((r, i) =>
+                        i === idx ? { ...r, connector_template_id: connectorId } : r,
+                      ),
+                    )
+                  }
+                />
+              </div>
+              <button
+                type="button"
+                className="mt-5 rounded border border-red-500/50 px-2 py-1 text-sm text-red-300"
+                onClick={() => setRows((prev) => prev.filter((_, i) => i !== idx))}
+                title="Remove slot"
+                aria-label="Remove slot"
               >
-                <option value="">Select connector</option>
-                {connectors.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="col-span-2 flex items-center gap-2 text-xs text-tesla-muted">
+                🗑
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Field
+                label="Nickname"
+                value={row.nickname}
+                onChange={(v) =>
+                  setRows((prev) => prev.map((r, i) => (i === idx ? { ...r, nickname: v } : r)))
+                }
+              />
+              <Field
+                label="Description"
+                value={row.description}
+                onChange={(v) =>
+                  setRows((prev) => prev.map((r, i) => (i === idx ? { ...r, description: v } : r)))
+                }
+              />
+            </div>
+            <label className="flex items-center gap-2 text-xs text-tesla-muted">
               <input
                 type="checkbox"
                 checked={row.export_to_enclosure}
@@ -797,6 +933,10 @@ function EnclosureBuilderModal({
   const [name, setName] = useState("");
   const [panelSlots, setPanelSlots] = useState<Array<{ slot_key: string; connector_template_id: string }>>([]);
   const [pcbSlots, setPcbSlots] = useState<Array<{ slot_key: string; pcb_template_id: string }>>([]);
+  const panelMountConnectors = useMemo(
+    () => connectors.filter((connector) => connector.default_is_panel_mount),
+    [connectors],
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -857,7 +997,10 @@ function EnclosureBuilderModal({
             onClick={() =>
               setPanelSlots((prev) => [
                 ...prev,
-                { slot_key: `PM${prev.length + 1}`, connector_template_id: connectors[0]?.id ?? "" },
+                {
+                  slot_key: `PM${prev.length + 1}`,
+                  connector_template_id: panelMountConnectors[0]?.id ?? "",
+                },
               ])
             }
           >
@@ -872,25 +1015,18 @@ function EnclosureBuilderModal({
                   setPanelSlots((prev) => prev.map((r, i) => (i === idx ? { ...r, slot_key: v } : r)))
                 }
               />
-              <label className="flex flex-col gap-1 text-xs text-tesla-muted">
-                Connector
-                <select
-                  value={row.connector_template_id}
-                  onChange={(e) =>
-                    setPanelSlots((prev) =>
-                      prev.map((r, i) => (i === idx ? { ...r, connector_template_id: e.target.value } : r)),
-                    )
-                  }
-                  className="rounded border border-tesla-border bg-tesla-bg px-2 py-1 text-sm text-tesla-text"
-                >
-                  <option value="">Select connector</option>
-                  {connectors.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <ConnectorTemplatePicker
+                label="Connector"
+                connectors={panelMountConnectors}
+                value={row.connector_template_id}
+                onChange={(connectorId) =>
+                  setPanelSlots((prev) =>
+                    prev.map((r, i) =>
+                      i === idx ? { ...r, connector_template_id: connectorId } : r,
+                    ),
+                  )
+                }
+              />
             </div>
           ))}
         </div>
@@ -899,39 +1035,33 @@ function EnclosureBuilderModal({
             type="button"
             className="rounded border border-tesla-border px-2 py-1 text-xs"
             onClick={() =>
-              setPcbSlots((prev) => [...prev, { slot_key: `PCB${prev.length + 1}`, pcb_template_id: pcbs[0]?.id ?? "" }])
+              setPcbSlots((prev) => [...prev, { slot_key: `PCB${prev.length + 1}`, pcb_template_id: "" }])
             }
           >
             + Add PCB
           </button>
           {pcbSlots.map((row, idx) => (
-            <div key={`${row.slot_key}-${idx}`} className="mt-2 grid grid-cols-2 gap-2">
-              <Field
-                label="Slot"
-                value={row.slot_key}
-                onChange={(v) =>
-                  setPcbSlots((prev) => prev.map((r, i) => (i === idx ? { ...r, slot_key: v } : r)))
-                }
-              />
-              <label className="flex flex-col gap-1 text-xs text-tesla-muted">
-                PCB template
-                <select
+            <div key={`${row.slot_key}-${idx}`} className="mt-2 flex items-start gap-2">
+              <div className="w-28 shrink-0">
+                <Field
+                  label="Slot"
+                  value={row.slot_key}
+                  onChange={(v) =>
+                    setPcbSlots((prev) => prev.map((r, i) => (i === idx ? { ...r, slot_key: v } : r)))
+                  }
+                />
+              </div>
+              <div className="min-w-0 flex-1">
+                <PcbTemplatePicker
+                  pcbs={pcbs}
                   value={row.pcb_template_id}
-                  onChange={(e) =>
+                  onChange={(pcbId) =>
                     setPcbSlots((prev) =>
-                      prev.map((r, i) => (i === idx ? { ...r, pcb_template_id: e.target.value } : r)),
+                      prev.map((r, i) => (i === idx ? { ...r, pcb_template_id: pcbId } : r)),
                     )
                   }
-                  className="rounded border border-tesla-border bg-tesla-bg px-2 py-1 text-sm text-tesla-text"
-                >
-                  <option value="">Select PCB</option>
-                  {pcbs.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                />
+              </div>
             </div>
           ))}
         </div>
@@ -948,10 +1078,12 @@ function Field({
   label,
   value,
   onChange,
+  disabled = false,
 }: {
   label: string;
   value: string;
   onChange: (next: string) => void;
+  disabled?: boolean;
 }) {
   return (
     <label className="flex flex-col gap-1 text-xs text-tesla-muted">
@@ -959,7 +1091,8 @@ function Field({
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="rounded border border-tesla-border bg-tesla-bg px-2 py-1 text-sm text-tesla-text"
+        disabled={disabled}
+        className="rounded border border-tesla-border bg-tesla-bg px-2 py-1 text-sm text-tesla-text disabled:opacity-50"
       />
     </label>
   );

@@ -4,6 +4,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
+from app.infrastructure.db.models.instances import ConnectorInstance
 from app.infrastructure.db.models.templates import (
     EnclosureTemplate,
     EnclosureTemplatePcbSlot,
@@ -41,6 +42,8 @@ class TemplateService:
                     position_index=slot.position_index,
                     default_role=slot.default_role,
                     export_to_enclosure=slot.export_to_enclosure,
+                    nickname=slot.nickname,
+                    description=slot.description,
                 )
             )
         await self.db.flush()
@@ -55,14 +58,23 @@ class TemplateService:
         template.name = payload.name
         template.description = payload.description
 
-        existing = await self.db.execute(
+        existing_result = await self.db.execute(
             select(PcbTemplateConnectorSlot).where(PcbTemplateConnectorSlot.pcb_template_id == template_id)
         )
-        for slot in existing.scalars().all():
-            await self.db.delete(slot)
-        await self.db.flush()
+        existing_slots = existing_result.scalars().all()
+        existing_by_key = {slot.slot_key: slot for slot in existing_slots}
+        requested_keys = {slot.slot_key for slot in payload.slots}
 
         for slot in payload.slots:
+            current = existing_by_key.get(slot.slot_key)
+            if current:
+                current.connector_template_id = slot.connector_template_id
+                current.position_index = slot.position_index
+                current.default_role = slot.default_role
+                current.export_to_enclosure = slot.export_to_enclosure
+                current.nickname = slot.nickname
+                current.description = slot.description
+                continue
             self.db.add(
                 PcbTemplateConnectorSlot(
                     pcb_template_id=template.id,
@@ -71,8 +83,24 @@ class TemplateService:
                     position_index=slot.position_index,
                     default_role=slot.default_role,
                     export_to_enclosure=slot.export_to_enclosure,
+                    nickname=slot.nickname,
+                    description=slot.description,
                 )
             )
+
+        for slot in existing_slots:
+            if slot.slot_key in requested_keys:
+                continue
+            in_use = await self.db.execute(
+                select(ConnectorInstance.id).where(ConnectorInstance.pcb_template_slot_id == slot.id).limit(1)
+            )
+            if in_use.scalar_one_or_none() is not None:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f'Cannot remove PCB slot "{slot.slot_key}" because it is in use by connector instances',
+                )
+            await self.db.delete(slot)
+
         await self.db.flush()
         return await self.get_pcb_template(template.id)
 
@@ -118,6 +146,8 @@ class TemplateService:
                     position_index=s.position_index,
                     default_role=s.default_role,
                     export_to_enclosure=s.export_to_enclosure,
+                    nickname=s.nickname,
+                    description=s.description,
                 )
                 for s in slots_map.values()
             ],
@@ -169,23 +199,30 @@ class TemplateService:
             raise HTTPException(status_code=404, detail="Enclosure template not found")
         template.name = payload.name
 
-        existing_panels = await self.db.execute(
+        existing_panels_result = await self.db.execute(
             select(EnclosureTemplatePanelSlot).where(
                 EnclosureTemplatePanelSlot.enclosure_template_id == template_id
             )
         )
-        for slot in existing_panels.scalars().all():
-            await self.db.delete(slot)
-        existing_pcbs = await self.db.execute(
+        existing_panel_slots = existing_panels_result.scalars().all()
+        existing_panels_by_key = {slot.slot_key: slot for slot in existing_panel_slots}
+        requested_panel_keys = {slot.slot_key for slot in payload.slots}
+
+        existing_pcbs_result = await self.db.execute(
             select(EnclosureTemplatePcbSlot).where(
                 EnclosureTemplatePcbSlot.enclosure_template_id == template_id
             )
         )
-        for slot in existing_pcbs.scalars().all():
-            await self.db.delete(slot)
-        await self.db.flush()
+        existing_pcb_slots = existing_pcbs_result.scalars().all()
+        existing_pcbs_by_key = {slot.slot_key: slot for slot in existing_pcb_slots}
+        requested_pcb_keys = {slot.slot_key for slot in payload.pcb_slots}
 
         for slot in payload.slots:
+            current = existing_panels_by_key.get(slot.slot_key)
+            if current:
+                current.connector_template_id = slot.connector_template_id
+                current.panel_side = slot.panel_side
+                continue
             self.db.add(
                 EnclosureTemplatePanelSlot(
                     enclosure_template_id=template.id,
@@ -195,6 +232,11 @@ class TemplateService:
                 )
             )
         for pcb_slot in payload.pcb_slots:
+            current = existing_pcbs_by_key.get(pcb_slot.slot_key)
+            if current:
+                current.pcb_template_id = pcb_slot.pcb_template_id
+                current.position_index = pcb_slot.position_index
+                continue
             self.db.add(
                 EnclosureTemplatePcbSlot(
                     enclosure_template_id=template.id,
@@ -203,6 +245,29 @@ class TemplateService:
                     position_index=pcb_slot.position_index,
                 )
             )
+
+        for slot in existing_panel_slots:
+            if slot.slot_key in requested_panel_keys:
+                continue
+            in_use = await self.db.execute(
+                select(ConnectorInstance.id)
+                .where(ConnectorInstance.enclosure_panel_slot_id == slot.id)
+                .limit(1)
+            )
+            if in_use.scalar_one_or_none() is not None:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f'Cannot remove enclosure panel slot "{slot.slot_key}" because it is in use'
+                    ),
+                )
+            await self.db.delete(slot)
+
+        for slot in existing_pcb_slots:
+            if slot.slot_key in requested_pcb_keys:
+                continue
+            await self.db.delete(slot)
+
         await self.db.flush()
         return await self.get_enclosure_template(template.id)
 

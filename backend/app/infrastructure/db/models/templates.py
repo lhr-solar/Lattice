@@ -36,6 +36,8 @@ class PcbTemplateConnectorSlot(Base):
     position_index: Mapped[int | None] = mapped_column(Integer)
     default_role: Mapped[ConnectorRole | None] = mapped_column()
     export_to_enclosure: Mapped[bool] = mapped_column(nullable=False, default=False)
+    nickname: Mapped[str | None] = mapped_column(String(255))
+    description: Mapped[str | None] = mapped_column(Text)
     pin_mapping: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="[]")
 
 

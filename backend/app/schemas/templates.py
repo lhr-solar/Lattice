@@ -12,6 +12,8 @@ class PcbSlotCreate(BaseModel):
     position_index: int | None = None
     default_role: ConnectorRole | None = None
     export_to_enclosure: bool = False
+    nickname: str | None = None
+    description: str | None = None
 
 
 class PcbTemplateCreate(BaseModel):
@@ -31,6 +33,8 @@ class PcbSlotResponse(SchemaBase):
     position_index: int | None
     default_role: ConnectorRole | None
     export_to_enclosure: bool
+    nickname: str | None = None
+    description: str | None = None
 
 
 class PcbTemplateResponse(TimestampSchema):

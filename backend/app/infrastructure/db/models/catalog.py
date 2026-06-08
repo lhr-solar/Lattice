@@ -1,6 +1,7 @@
 import uuid
+from decimal import Decimal
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -17,6 +18,7 @@ class ConnectorTemplate(Base, TimestampMixin):
     manufacturer: Mapped[str | None] = mapped_column(String(128))
     gender: Mapped[ConnectorGender] = mapped_column(default=ConnectorGender.UNKNOWN)
     pin_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    wire_gauge_awg: Mapped[Decimal | None] = mapped_column(Numeric(4, 1))
     default_role: Mapped[ConnectorRole | None] = mapped_column()
     # Unified mating-pair connector: male/female share pin numbering; store both sides' data.
     male_part_number: Mapped[str | None] = mapped_column(String(128))

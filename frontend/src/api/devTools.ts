@@ -1,7 +1,7 @@
 import { apiFetch } from "./client";
 
-export function clearLibraries() {
-  return apiFetch<void>("/dev-tools/clear-libraries", {
+export function clearVehicleData(vehicleId: string) {
+  return apiFetch<void>(`/dev-tools/vehicles/${vehicleId}/clear-all`, {
     method: "POST",
   });
 }
