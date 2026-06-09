@@ -106,8 +106,8 @@ export function NetManager() {
       setSelectedNetId(null);
       setErrorMessage(null);
       invalidate();
-      if (result.created_auto_nets.length) {
-        setFilter("auto");
+      if (result.created_auto_nets.length > 0) {
+        setFilter((current) => (current === "named" ? "auto" : current));
       }
     },
     onError: (error) => setErrorMessage(handleMutationError(error, "Failed to delete net.")),

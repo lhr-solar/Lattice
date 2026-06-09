@@ -45,6 +45,7 @@ export function AdminPage({ onBack }: AdminPageProps) {
     null,
   );
   const [vehicleError, setVehicleError] = useState<string | null>(null);
+  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
 
   const { data: users = [] } = useQuery({
     queryKey: ["admin-users"],
@@ -185,13 +186,26 @@ export function AdminPage({ onBack }: AdminPageProps) {
           <span>{username}</span>
           <button
             type="button"
-            onClick={handleSignOut}
+            onClick={() => setShowSignOutConfirm(true)}
             className="rounded px-2 py-1 transition hover:bg-tesla-border hover:text-tesla-text"
           >
             Sign out
           </button>
         </div>
       </header>
+
+      <ConfirmModal
+        open={showSignOutConfirm}
+        title="Sign out"
+        message="Sign out of Lattice? You will need to log in again to continue."
+        confirmLabel="Sign out"
+        destructive
+        onCancel={() => setShowSignOutConfirm(false)}
+        onConfirm={() => {
+          setShowSignOutConfirm(false);
+          void handleSignOut();
+        }}
+      />
 
       <main className="mx-auto w-full max-w-4xl flex-1 space-y-8 p-6">
         <section className="rounded-lg border border-tesla-border bg-tesla-surface p-5">

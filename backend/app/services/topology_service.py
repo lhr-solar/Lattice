@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.revision_guard import ensure_mutable_revision
@@ -51,6 +51,23 @@ class TopologyService:
             pcb_count=await count_where(PcbInstance.revision_id),
         )
 
+    async def find_edge_between_pins(
+        self, revision_id: UUID, pin_a_id: UUID, pin_b_id: UUID
+    ) -> ConnectionEdge | None:
+        return (
+            await self.db.execute(
+                select(ConnectionEdge).where(
+                    ConnectionEdge.revision_id == revision_id,
+                    or_(
+                        (ConnectionEdge.pin_a_id == pin_a_id)
+                        & (ConnectionEdge.pin_b_id == pin_b_id),
+                        (ConnectionEdge.pin_a_id == pin_b_id)
+                        & (ConnectionEdge.pin_b_id == pin_a_id),
+                    ),
+                )
+            )
+        ).scalar_one_or_none()
+
     async def create_edge(
         self,
         vehicle_id: UUID,
@@ -68,6 +85,12 @@ class TopologyService:
             pin = await self.db.get(Pin, pin_id)
             if not pin or pin.revision_id != revision_id:
                 raise HTTPException(status_code=404, detail=f"Pin {pin_id} not found")
+
+        if await self.find_edge_between_pins(revision_id, payload.pin_a_id, payload.pin_b_id):
+            raise HTTPException(
+                status_code=409,
+                detail="A wire already exists between these pins",
+            )
 
         ctx = await load_pin_context(self.db, revision_id)
         enc_a = ctx.enclosure_for_pin(payload.pin_a_id)

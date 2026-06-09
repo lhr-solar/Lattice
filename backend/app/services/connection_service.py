@@ -11,7 +11,7 @@ from app.core.display import (
     resolve_display_name,
 )
 from app.core.revision_guard import ensure_mutable_revision
-from app.domains.topology.net_naming import is_auto_net_name
+from app.domains.topology.net_naming import is_auto_named_signal
 from app.domains.topology.pin_shorts import load_short_index
 from app.infra.db.enums import SignalKind
 from app.infra.db.models.catalog import ConnectorTemplate
@@ -384,7 +384,7 @@ class ConnectionService:
                     enclosure_label=cctx.enclosure_label if cctx else None,
                     primary_net_id=net[0] if net else None,
                     primary_net_name=net[1] if net else None,
-                    is_auto_net=is_auto_net_name(net[1]) if net else False,
+                    is_auto_net=is_auto_named_signal(net[2], net[1]) if net else False,
                     destinations=destinations,
                     short_partner_pin_ids=sorted(short_partners.get(pin.id, set()), key=str),
                 )
@@ -596,8 +596,8 @@ class ConnectionService:
                 status_code=400, detail="merge_target_net_id must be one of the two pins' nets"
             )
 
-        a_auto = is_auto_net_name(net_a.name)
-        b_auto = is_auto_net_name(net_b.name)
+        a_auto = is_auto_named_signal(net_a.metadata_, net_a.name)
+        b_auto = is_auto_named_signal(net_b.metadata_, net_b.name)
         if a_auto and not b_auto:
             return net_b, net_a  # named net wins
         if b_auto and not a_auto:
@@ -658,6 +658,9 @@ class ConnectionService:
         changed_by: str | None = None,
     ) -> None:
         await self._topology.delete_edge(vehicle_id, revision_id, edge_id, sync=False)
+        await self._net.prune_stale_auto_nets(
+            vehicle_id, revision_id, sync=False, changed_by=changed_by
+        )
         await self._sync(vehicle_id, revision_id, changed_by=changed_by)
 
     async def assign_net_by_name(
@@ -703,12 +706,12 @@ class ConnectionService:
 
     async def _net_by_pin(
         self, revision_id: UUID, pin_ids: list[UUID]
-    ) -> dict[UUID, tuple[UUID, str]]:
+    ) -> dict[UUID, tuple[UUID, str, dict]]:
         if not pin_ids:
             return {}
         rows = (
             await self.db.execute(
-                select(PinSignalAssignment.pin_id, Signal.id, Signal.name)
+                select(PinSignalAssignment.pin_id, Signal.id, Signal.name, Signal.metadata_)
                 .join(Signal, PinSignalAssignment.signal_id == Signal.id)
                 .where(
                     PinSignalAssignment.revision_id == revision_id,
@@ -717,7 +720,10 @@ class ConnectionService:
                 )
             )
         ).all()
-        return {pin_id: (net_id, net_name) for pin_id, net_id, net_name in rows}
+        return {
+            pin_id: (net_id, net_name, metadata_ or {})
+            for pin_id, net_id, net_name, metadata_ in rows
+        }
 
     async def _primary_net(self, revision_id: UUID, pin_id: UUID) -> Signal | None:
         return (

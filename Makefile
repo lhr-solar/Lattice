@@ -36,4 +36,4 @@ api:
 	cd backend && . .venv/bin/activate && PYTHONPATH=. uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 fe:
-	cd frontend && npm run dev
+	cd frontend && npm run dev --host

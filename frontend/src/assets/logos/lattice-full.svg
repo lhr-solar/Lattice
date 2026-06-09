@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="120 40 560 480" width="100%" height="100%">
+  <defs>
+    <linearGradient id="blueGradPrimaryTight" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#1d4ed8" />
+      <stop offset="60%" stop-color="#3b82f6" />
+      <stop offset="100%" stop-color="#60a5fa" />
+    </linearGradient>
+
+    <linearGradient id="blueGradSecondaryTight" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3b82f6" />
+      <stop offset="100%" stop-color="#1e3a8a" />
+    </linearGradient>
+
+    <filter id="glowTight" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <g transform="translate(400, 225)" text-anchor="middle">
+    
+    <path d="M -120,-40 L 0,-100 L 120,-40 L 0,20 Z" fill="none" stroke="#2a2a2a" stroke-width="1.5" stroke-dasharray="4,4" />
+    <path d="M -120,60 L 0,0 L 120,60 L 0,120 Z" fill="none" stroke="#2a2a2a" stroke-width="1.5" stroke-dasharray="4,4" />
+    <line x1="-120" y1="-40" x2="-120" y2="60" stroke="#2a2a2a" stroke-width="1.5" stroke-dasharray="4,4" />
+    <line x1="0" y1="-100" x2="0" y2="0" stroke="#2a2a2a" stroke-width="1.5" stroke-dasharray="4,4" />
+    <line x1="120" y1="-40" x2="120" y2="60" stroke="#2a2a2a" stroke-width="1.5" stroke-dasharray="4,4" />
+    <line x1="0" y1="20" x2="0" y2="120" stroke="#2a2a2a" stroke-width="1.5" stroke-dasharray="4,4" />
+
+    <path d="M -120,40 L -120,-20 L 0,-80 L 120,-20 L 120,40" fill="none" stroke="#6b6b6b" stroke-width="3" stroke-linecap="round" opacity="0.4" />
+    
+    <path d="M -80,60 L 0,20 L 0,-40" fill="none" stroke="url(#blueGradSecondaryTight)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M -120,40 L 0,-20 L 120,40 M 0,-20 L 0,100" fill="none" stroke="url(#blueGradPrimaryTight)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" filter="url(#glowTight)" />
+
+    <circle cx="-120" cy="40" r="6" fill="#e8e8e8" stroke="#2a2a2a" stroke-width="2" />
+    <circle cx="120" cy="40" r="6" fill="#e8e8e8" stroke="#2a2a2a" stroke-width="2" />
+    <circle cx="-80" cy="60" r="5" fill="#6b6b6b" />
+    
+    <circle cx="0" cy="-20" r="9" fill="#0a0a0a" stroke="#3b82f6" stroke-width="4" />
+    <circle cx="0" cy="-20" r="3" fill="#e8e8e8" />
+
+    <circle cx="0" cy="40" r="7" fill="#3b82f6" filter="url(#glowTight)" />
+    <circle cx="0" cy="100" r="9" fill="url(#blueGradPrimaryTight)" />
+  </g>
+
+  <text x="400" y="425" 
+        font-family="'Orbitron', 'Rajdhani', 'Inter', sans-serif" 
+        font-size="54" 
+        font-weight="700" 
+        letter-spacing="14" 
+        fill="#e8e8e8" 
+        text-anchor="middle">LATTICE</text>
+
+  <text x="400" y="465" 
+        font-family="'Inter', sans-serif" 
+        font-size="13" 
+        font-weight="500" 
+        letter-spacing="5" 
+        fill="#6b6b6b" 
+        text-anchor="middle">WIRE HARNESS INTERCONNECT</text>
+</svg>
