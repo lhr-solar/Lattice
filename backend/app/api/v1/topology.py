@@ -4,7 +4,6 @@ from fastapi import APIRouter, Depends, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
-from app.core.auth_context import UserContext, get_optional_user_context
 from app.schemas.topology import (
     ConnectionEdgeCreate,
     ConnectionEdgeResponse,
@@ -49,9 +48,7 @@ async def update_edge(
     edge_id: UUID,
     payload: ConnectionEdgeUpdate,
     db: AsyncSession = Depends(get_db),
-    user: UserContext | None = Depends(get_optional_user_context),
 ) -> ConnectionEdgeResponse:
-    _ = user
     return await TopologyService(db).update_edge(vehicle_id, revision_id, edge_id, payload)
 
 

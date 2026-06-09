@@ -11,7 +11,11 @@ import { ConnectionTable } from "@/features/connections/ConnectionTable";
 import { LibraryBuilders } from "@/features/library/LibraryBuilders";
 import { useAppStore } from "@/stores/appStore";
 
-export function AppShell() {
+interface AppShellProps {
+  onOpenAdmin?: () => void;
+}
+
+export function AppShell({ onOpenAdmin }: AppShellProps) {
   const mode = useAppStore((s) => s.mode);
 
   return (
@@ -21,7 +25,7 @@ export function AppShell() {
       <PinNameLibraryModal />
       <ConnectionTable />
       <LibraryBuilders />
-      <TopBar />
+      <TopBar onOpenAdmin={onOpenAdmin} />
       <div className="flex min-h-0 flex-1">
         <HierarchyNav />
         <main className="relative min-w-0 flex-1">

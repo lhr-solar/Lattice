@@ -1,8 +1,14 @@
+import { logout } from "@/api/auth";
 import { useSessionStore } from "@/stores/sessionStore";
 import { useAppStore } from "@/stores/appStore";
 
-export function TopBar() {
-  const displayName = useSessionStore((s) => s.displayName);
+interface TopBarProps {
+  onOpenAdmin?: () => void;
+}
+
+export function TopBar({ onOpenAdmin }: TopBarProps) {
+  const username = useSessionStore((s) => s.username);
+  const isAdmin = useSessionStore((s) => s.isAdmin);
   const clearSession = useSessionStore((s) => s.clearSession);
   const searchQuery = useAppStore((s) => s.searchQuery);
   const setSearchQuery = useAppStore((s) => s.setSearchQuery);
@@ -10,6 +16,15 @@ export function TopBar() {
   const setShowHelpModal = useAppStore((s) => s.setShowHelpModal);
   const setLibraryTab = useAppStore((s) => s.setLibraryTab);
   const mode = useAppStore((s) => s.mode);
+
+  async function handleSignOut() {
+    try {
+      await logout();
+    } catch {
+      // clear local state regardless
+    }
+    clearSession();
+  }
 
   return (
     <header className="flex h-12 items-center gap-4 border-b border-tesla-border bg-tesla-surface px-4">
@@ -44,10 +59,19 @@ export function TopBar() {
         className="max-w-md flex-1 rounded-md border border-tesla-border bg-tesla-bg px-3 py-1.5 text-sm outline-none transition focus:border-tesla-accent"
       />
       <div className="ml-auto flex items-center gap-3 text-sm text-tesla-muted">
-        <span>{displayName}</span>
+        {isAdmin && onOpenAdmin && (
+          <button
+            type="button"
+            onClick={onOpenAdmin}
+            className="rounded px-2 py-1 transition hover:bg-tesla-border hover:text-tesla-text"
+          >
+            Admin
+          </button>
+        )}
+        <span>{username}</span>
         <button
           type="button"
-          onClick={clearSession}
+          onClick={handleSignOut}
           className="rounded px-2 py-1 transition hover:bg-tesla-border hover:text-tesla-text"
         >
           Sign out
