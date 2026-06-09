@@ -25,6 +25,20 @@ def is_user_named_net(name: str) -> bool:
     return not is_auto_net_name(name)
 
 
+def is_auto_named_signal(metadata: dict | None, name: str) -> bool:
+    """True for system-created nets the user has not renamed."""
+    meta = metadata or {}
+    if meta.get("user_renamed"):
+        return False
+    if meta.get("auto_created"):
+        return True
+    return is_auto_net_name(name)
+
+
+def is_user_named_signal(metadata: dict | None, name: str) -> bool:
+    return not is_auto_named_signal(metadata, name)
+
+
 def format_endpoint(connector_label: str, pin_name: str) -> str:
     return f"{sanitize_net_token(connector_label)}.{sanitize_net_token(pin_name)}"
 

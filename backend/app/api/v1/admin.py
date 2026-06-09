@@ -5,7 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
 from app.core.auth_context import UserContext, get_admin_user
-from app.schemas.auth import UserCreate, UserResponse
+from app.schemas.auth import AdminUserResponse, UserCreate, UserResponse
+from app.realtime.ws_hub import ws_hub
 from app.schemas.vehicles import VehicleCreate, VehicleResponse, VehicleUpdate
 from app.services.user_service import UserService
 from app.services.vehicle_service import VehicleService
@@ -13,12 +14,29 @@ from app.services.vehicle_service import VehicleService
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
-@router.get("/users", response_model=list[UserResponse])
+@router.get("/users", response_model=list[AdminUserResponse])
 async def list_users(
     db: AsyncSession = Depends(get_db),
     _admin: UserContext = Depends(get_admin_user),
-) -> list[UserResponse]:
-    return await UserService(db).list_users()
+) -> list[AdminUserResponse]:
+    users = await UserService(db).list_users()
+    connected_ids = ws_hub.connected_user_ids()
+    return [
+        AdminUserResponse(
+            id=user.id,
+            username=user.username,
+            is_admin=user.is_admin,
+            is_connected=user.id in connected_ids,
+        )
+        for user in users
+    ]
+
+
+@router.get("/connected-count")
+async def connected_count(
+    _admin: UserContext = Depends(get_admin_user),
+) -> dict[str, int]:
+    return {"count": ws_hub.connected_count()}
 
 
 @router.post("/users", response_model=UserResponse, status_code=201)

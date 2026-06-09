@@ -17,11 +17,26 @@ from app.infra.db.models.instances import ConnectorInstance, Pin
 from app.infra.db.models.shorts import ConnectorInstancePinShort
 from app.infra.db.models.topology import PinSignalAssignment, Signal
 from app.schemas.shorts import PinShortCreate, PinShortResponse, TemplatePinShortCreate
+from app.services.revision_sync_service import DOMAINS_SHORTS, RevisionSyncService
 
 
 class ShortService:
     def __init__(self, db: AsyncSession):
         self.db = db
+
+    async def _sync(
+        self,
+        vehicle_id: UUID,
+        revision_id: UUID,
+        *,
+        changed_by: str | None = None,
+    ) -> None:
+        await RevisionSyncService(self.db).bump_and_notify(
+            vehicle_id=vehicle_id,
+            revision_id=revision_id,
+            domains=DOMAINS_SHORTS,
+            changed_by=changed_by,
+        )
 
     async def list_instance_shorts(
         self, revision_id: UUID, connector_instance_id: UUID
@@ -40,6 +55,8 @@ class ShortService:
         revision_id: UUID,
         connector_instance_id: UUID,
         payload: PinShortCreate,
+        *,
+        changed_by: str | None = None,
     ) -> PinShortResponse:
         await ensure_mutable_revision(self.db, revision_id, vehicle_id)
         pin_a, pin_b = await self._validate_short_pins(
@@ -70,16 +87,24 @@ class ShortService:
             vehicle_id, revision_id, connector_instance_id, payload.pin_a_id
         )
 
-        return PinShortResponse.model_validate(short)
+        response = PinShortResponse.model_validate(short)
+        await self._sync(vehicle_id, revision_id, changed_by=changed_by)
+        return response
 
     async def delete_instance_short(
-        self, vehicle_id: UUID, revision_id: UUID, short_id: UUID
+        self,
+        vehicle_id: UUID,
+        revision_id: UUID,
+        short_id: UUID,
+        *,
+        changed_by: str | None = None,
     ) -> None:
         await ensure_mutable_revision(self.db, revision_id, vehicle_id)
         short = await self.db.get(ConnectorInstancePinShort, short_id)
         if not short or short.revision_id != revision_id:
             raise HTTPException(status_code=404, detail="Short not found")
         await self.db.delete(short)
+        await self._sync(vehicle_id, revision_id, changed_by=changed_by)
 
     async def apply_template_shorts_to_instance(
         self, revision_id: UUID, connector_instance_id: UUID, template_id: UUID, vehicle_id: UUID

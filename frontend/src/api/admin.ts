@@ -1,8 +1,12 @@
 import { apiFetch } from "./client";
-import type { User, Vehicle } from "./types";
+import type { AdminUser, User, Vehicle } from "./types";
 
 export function fetchUsers() {
-  return apiFetch<User[]>("/admin/users");
+  return apiFetch<AdminUser[]>("/admin/users");
+}
+
+export function fetchConnectedCount() {
+  return apiFetch<{ count: number }>("/admin/connected-count");
 }
 
 export function createUser(username: string, password: string) {

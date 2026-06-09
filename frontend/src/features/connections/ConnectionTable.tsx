@@ -22,8 +22,10 @@ import {
 import { useAppStore } from "@/stores/appStore";
 import { ConnectorInstanceLabel } from "@/components/library/ConnectorInstanceLabel";
 
+import { invalidateRevisionDomains } from "@/lib/revisionInvalidation";
+
 function invalidateAll(qc: QueryClient) {
-  for (const key of [
+  invalidateRevisionDomains(qc, [
     "connection-table",
     "connection-scopes",
     "nets",
@@ -32,9 +34,7 @@ function invalidateAll(qc: QueryClient) {
     "shorts",
     "design-projection",
     "topology-summary",
-  ]) {
-    qc.invalidateQueries({ queryKey: [key] });
-  }
+  ]);
 }
 
 interface ConnectorBucket {

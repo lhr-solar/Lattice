@@ -4,6 +4,7 @@ from app.api.v1 import (
     admin,
     auth,
     connections,
+    realtime,
     connector_templates,
     graph,
     hierarchy,
@@ -24,6 +25,7 @@ from app.core.auth_context import get_current_user
 
 api_router = APIRouter()
 api_router.include_router(auth.router)
+api_router.include_router(realtime.router)
 
 protected_router = APIRouter(dependencies=[Depends(get_current_user)])
 protected_router.include_router(admin.router)

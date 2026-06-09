@@ -49,6 +49,10 @@ export interface User {
   is_admin: boolean;
 }
 
+export interface AdminUser extends User {
+  is_connected: boolean;
+}
+
 export interface AuthResponse {
   user: User;
 }

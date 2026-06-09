@@ -43,6 +43,7 @@ from app.schemas.instances import (
     PcbInstanceUpdate,
     PcbInstanceResponse,
 )
+from app.services.revision_sync_service import DOMAINS_INSTANCES, RevisionSyncService
 from app.services.short_service import ShortService
 
 
@@ -50,11 +51,27 @@ class InstanceService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
+    async def _sync(
+        self,
+        vehicle_id: UUID,
+        revision_id: UUID,
+        *,
+        changed_by: str | None = None,
+    ) -> None:
+        await RevisionSyncService(self.db).bump_and_notify(
+            vehicle_id=vehicle_id,
+            revision_id=revision_id,
+            domains=DOMAINS_INSTANCES,
+            changed_by=changed_by,
+        )
+
     async def instantiate_enclosure(
         self,
         vehicle_id: UUID,
         revision_id: UUID,
         payload: EnclosureInstanceCreate,
+        *,
+        changed_by: str | None = None,
     ) -> EnclosureInstanceResponse:
         await ensure_mutable_revision(self.db, revision_id, vehicle_id)
         template = await self.db.get(EnclosureTemplate, payload.enclosure_template_id)
@@ -107,6 +124,7 @@ class InstanceService:
                     pcb_template_id=pcb_slot.pcb_template_id,
                     enclosure_instance_id=instance.id,
                 ),
+                sync=False,
             )
             pcb_ids.append(pcb_response.id)
             connector_ids.extend(pcb_response.connector_instance_ids)
@@ -116,7 +134,7 @@ class InstanceService:
             nickname=nickname,
             use_template_name=use_template_name,
         )
-        return EnclosureInstanceResponse(
+        response = EnclosureInstanceResponse(
             id=instance.id,
             revision_id=revision_id,
             vehicle_id=vehicle_id,
@@ -128,12 +146,17 @@ class InstanceService:
             connector_instance_ids=connector_ids,
             pcb_instance_ids=pcb_ids,
         )
+        await self._sync(vehicle_id, revision_id, changed_by=changed_by)
+        return response
 
     async def instantiate_pcb(
         self,
         vehicle_id: UUID,
         revision_id: UUID,
         payload: PcbInstanceCreate,
+        *,
+        sync: bool = True,
+        changed_by: str | None = None,
     ) -> PcbInstanceResponse:
         await ensure_mutable_revision(self.db, revision_id, vehicle_id)
         template = await self.db.get(PcbTemplate, payload.pcb_template_id)
@@ -189,7 +212,7 @@ class InstanceService:
             nickname=nickname,
             use_template_name=use_template_name,
         )
-        return PcbInstanceResponse(
+        response = PcbInstanceResponse(
             id=instance.id,
             revision_id=revision_id,
             vehicle_id=vehicle_id,
@@ -201,12 +224,17 @@ class InstanceService:
             enclosure_instance_id=payload.enclosure_instance_id,
             connector_instance_ids=connector_ids,
         )
+        if sync:
+            await self._sync(vehicle_id, revision_id, changed_by=changed_by)
+        return response
 
     async def create_connector(
         self,
         vehicle_id: UUID,
         revision_id: UUID,
         payload: ConnectorInstanceCreate,
+        *,
+        changed_by: str | None = None,
     ) -> ConnectorInstanceResponse:
         await ensure_mutable_revision(self.db, revision_id, vehicle_id)
         template = await self.db.get(ConnectorTemplate, payload.connector_template_id)
@@ -252,7 +280,7 @@ class InstanceService:
             nickname=nickname,
             use_template_name=use_template_name,
         )
-        return ConnectorInstanceResponse(
+        response = ConnectorInstanceResponse(
             id=instance.id,
             revision_id=revision_id,
             vehicle_id=vehicle_id,
@@ -271,6 +299,8 @@ class InstanceService:
             role=instance.role,
             pin_ids=pin_ids,
         )
+        await self._sync(vehicle_id, revision_id, changed_by=changed_by)
+        return response
 
     async def list_enclosures(self, revision_id: UUID) -> list[EnclosureInstanceResponse]:
         result = await self.db.execute(
@@ -308,8 +338,13 @@ class InstanceService:
         connector_instance_id: UUID,
         pin_id: UUID,
         payload: PinUpdate,
+        *,
+        changed_by: str | None = None,
     ) -> PinResponse:
         await ensure_mutable_revision(self.db, revision_id, vehicle_id)
+        await RevisionSyncService(self.db).check_expected_sequence(
+            revision_id, payload.expected_edit_sequence, vehicle_id
+        )
         pin = await self.db.get(Pin, pin_id)
         if (
             not pin
@@ -320,13 +355,15 @@ class InstanceService:
 
         pin.name = payload.name.strip()
         await self.db.flush()
-        return PinResponse(
+        response = PinResponse(
             id=pin.id,
             connector_instance_id=pin.connector_instance_id,
             pin_number=pin.pin_number,
             name=pin.name,
             role=pin.role,
         )
+        await self._sync(vehicle_id, revision_id, changed_by=changed_by)
+        return response
 
     async def update_enclosure(
         self,
@@ -334,8 +371,13 @@ class InstanceService:
         revision_id: UUID,
         enclosure_instance_id: UUID,
         payload: EnclosureInstanceUpdate,
+        *,
+        changed_by: str | None = None,
     ) -> EnclosureInstanceResponse:
         await ensure_mutable_revision(self.db, revision_id, vehicle_id)
+        await RevisionSyncService(self.db).check_expected_sequence(
+            revision_id, payload.expected_edit_sequence, vehicle_id
+        )
         enc = await self.db.get(EnclosureInstance, enclosure_instance_id)
         if not enc or enc.revision_id != revision_id or enc.vehicle_id != vehicle_id:
             raise HTTPException(status_code=404, detail="Enclosure instance not found")
@@ -347,7 +389,7 @@ class InstanceService:
 
         await self.db.flush()
         template = await self.db.get(EnclosureTemplate, enc.enclosure_template_id)
-        return EnclosureInstanceResponse(
+        response = EnclosureInstanceResponse(
             id=enc.id,
             revision_id=enc.revision_id,
             vehicle_id=enc.vehicle_id,
@@ -363,6 +405,8 @@ class InstanceService:
             connector_instance_ids=await self._connector_ids_for_enclosure(enc.id),
             pcb_instance_ids=await self._pcb_ids_for_enclosure(enc.id),
         )
+        await self._sync(vehicle_id, revision_id, changed_by=changed_by)
+        return response
 
     async def update_pcb(
         self,
@@ -370,8 +414,13 @@ class InstanceService:
         revision_id: UUID,
         pcb_instance_id: UUID,
         payload: PcbInstanceUpdate,
+        *,
+        changed_by: str | None = None,
     ) -> PcbInstanceResponse:
         await ensure_mutable_revision(self.db, revision_id, vehicle_id)
+        await RevisionSyncService(self.db).check_expected_sequence(
+            revision_id, payload.expected_edit_sequence, vehicle_id
+        )
         pcb = await self.db.get(PcbInstance, pcb_instance_id)
         if not pcb or pcb.revision_id != revision_id or pcb.vehicle_id != vehicle_id:
             raise HTTPException(status_code=404, detail="PCB instance not found")
@@ -386,7 +435,7 @@ class InstanceService:
         connector_ids_result = await self.db.execute(
             select(ConnectorInstance.id).where(ConnectorInstance.pcb_instance_id == pcb.id)
         )
-        return PcbInstanceResponse(
+        response = PcbInstanceResponse(
             id=pcb.id,
             revision_id=pcb.revision_id,
             vehicle_id=pcb.vehicle_id,
@@ -402,6 +451,8 @@ class InstanceService:
             enclosure_instance_id=pcb.enclosure_instance_id,
             connector_instance_ids=list(connector_ids_result.scalars().all()),
         )
+        await self._sync(vehicle_id, revision_id, changed_by=changed_by)
+        return response
 
     async def update_connector(
         self,
@@ -409,8 +460,13 @@ class InstanceService:
         revision_id: UUID,
         connector_instance_id: UUID,
         payload: ConnectorInstanceUpdate,
+        *,
+        changed_by: str | None = None,
     ) -> ConnectorInstanceResponse:
         await ensure_mutable_revision(self.db, revision_id, vehicle_id)
+        await RevisionSyncService(self.db).check_expected_sequence(
+            revision_id, payload.expected_edit_sequence, vehicle_id
+        )
         conn = await self.db.get(ConnectorInstance, connector_instance_id)
         if not conn or conn.revision_id != revision_id or conn.vehicle_id != vehicle_id:
             raise HTTPException(status_code=404, detail="Connector instance not found")
@@ -425,7 +481,7 @@ class InstanceService:
         pin_ids_result = await self.db.execute(
             select(Pin.id).where(Pin.connector_instance_id == conn.id)
         )
-        return ConnectorInstanceResponse(
+        response = ConnectorInstanceResponse(
             id=conn.id,
             revision_id=conn.revision_id,
             vehicle_id=conn.vehicle_id,
@@ -448,9 +504,16 @@ class InstanceService:
             role=conn.role,
             pin_ids=list(pin_ids_result.scalars().all()),
         )
+        await self._sync(vehicle_id, revision_id, changed_by=changed_by)
+        return response
 
     async def delete_connector(
-        self, vehicle_id: UUID, revision_id: UUID, connector_instance_id: UUID
+        self,
+        vehicle_id: UUID,
+        revision_id: UUID,
+        connector_instance_id: UUID,
+        *,
+        changed_by: str | None = None,
     ) -> None:
         await ensure_mutable_revision(self.db, revision_id, vehicle_id)
         conn = await self.db.get(ConnectorInstance, connector_instance_id)
@@ -463,8 +526,16 @@ class InstanceService:
         await self.db.delete(conn)
         await self.db.flush()
         await self._prune_orphan_signals(revision_id)
+        await self._sync(vehicle_id, revision_id, changed_by=changed_by)
 
-    async def delete_pcb(self, vehicle_id: UUID, revision_id: UUID, pcb_instance_id: UUID) -> None:
+    async def delete_pcb(
+        self,
+        vehicle_id: UUID,
+        revision_id: UUID,
+        pcb_instance_id: UUID,
+        *,
+        changed_by: str | None = None,
+    ) -> None:
         await ensure_mutable_revision(self.db, revision_id, vehicle_id)
         pcb = await self.db.get(PcbInstance, pcb_instance_id)
         if not pcb or pcb.revision_id != revision_id or pcb.vehicle_id != vehicle_id:
@@ -477,9 +548,15 @@ class InstanceService:
         await self.db.delete(pcb)
         await self.db.flush()
         await self._prune_orphan_signals(revision_id)
+        await self._sync(vehicle_id, revision_id, changed_by=changed_by)
 
     async def delete_enclosure(
-        self, vehicle_id: UUID, revision_id: UUID, enclosure_instance_id: UUID
+        self,
+        vehicle_id: UUID,
+        revision_id: UUID,
+        enclosure_instance_id: UUID,
+        *,
+        changed_by: str | None = None,
     ) -> None:
         await ensure_mutable_revision(self.db, revision_id, vehicle_id)
         enc = await self.db.get(EnclosureInstance, enclosure_instance_id)
@@ -505,6 +582,7 @@ class InstanceService:
         await self.db.delete(enc)
         await self.db.flush()
         await self._prune_orphan_signals(revision_id)
+        await self._sync(vehicle_id, revision_id, changed_by=changed_by)
 
     async def _pin_ids_for_connectors(self, connector_ids: list[UUID]) -> list[UUID]:
         if not connector_ids:

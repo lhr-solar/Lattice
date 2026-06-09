@@ -6,6 +6,7 @@ export interface Revision {
   status: string;
   label: string | null;
   is_immutable: boolean;
+  edit_sequence: number;
 }
 
 export function fetchRevisions(vehicleId: string) {

@@ -1,5 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { publishRevision } from "@/api/revisions";
+import { isRevisionPublishedError } from "@/api/client";
+import { fetchRevisions, publishRevision } from "@/api/revisions";
+import { invalidateAllRevisionData } from "@/lib/revisionInvalidation";
 import { useAppStore } from "@/stores/appStore";
 
 export function PublishRevisionSection() {
@@ -11,20 +13,34 @@ export function PublishRevisionSection() {
   const publish = useMutation({
     mutationFn: async () => {
       if (!vehicleId || !revisionId) return;
-      const result = await publishRevision(vehicleId, revisionId);
-      selectVehicle(vehicleId, result.new_draft_revision.id);
-      queryClient.invalidateQueries({ queryKey: ["vehicles"] });
-      queryClient.invalidateQueries({ queryKey: ["revisions", vehicleId] });
+      return publishRevision(vehicleId, revisionId);
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["hierarchy"] });
-      queryClient.invalidateQueries({ queryKey: ["design-projection"] });
-      queryClient.invalidateQueries({ queryKey: ["topology-summary"] });
+    onSuccess: (result) => {
+      if (!result || !vehicleId) return;
+      selectVehicle(vehicleId, result.new_draft_revision.id);
+      invalidateAllRevisionData(queryClient);
+    },
+    onError: async (error) => {
+      if (!vehicleId || !isRevisionPublishedError(error)) return;
+      const revisions = await queryClient.fetchQuery({
+        queryKey: ["revisions", vehicleId],
+        queryFn: () => fetchRevisions(vehicleId),
+      });
+      const draft = revisions.revisions.find((r) => !r.is_immutable);
+      if (draft) {
+        selectVehicle(vehicleId, draft.id);
+        invalidateAllRevisionData(queryClient);
+      }
     },
   });
 
   return (
     <div className="border-t border-tesla-border p-3">
+      {publish.isError && isRevisionPublishedError(publish.error) && (
+        <p className="mb-2 text-xs text-amber-200">
+          This revision was already published. Switched to the current draft.
+        </p>
+      )}
       <button
         type="button"
         disabled={!vehicleId || !revisionId || publish.isPending}

@@ -39,6 +39,7 @@ class NetCreate(BaseModel):
 class NetUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     signal_kind: SignalKind | None = None
+    expected_edit_sequence: int | None = None
 
 
 class NetDeleteResult(BaseModel):

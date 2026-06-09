@@ -63,7 +63,7 @@ export function updateNet(
   vehicleId: string,
   revisionId: string,
   netId: string,
-  body: { name?: string; signal_kind?: string },
+  body: { name?: string; signal_kind?: string; expected_edit_sequence?: number },
 ) {
   return apiFetch<NetDetail>(`/vehicles/${vehicleId}/revisions/${revisionId}/nets/${netId}`, {
     method: "PATCH",

@@ -4,13 +4,11 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import hash_password
+from app.core.config import settings
+from app.core.security import hash_password, verify_password
 from app.core.time import utc_now
 from app.infra.db.models.user import User
 from app.schemas.auth import UserCreate, UserResponse
-
-ADMIN_USERNAME = "admin"
-ADMIN_PASSWORD = "lhrs2025!"
 
 
 class UserService:
@@ -18,13 +16,21 @@ class UserService:
         self.db = db
 
     async def ensure_admin_user(self) -> None:
-        result = await self.db.execute(select(User).where(User.username == ADMIN_USERNAME))
-        if result.scalar_one_or_none():
+        username = settings.admin_username.strip()
+        password = settings.admin_password
+        result = await self.db.execute(select(User).where(User.username == username))
+        user = result.scalar_one_or_none()
+        if user:
+            if not user.is_admin:
+                user.is_admin = True
+            if not verify_password(password, user.password_hash):
+                user.password_hash = hash_password(password)
+            await self.db.flush()
             return
         self.db.add(
             User(
-                username=ADMIN_USERNAME,
-                password_hash=hash_password(ADMIN_PASSWORD),
+                username=username,
+                password_hash=hash_password(password),
                 is_admin=True,
                 created_at=utc_now(),
             )

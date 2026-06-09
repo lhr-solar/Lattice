@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -42,6 +42,7 @@ class Revision(Base):
     snapshot_taken_at: Mapped[datetime | None] = mapped_column()
     created_by: Mapped[str | None] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(nullable=False)
+    edit_sequence: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default="0")
 
     vehicle: Mapped["Vehicle"] = relationship(back_populates="revisions")
 

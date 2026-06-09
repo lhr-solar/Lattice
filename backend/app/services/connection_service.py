@@ -11,7 +11,7 @@ from app.core.display import (
     resolve_display_name,
 )
 from app.core.revision_guard import ensure_mutable_revision
-from app.domains.topology.net_naming import is_auto_net_name
+from app.domains.topology.net_naming import is_auto_named_signal
 from app.domains.topology.pin_shorts import load_short_index
 from app.infra.db.enums import SignalKind
 from app.infra.db.models.catalog import ConnectorTemplate
@@ -38,6 +38,7 @@ from app.schemas.connections import (
     PinConnectionRow,
 )
 from app.schemas.topology import ConnectionEdgeCreate
+from app.services.revision_sync_service import DOMAINS_WIRING, RevisionSyncService
 from app.services.net_service import NetService
 from app.services.topology_service import TopologyService
 
@@ -66,6 +67,20 @@ class ConnectionService:
         self.db = db
         self._net = NetService(db)
         self._topology = TopologyService(db)
+
+    async def _sync(
+        self,
+        vehicle_id: UUID,
+        revision_id: UUID,
+        *,
+        changed_by: str | None = None,
+    ) -> None:
+        await RevisionSyncService(self.db).bump_and_notify(
+            vehicle_id=vehicle_id,
+            revision_id=revision_id,
+            domains=DOMAINS_WIRING,
+            changed_by=changed_by,
+        )
 
     # ----------------------------------------------------------------- context
 
@@ -369,7 +384,7 @@ class ConnectionService:
                     enclosure_label=cctx.enclosure_label if cctx else None,
                     primary_net_id=net[0] if net else None,
                     primary_net_name=net[1] if net else None,
-                    is_auto_net=is_auto_net_name(net[1]) if net else False,
+                    is_auto_net=is_auto_named_signal(net[2], net[1]) if net else False,
                     destinations=destinations,
                     short_partner_pin_ids=sorted(short_partners.get(pin.id, set()), key=str),
                 )
@@ -455,7 +470,12 @@ class ConnectionService:
     # ------------------------------------------------------------------ mutate
 
     async def connect_pins(
-        self, vehicle_id: UUID, revision_id: UUID, payload: ConnectPinsRequest
+        self,
+        vehicle_id: UUID,
+        revision_id: UUID,
+        payload: ConnectPinsRequest,
+        *,
+        changed_by: str | None = None,
     ) -> ConnectPinsResult:
         await ensure_mutable_revision(self.db, revision_id, vehicle_id)
         if payload.pin_a_id == payload.pin_b_id:
@@ -496,6 +516,7 @@ class ConnectionService:
                     wire_color=payload.wire_color,
                     gauge_awg=payload.gauge_awg,
                 ),
+                sync=False,
             )
             edge = await self.db.get(ConnectionEdge, created.id)
 
@@ -527,11 +548,15 @@ class ConnectionService:
                     action, result_net = "merged", target
                     message = f"Wire created — merged onto net {target.name}."
         elif net_a and not net_b:
-            await self._net.assign_pin_to_net(vehicle_id, revision_id, net_a.id, payload.pin_b_id)
+            await self._net.assign_pin_to_net(
+                vehicle_id, revision_id, net_a.id, payload.pin_b_id, sync=False
+            )
             action, result_net = "picked_up", net_a
             message = f"Picked up net {net_a.name} for the destination pin."
         elif net_b and not net_a:
-            await self._net.assign_pin_to_net(vehicle_id, revision_id, net_b.id, payload.pin_a_id)
+            await self._net.assign_pin_to_net(
+                vehicle_id, revision_id, net_b.id, payload.pin_a_id, sync=False
+            )
             action, result_net = "picked_up", net_b
             message = f"Picked up net {net_b.name} for the source pin."
 
@@ -539,7 +564,7 @@ class ConnectionService:
             edge.signal_id = result_net.id
         await self.db.flush()
 
-        return ConnectPinsResult(
+        result = ConnectPinsResult(
             edge=self._topology._edge_response(edge),
             net_action=action,
             net_id=result_net.id if result_net else None,
@@ -550,6 +575,8 @@ class ConnectionService:
             conflict_net_b_id=conflict[1].id if conflict else None,
             conflict_net_b_name=conflict[1].name if conflict else None,
         )
+        await self._sync(vehicle_id, revision_id, changed_by=changed_by)
+        return result
 
     @staticmethod
     def _resolve_merge(
@@ -569,8 +596,8 @@ class ConnectionService:
                 status_code=400, detail="merge_target_net_id must be one of the two pins' nets"
             )
 
-        a_auto = is_auto_net_name(net_a.name)
-        b_auto = is_auto_net_name(net_b.name)
+        a_auto = is_auto_named_signal(net_a.metadata_, net_a.name)
+        b_auto = is_auto_named_signal(net_b.metadata_, net_b.name)
         if a_auto and not b_auto:
             return net_b, net_a  # named net wins
         if b_auto and not a_auto:
@@ -622,11 +649,28 @@ class ConnectionService:
             await self.db.delete(loser)
         await self.db.flush()
 
-    async def disconnect(self, vehicle_id: UUID, revision_id: UUID, edge_id: UUID) -> None:
-        await self._topology.delete_edge(vehicle_id, revision_id, edge_id)
+    async def disconnect(
+        self,
+        vehicle_id: UUID,
+        revision_id: UUID,
+        edge_id: UUID,
+        *,
+        changed_by: str | None = None,
+    ) -> None:
+        await self._topology.delete_edge(vehicle_id, revision_id, edge_id, sync=False)
+        await self._net.prune_stale_auto_nets(
+            vehicle_id, revision_id, sync=False, changed_by=changed_by
+        )
+        await self._sync(vehicle_id, revision_id, changed_by=changed_by)
 
     async def assign_net_by_name(
-        self, vehicle_id: UUID, revision_id: UUID, pin_id: UUID, payload: AssignNetByNameRequest
+        self,
+        vehicle_id: UUID,
+        revision_id: UUID,
+        pin_id: UUID,
+        payload: AssignNetByNameRequest,
+        *,
+        changed_by: str | None = None,
     ) -> dict:
         await ensure_mutable_revision(self.db, revision_id, vehicle_id)
         pin = await self.db.get(Pin, pin_id)
@@ -635,7 +679,8 @@ class ConnectionService:
 
         name = (payload.net_name or "").strip()
         if not name:
-            await self._net.assign_pin_to_net(vehicle_id, revision_id, None, pin_id)
+            await self._net.assign_pin_to_net(vehicle_id, revision_id, None, pin_id, sync=False)
+            await self._sync(vehicle_id, revision_id, changed_by=changed_by)
             return {"net_id": None, "net_name": None, "unassigned": True}
 
         signal = (
@@ -653,19 +698,20 @@ class ConnectionService:
             self.db.add(signal)
             await self.db.flush()
 
-        await self._net.assign_pin_to_net(vehicle_id, revision_id, signal.id, pin_id)
+        await self._net.assign_pin_to_net(vehicle_id, revision_id, signal.id, pin_id, sync=False)
+        await self._sync(vehicle_id, revision_id, changed_by=changed_by)
         return {"net_id": signal.id, "net_name": signal.name, "unassigned": False}
 
     # ------------------------------------------------------------------ helpers
 
     async def _net_by_pin(
         self, revision_id: UUID, pin_ids: list[UUID]
-    ) -> dict[UUID, tuple[UUID, str]]:
+    ) -> dict[UUID, tuple[UUID, str, dict]]:
         if not pin_ids:
             return {}
         rows = (
             await self.db.execute(
-                select(PinSignalAssignment.pin_id, Signal.id, Signal.name)
+                select(PinSignalAssignment.pin_id, Signal.id, Signal.name, Signal.metadata_)
                 .join(Signal, PinSignalAssignment.signal_id == Signal.id)
                 .where(
                     PinSignalAssignment.revision_id == revision_id,
@@ -674,7 +720,10 @@ class ConnectionService:
                 )
             )
         ).all()
-        return {pin_id: (net_id, net_name) for pin_id, net_id, net_name in rows}
+        return {
+            pin_id: (net_id, net_name, metadata_ or {})
+            for pin_id, net_id, net_name, metadata_ in rows
+        }
 
     async def _primary_net(self, revision_id: UUID, pin_id: UUID) -> Signal | None:
         return (
