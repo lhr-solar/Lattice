@@ -7,9 +7,11 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
+from app.core.auth_context import UserContext, get_current_user
 from app.core.revision_guard import ensure_mutable_revision
-from app.infrastructure.db.enums import EntityKind
-from app.infrastructure.db.models.layout import NodeLayout
+from app.services.revision_sync_service import DOMAINS_LAYOUT, RevisionSyncService
+from app.infra.db.enums import EntityKind
+from app.infra.db.models.layout import NodeLayout
 
 router = APIRouter(prefix="/vehicles/{vehicle_id}/revisions/{revision_id}/layouts", tags=["layouts"])
 
@@ -62,6 +64,7 @@ async def upsert_layouts(
     revision_id: UUID,
     payloads: list[LayoutUpsert],
     db: AsyncSession = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
 ) -> list[LayoutResponse]:
     await ensure_mutable_revision(db, revision_id, vehicle_id)
     responses: list[LayoutResponse] = []
@@ -92,5 +95,12 @@ async def upsert_layouts(
                 y=p.y,
                 collapsed=p.collapsed,
             )
+        )
+    if responses:
+        await RevisionSyncService(db).bump_and_notify(
+            vehicle_id=vehicle_id,
+            revision_id=revision_id,
+            domains=DOMAINS_LAYOUT,
+            changed_by=user.username,
         )
     return responses

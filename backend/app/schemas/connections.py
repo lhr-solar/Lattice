@@ -16,6 +16,8 @@ class ConnectionDestination(BaseModel):
     other_connector_instance_id: UUID
     other_connector_label: str
     other_container_label: str | None = None
+    # Full readable path: enclosure / board / connector (or slot) / pin (or #).
+    other_path_label: str = ""
     wire_color: str | None = None
     gauge_awg: Decimal | None = None
 
@@ -28,6 +30,12 @@ class PinConnectionRow(BaseModel):
     connector_label: str
     # connector_kind: pcb | panel | pigtail | inline
     connector_kind: str | None = None
+    # Slot designator (e.g. J3) for the connector; pcb placement slot is ignored.
+    slot_key: str | None = None
+    # Template names, surfaced as muted secondary context when a nickname is set.
+    connector_template_name: str | None = None
+    node_template_name: str | None = None
+    enclosure_template_name: str | None = None
     container_label: str | None = None
     container_kind: str | None = None
     node_label: str | None = None

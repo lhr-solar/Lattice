@@ -8,6 +8,7 @@ export interface ConnectionDestination {
   other_connector_instance_id: string;
   other_connector_label: string;
   other_container_label: string | null;
+  other_path_label: string;
   wire_color: string | null;
   gauge_awg: string | null;
 }
@@ -19,6 +20,10 @@ export interface PinConnectionRow {
   connector_instance_id: string;
   connector_label: string;
   connector_kind: string | null;
+  slot_key: string | null;
+  connector_template_name: string | null;
+  node_template_name: string | null;
+  enclosure_template_name: string | null;
   container_label: string | null;
   container_kind: string | null;
   node_label: string | null;

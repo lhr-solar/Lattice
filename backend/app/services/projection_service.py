@@ -3,18 +3,27 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.infrastructure.db.models.catalog import ConnectorTemplate
-from app.infrastructure.db.models.instances import (
+from app.infra.db.models.catalog import ConnectorTemplate
+from app.infra.db.models.instances import (
     ConnectorInstance,
     EnclosureInstance,
     PcbInstance,
     Pin,
 )
-from app.infrastructure.db.models.layout import NodeLayout
-from app.infrastructure.db.models.templates import EnclosureTemplate, PcbTemplate
-from app.infrastructure.db.models.shorts import ConnectorInstancePinShort
-from app.infrastructure.db.models.topology import ConnectionEdge, PinSignalAssignment, Signal
-from app.core.display import resolve_display_name
+from app.infra.db.models.layout import NodeLayout
+from app.infra.db.models.templates import (
+    EnclosureTemplate,
+    EnclosureTemplatePanelSlot,
+    PcbTemplate,
+    PcbTemplateConnectorSlot,
+)
+from app.infra.db.models.shorts import ConnectorInstancePinShort
+from app.infra.db.models.topology import ConnectionEdge, PinSignalAssignment, Signal
+from app.core.display import (
+    resolve_connector_labels,
+    resolve_connector_with_slot,
+    resolve_display_name,
+)
 from app.schemas.projections import (
     BusGroupDto,
     DesignEdgeDto,
@@ -67,29 +76,31 @@ class ProjectionService:
 
         item_specs: list[dict] = []
         for idx, (enc, tmpl) in enumerate(enclosure_rows):
+            enc_label, enc_template = resolve_connector_labels(
+                template_name=tmpl.name, nickname=enc.nickname, use_template_name=enc.use_template_name
+            )
             item_specs.append(
                 {
                     "item_id": f"enclosure:{enc.id}",
                     "item_kind": "vehicleItem",
-                    "item_label": resolve_display_name(
-                        template_name=tmpl.name,
-                        nickname=enc.nickname,
-                        use_template_name=enc.use_template_name,
-                    ),
+                    "item_label": enc_label,
+                    "item_template_label": enc_template,
                     "item_position": layouts.get(f"enclosure:{enc.id}") or (90 + idx * 520, 100),
                     "connectors": await self._vehicle_level_connectors_for_enclosure(revision_id, enc.id),
                 }
             )
         for idx, (node_inst, tmpl) in enumerate(top_node_rows):
+            node_label, node_template = resolve_connector_labels(
+                template_name=tmpl.name,
+                nickname=node_inst.nickname,
+                use_template_name=node_inst.use_template_name,
+            )
             item_specs.append(
                 {
                     "item_id": f"node:{node_inst.id}",
                     "item_kind": "vehicleItem",
-                    "item_label": resolve_display_name(
-                        template_name=tmpl.name,
-                        nickname=node_inst.nickname,
-                        use_template_name=node_inst.use_template_name,
-                    ),
+                    "item_label": node_label,
+                    "item_template_label": node_template,
                     "item_position": layouts.get(f"node:{node_inst.id}") or (90 + idx * 520, 460),
                     "connectors": await self._connectors_for_node(revision_id, node_inst.id),
                 }
@@ -151,15 +162,17 @@ class ProjectionService:
                 for conn, ctmpl in await self._connectors_for_node(revision_id, node_inst.id)
                 if conn.source_pcb_instance_id is None
             ]
+            node_label, node_template = resolve_connector_labels(
+                template_name=tmpl.name,
+                nickname=node_inst.nickname,
+                use_template_name=node_inst.use_template_name,
+            )
             item_specs.append(
                 {
                     "item_id": node_key,
                     "item_kind": "nodeItem",
-                    "item_label": resolve_display_name(
-                        template_name=tmpl.name,
-                        nickname=node_inst.nickname,
-                        use_template_name=node_inst.use_template_name,
-                    ),
+                    "item_label": node_label,
+                    "item_template_label": node_template,
                     "item_position": layouts.get(node_key) or (90 + idx * 520, 360),
                     "connectors": node_connectors,
                 }
@@ -283,6 +296,11 @@ class ProjectionService:
                 meta={"error": "node not found"},
             )
         tmpl = await self.db.get(PcbTemplate, node.pcb_template_id)
+        node_label, node_template = resolve_connector_labels(
+            template_name=tmpl.name if tmpl else "?",
+            nickname=node.nickname,
+            use_template_name=node.use_template_name,
+        )
         connectors = await self._connectors_for_node(revision_id, node_id)
         base = await self._build_grouped_pin_projection(
             revision_id=revision_id,
@@ -292,11 +310,8 @@ class ProjectionService:
                 {
                     "item_id": f"node:{node.id}",
                     "item_kind": "nodeItem",
-                    "item_label": resolve_display_name(
-                        template_name=tmpl.name if tmpl else "?",
-                        nickname=node.nickname,
-                        use_template_name=node.use_template_name,
-                    ),
+                    "item_label": node_label,
+                    "item_template_label": node_template,
                     "item_position": layouts.get(f"node:{node.id}") or (120, 120),
                     "connectors": connectors,
                 }
@@ -342,25 +357,32 @@ class ProjectionService:
                 pins = await self._pins_for_connector(revision_id, conn.id)
                 all_pin_ids.extend([pin.id for pin in pins])
         net_by_pin = await self._pin_net_names(revision_id, all_pin_ids)
+        slot_lookup = await self._slot_lookup()
 
         for item in item_specs:
             item_id = item["item_id"]
             ix, iy = item["item_position"]
+            container_data: dict = {"container": True}
+            if item.get("item_template_label"):
+                container_data["templateLabel"] = item["item_template_label"]
             nodes.append(
                 DesignNodeDto(
                     id=item_id,
                     kind=item["item_kind"],
                     label=item["item_label"],
                     position={"x": ix, "y": iy},
-                    data={"container": True},
+                    data=container_data,
                 )
             )
             group_index = 0
             for conn, tmpl in item["connectors"]:
-                connector_label = resolve_display_name(
+                slot_key, slot_nickname = self._slot_for_connector(conn, slot_lookup)
+                connector_label, template_label, slot_chip = resolve_connector_with_slot(
                     template_name=tmpl.name,
-                    nickname=conn.nickname,
+                    instance_nickname=conn.nickname,
                     use_template_name=conn.use_template_name,
+                    slot_key=slot_key,
+                    slot_nickname=slot_nickname,
                 )
                 group_id = f"group:{item_id}:{conn.id}"
                 group_y = 50 + group_index * 94
@@ -373,6 +395,8 @@ class ProjectionService:
                         position={"x": 18, "y": group_y},
                         data={
                             "connectorInstanceId": str(conn.id),
+                            "templateLabel": template_label,
+                            "slotKey": slot_chip,
                             "isPigtail": bool(conn.source_pcb_instance_id),
                             "isPanelMount": conn.is_panel_mount,
                             "groupBorder": "dotted" if conn.source_pcb_instance_id else "solid",
@@ -550,7 +574,11 @@ class ProjectionService:
                     target=f"port:{short.pin_b_id}",
                     kind="short",
                     label="no-harness short",
-                    data={"short": True},
+                    data={
+                        "short": True,
+                        "shortId": str(short.id),
+                        "connectorInstanceId": str(short.connector_instance_id),
+                    },
                 )
             )
         return edge_dtos
@@ -572,6 +600,40 @@ class ProjectionService:
             )
             for gid, sids in groups.items()
         ]
+
+    async def _slot_lookup(self) -> dict[UUID, tuple[str, str | None]]:
+        """Map template-slot id -> (slot_key, slot_nickname)."""
+        lookup: dict[UUID, tuple[str, str | None]] = {}
+        for slot_id, slot_key, nickname in (
+            await self.db.execute(
+                select(
+                    PcbTemplateConnectorSlot.id,
+                    PcbTemplateConnectorSlot.slot_key,
+                    PcbTemplateConnectorSlot.nickname,
+                )
+            )
+        ).all():
+            lookup[slot_id] = (slot_key, nickname)
+        for slot_id, slot_key in (
+            await self.db.execute(
+                select(EnclosureTemplatePanelSlot.id, EnclosureTemplatePanelSlot.slot_key)
+            )
+        ).all():
+            lookup[slot_id] = (slot_key, None)
+        return lookup
+
+    @staticmethod
+    def _slot_for_connector(
+        conn: ConnectorInstance, lookup: dict[UUID, tuple[str, str | None]]
+    ) -> tuple[str | None, str | None]:
+        for slot_id in (
+            conn.pcb_template_slot_id,
+            conn.enclosure_panel_slot_id,
+            conn.source_pcb_template_slot_id,
+        ):
+            if slot_id and slot_id in lookup:
+                return lookup[slot_id]
+        return None, None
 
     async def _load_layouts(self, revision_id: UUID, view_key: str) -> dict[str, tuple[float, float]]:
         result = await self.db.execute(

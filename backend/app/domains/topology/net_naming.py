@@ -5,9 +5,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.display import resolve_display_name
-from app.infrastructure.db.models.catalog import ConnectorTemplate
-from app.infrastructure.db.models.instances import ConnectorInstance, Pin
-from app.infrastructure.db.models.topology import Signal
+from app.infra.db.models.catalog import ConnectorTemplate
+from app.infra.db.models.instances import ConnectorInstance, Pin
+from app.infra.db.models.topology import Signal
 
 NET_ARROW = " -> "
 
@@ -23,6 +23,20 @@ def is_auto_net_name(name: str) -> bool:
 
 def is_user_named_net(name: str) -> bool:
     return not is_auto_net_name(name)
+
+
+def is_auto_named_signal(metadata: dict | None, name: str) -> bool:
+    """True for system-created nets the user has not renamed."""
+    meta = metadata or {}
+    if meta.get("user_renamed"):
+        return False
+    if meta.get("auto_created"):
+        return True
+    return is_auto_net_name(name)
+
+
+def is_user_named_signal(metadata: dict | None, name: str) -> bool:
+    return not is_auto_named_signal(metadata, name)
 
 
 def format_endpoint(connector_label: str, pin_name: str) -> str:

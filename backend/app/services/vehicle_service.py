@@ -5,32 +5,32 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.time import utc_now
-from app.infrastructure.db.models.instances import ConnectorInstance, EnclosureInstance, PcbInstance, Pin
-from app.infrastructure.db.models.layout import NodeLayout, SavedView
-from app.infrastructure.db.models.manufacturing import (
+from app.infra.db.models.instances import ConnectorInstance, EnclosureInstance, PcbInstance, Pin
+from app.infra.db.models.layout import NodeLayout, SavedView
+from app.infra.db.models.manufacturing import (
     ContinuityCheck,
     HarnessGroup,
     HarnessGroupEdge,
     ManufacturingRecord,
 )
-from app.infrastructure.db.models.revision import RevisionChange, RevisionSnapshot
-from app.infrastructure.db.models.shorts import ConnectorInstancePinShort
-from app.infrastructure.db.models.templates import (
+from app.infra.db.models.revision import RevisionChange, RevisionSnapshot
+from app.infra.db.models.shorts import ConnectorInstancePinShort
+from app.infra.db.models.templates import (
     EnclosureTemplate,
     EnclosureTemplatePcbSlot,
     EnclosureTemplatePanelSlot,
     PcbTemplate,
     PcbTemplateConnectorSlot,
 )
-from app.infrastructure.db.models.topology import (
+from app.infra.db.models.topology import (
     ConnectionEdge,
     PinSignalAssignment,
     Signal,
     SpliceConnection,
     SpliceNode,
 )
-from app.infrastructure.db.models.vehicle import Revision, Vehicle, VehicleHead
-from app.infrastructure.db.enums import RevisionStatus
+from app.infra.db.models.vehicle import Revision, Vehicle, VehicleHead
+from app.infra.db.enums import RevisionStatus
 from app.schemas.vehicles import VehicleCreate, VehicleResponse, VehicleUpdate
 
 

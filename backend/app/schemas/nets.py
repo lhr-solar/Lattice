@@ -3,7 +3,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from app.infrastructure.db.enums import SignalKind
+from app.infra.db.enums import SignalKind
 from app.schemas.common import SchemaBase
 from app.schemas.topology import ConnectionEdgeResponse
 
@@ -39,6 +39,7 @@ class NetCreate(BaseModel):
 class NetUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     signal_kind: SignalKind | None = None
+    expected_edit_sequence: int | None = None
 
 
 class NetDeleteResult(BaseModel):

@@ -8,14 +8,14 @@ from app.core.revision_guard import get_revision_or_404
 from app.core.time import utc_now
 from app.domains.manufacturing.classifier import classify_edge_scope, harness_group_key
 from app.domains.topology.pin_context import load_pin_context
-from app.infrastructure.db.enums import HarnessScope
-from app.infrastructure.db.models.manufacturing import (
+from app.infra.db.enums import HarnessScope
+from app.infra.db.models.manufacturing import (
     ContinuityCheck,
     HarnessGroup,
     HarnessGroupEdge,
     ManufacturingRecord,
 )
-from app.infrastructure.db.models.topology import ConnectionEdge
+from app.infra.db.models.topology import ConnectionEdge
 from app.schemas.manufacturing import (
     ContinuityCheckCreate,
     ContinuityCheckResponse,

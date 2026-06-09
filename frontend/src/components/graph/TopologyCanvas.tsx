@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -14,14 +14,19 @@ import "@xyflow/react/dist/style.css";
 import clsx from "clsx";
 import { fetchDesignProjection } from "@/api/projections";
 import { pairPins } from "@/api/nets";
+import { disconnectEdge } from "@/api/connections";
+import { deletePinShort } from "@/api/shorts";
 import { ApiError } from "@/api/client";
 import type { DesignNodeDto } from "@/api/types";
+import { handleMutationError } from "@/lib/mutationErrors";
+import { invalidateRevisionDomains } from "@/lib/revisionInvalidation";
 import { useAppStore } from "@/stores/appStore";
 import { CONTAINER_KINDS, nodeTypes } from "./nodes";
+import { edgeTypes } from "./edges/DeletableEdge";
 
 // Deterministic nested-layout constants (all px).
 const PIN_ROW_H = 20;
-const GROUP_HEADER_H = 22;
+const GROUP_HEADER_H = 26;
 const GROUP_BOTTOM_PAD = 8;
 const GROUP_WIDTH = 248;
 const GROUP_GAP = 10;
@@ -29,7 +34,7 @@ const PIN_INNER_PAD = 8;
 const PIN_PORT_WIDTH = GROUP_WIDTH - PIN_INNER_PAD * 2;
 const PIN_PORT_H = PIN_ROW_H - 3;
 const CONTAINER_PAD_X = 14;
-const CONTAINER_TITLE_H = 32;
+const CONTAINER_TITLE_H = 42;
 const CONTAINER_PAD_BOTTOM = 14;
 
 /** Build React Flow nodes from the backend projection, computing the nested
@@ -127,6 +132,18 @@ export function TopologyCanvas() {
   const setPairingPinA = useAppStore((s) => s.setPairingPinA);
   const clearPairing = useAppStore((s) => s.clearPairing);
   const queryClient = useQueryClient();
+  const [wireError, setWireError] = useState<string | null>(null);
+
+  function invalidateWiring() {
+    invalidateRevisionDomains(queryClient, [
+      "nets",
+      "pins",
+      "design-projection",
+      "topology-summary",
+      "connection-table",
+      "shorts",
+    ]);
+  }
 
   const quickPairMutation = useMutation({
     mutationFn: ({ pinAId, pinBId }: { pinAId: string; pinBId: string }) =>
@@ -137,12 +154,29 @@ export function TopologyCanvas() {
       }),
     onSuccess: () => {
       clearPairing();
-      queryClient.invalidateQueries({ queryKey: ["nets"] });
-      queryClient.invalidateQueries({ queryKey: ["pins"] });
-      queryClient.invalidateQueries({ queryKey: ["design-projection"] });
-      queryClient.invalidateQueries({ queryKey: ["topology-summary"] });
-      queryClient.invalidateQueries({ queryKey: ["connection-table"] });
+      setWireError(null);
+      invalidateWiring();
     },
+    onError: (error) => setWireError(handleMutationError(error, "Failed to create wire.")),
+  });
+
+  const deleteWireMutation = useMutation({
+    mutationFn: (edgeId: string) => disconnectEdge(vehicleId!, revisionId!, edgeId),
+    onSuccess: () => {
+      setWireError(null);
+      invalidateWiring();
+    },
+    onError: (error) => setWireError(handleMutationError(error, "Failed to remove wire.")),
+  });
+
+  const deleteShortMutation = useMutation({
+    mutationFn: ({ connectorId, shortId }: { connectorId: string; shortId: string }) =>
+      deletePinShort(vehicleId!, revisionId!, connectorId, shortId),
+    onSuccess: () => {
+      setWireError(null);
+      invalidateWiring();
+    },
+    onError: (error) => setWireError(handleMutationError(error, "Failed to remove short.")),
   });
 
   const { data, isLoading, isError, error } = useQuery({
@@ -166,11 +200,22 @@ export function TopologyCanvas() {
     () =>
       (data?.edges ?? []).map((e) => {
         const isShort = e.kind === "short" || e.data?.short;
+        const onDelete = () => {
+          if (isShort) {
+            const connectorId = String(e.data?.connectorInstanceId ?? "");
+            const shortId = String(e.data?.shortId ?? e.id.replace("short:", ""));
+            if (connectorId) deleteShortMutation.mutate({ connectorId, shortId });
+          } else {
+            deleteWireMutation.mutate(e.id);
+          }
+        };
         return {
           id: e.id,
           source: e.source,
           target: e.target,
+          type: "deletable",
           label: e.label ?? undefined,
+          data: { ...e.data, onDelete },
           style: {
             stroke: isShort ? "#f59e0b" : "#6b6b6b",
             strokeDasharray: isShort ? "6 4" : undefined,
@@ -179,6 +224,7 @@ export function TopologyCanvas() {
           animated: e.kind === "bus",
         };
       }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [data],
   );
 
@@ -229,12 +275,19 @@ export function TopologyCanvas() {
           Wire mode: {pairingPinAId ? "pick pin B (or drag) to finish wire" : "pick pin A or drag between pins"}
         </div>
       )}
+      {wireError && (
+        <div className="absolute left-3 top-12 z-10 max-w-sm rounded border border-amber-500/40 bg-tesla-bg/95 px-2 py-1 text-xs text-amber-100">
+          {wireError}
+        </div>
+      )}
       <ReactFlow
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         fitView
         colorMode="dark"
+        deleteKeyCode={null}
         proOptions={{ hideAttribution: true }}
         onConnect={onConnect}
         onNodeClick={(_, node) => {

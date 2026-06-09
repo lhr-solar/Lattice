@@ -7,9 +7,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_db
-from app.infrastructure.db.enums import ConnectorGender
-from app.infrastructure.db.models.catalog import ConnectorTemplate, ConnectorTemplatePin
-from app.infrastructure.db.models.instances import Pin
+from app.infra.db.enums import ConnectorGender
+from app.infra.db.models.catalog import ConnectorTemplate, ConnectorTemplatePin
+from app.infra.db.models.instances import Pin
 from app.schemas.connector_templates import (
     ConnectorTemplateCreate,
     ConnectorTemplatePinResponse,

@@ -5,10 +5,15 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
 from app.core.config import settings
+from app.infra.db.session import async_session_factory
+from app.services.user_service import UserService
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    async with async_session_factory() as db:
+        await UserService(db).ensure_admin_user()
+        await db.commit()
     yield
 
 
@@ -21,7 +26,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
+    allow_origins=settings.cors_origin_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

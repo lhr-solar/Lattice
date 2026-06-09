@@ -3,7 +3,7 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-from app.infrastructure.db.enums import EntityKind
+from app.infra.db.enums import EntityKind
 
 
 class ValidationFinding(BaseModel):

@@ -43,7 +43,16 @@ export interface Vehicle {
   updated_at: string | null;
 }
 
-export interface SessionResponse {
-  session_id: string;
-  display_name: string;
+export interface User {
+  id: string;
+  username: string;
+  is_admin: boolean;
+}
+
+export interface AdminUser extends User {
+  is_connected: boolean;
+}
+
+export interface AuthResponse {
+  user: User;
 }

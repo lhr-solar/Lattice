@@ -3,7 +3,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from app.infrastructure.db.enums import ConnectorGender, ConnectorRole
+from app.infra.db.enums import ConnectorGender, ConnectorRole
 from app.schemas.common import SchemaBase
 
 
@@ -75,3 +75,19 @@ class PinResponse(SchemaBase):
 
 class PinUpdate(BaseModel):
     name: str = Field(min_length=1, max_length=128)
+    expected_edit_sequence: int | None = None
+
+
+class ConnectorInstanceUpdate(BaseModel):
+    nickname: str | None = Field(default=None, max_length=255)
+    expected_edit_sequence: int | None = None
+
+
+class EnclosureInstanceUpdate(BaseModel):
+    nickname: str | None = Field(default=None, max_length=255)
+    expected_edit_sequence: int | None = None
+
+
+class PcbInstanceUpdate(BaseModel):
+    nickname: str | None = Field(default=None, max_length=255)
+    expected_edit_sequence: int | None = None

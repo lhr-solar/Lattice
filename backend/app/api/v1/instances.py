@@ -4,14 +4,18 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
+from app.core.auth_context import UserContext, get_current_user
 from app.schemas.instances import (
     ConnectorInstanceCreate,
     ConnectorInstanceResponse,
+    ConnectorInstanceUpdate,
     EnclosureInstanceCreate,
+    EnclosureInstanceUpdate,
     EnclosureInstanceResponse,
     PinResponse,
     PinUpdate,
     PcbInstanceCreate,
+    PcbInstanceUpdate,
     PcbInstanceResponse,
 )
 from app.services.instance_service import InstanceService
@@ -33,8 +37,11 @@ async def create_enclosure(
     revision_id: UUID,
     payload: EnclosureInstanceCreate,
     db: AsyncSession = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
 ) -> EnclosureInstanceResponse:
-    return await InstanceService(db).instantiate_enclosure(vehicle_id, revision_id, payload)
+    return await InstanceService(db).instantiate_enclosure(
+        vehicle_id, revision_id, payload, changed_by=user.username
+    )
 
 
 @router.post("/pcbs", response_model=PcbInstanceResponse, status_code=201)
@@ -43,8 +50,11 @@ async def create_pcb(
     revision_id: UUID,
     payload: PcbInstanceCreate,
     db: AsyncSession = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
 ) -> PcbInstanceResponse:
-    return await InstanceService(db).instantiate_pcb(vehicle_id, revision_id, payload)
+    return await InstanceService(db).instantiate_pcb(
+        vehicle_id, revision_id, payload, changed_by=user.username
+    )
 
 
 @router.post("/connectors", response_model=ConnectorInstanceResponse, status_code=201)
@@ -53,8 +63,53 @@ async def create_connector(
     revision_id: UUID,
     payload: ConnectorInstanceCreate,
     db: AsyncSession = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
 ) -> ConnectorInstanceResponse:
-    return await InstanceService(db).create_connector(vehicle_id, revision_id, payload)
+    return await InstanceService(db).create_connector(
+        vehicle_id, revision_id, payload, changed_by=user.username
+    )
+
+
+@router.patch("/enclosures/{enclosure_instance_id}", response_model=EnclosureInstanceResponse)
+async def update_enclosure(
+    vehicle_id: UUID,
+    revision_id: UUID,
+    enclosure_instance_id: UUID,
+    payload: EnclosureInstanceUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> EnclosureInstanceResponse:
+    return await InstanceService(db).update_enclosure(
+        vehicle_id, revision_id, enclosure_instance_id, payload, changed_by=user.username
+    )
+
+
+@router.patch("/pcbs/{pcb_instance_id}", response_model=PcbInstanceResponse)
+async def update_pcb(
+    vehicle_id: UUID,
+    revision_id: UUID,
+    pcb_instance_id: UUID,
+    payload: PcbInstanceUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> PcbInstanceResponse:
+    return await InstanceService(db).update_pcb(
+        vehicle_id, revision_id, pcb_instance_id, payload, changed_by=user.username
+    )
+
+
+@router.patch("/connectors/{connector_instance_id}", response_model=ConnectorInstanceResponse)
+async def update_connector(
+    vehicle_id: UUID,
+    revision_id: UUID,
+    connector_instance_id: UUID,
+    payload: ConnectorInstanceUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> ConnectorInstanceResponse:
+    return await InstanceService(db).update_connector(
+        vehicle_id, revision_id, connector_instance_id, payload, changed_by=user.username
+    )
 
 
 @router.patch("/connectors/{connector_instance_id}/pins/{pin_id}", response_model=PinResponse)
@@ -65,6 +120,7 @@ async def update_pin(
     pin_id: UUID,
     payload: PinUpdate,
     db: AsyncSession = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
 ) -> PinResponse:
     return await InstanceService(db).update_pin(
         vehicle_id,
@@ -72,6 +128,7 @@ async def update_pin(
         connector_instance_id,
         pin_id,
         payload,
+        changed_by=user.username,
     )
 
 
@@ -81,8 +138,11 @@ async def delete_enclosure(
     revision_id: UUID,
     enclosure_instance_id: UUID,
     db: AsyncSession = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
 ) -> None:
-    await InstanceService(db).delete_enclosure(vehicle_id, revision_id, enclosure_instance_id)
+    await InstanceService(db).delete_enclosure(
+        vehicle_id, revision_id, enclosure_instance_id, changed_by=user.username
+    )
 
 
 @router.delete("/pcbs/{pcb_instance_id}", status_code=204)
@@ -91,8 +151,11 @@ async def delete_pcb(
     revision_id: UUID,
     pcb_instance_id: UUID,
     db: AsyncSession = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
 ) -> None:
-    await InstanceService(db).delete_pcb(vehicle_id, revision_id, pcb_instance_id)
+    await InstanceService(db).delete_pcb(
+        vehicle_id, revision_id, pcb_instance_id, changed_by=user.username
+    )
 
 
 @router.delete("/connectors/{connector_instance_id}", status_code=204)
@@ -101,5 +164,8 @@ async def delete_connector(
     revision_id: UUID,
     connector_instance_id: UUID,
     db: AsyncSession = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
 ) -> None:
-    await InstanceService(db).delete_connector(vehicle_id, revision_id, connector_instance_id)
+    await InstanceService(db).delete_connector(
+        vehicle_id, revision_id, connector_instance_id, changed_by=user.username
+    )

@@ -3,7 +3,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 from pydantic import model_validator
 
-from app.infrastructure.db.enums import ConnectorGender, ConnectorRole, SignalKind
+from app.infra.db.enums import ConnectorGender, ConnectorRole, SignalKind
 from app.schemas.common import SchemaBase, TimestampSchema
 from app.schemas.shorts import TemplatePinShortCreate
 

@@ -3,7 +3,7 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-from app.infrastructure.db.enums import RevisionStatus
+from app.infra.db.enums import RevisionStatus
 from app.schemas.vehicles import RevisionResponse
 
 

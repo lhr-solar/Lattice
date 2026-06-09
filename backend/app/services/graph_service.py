@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domains.graph.deletion_analyzer import DeletionAnalyzer
 from app.domains.graph.topology_graph import EdgeRef, TopologyGraph
-from app.infrastructure.db.models.topology import ConnectionEdge, PinSignalAssignment
+from app.infra.db.models.topology import ConnectionEdge, PinSignalAssignment
 from app.schemas.graph import ImpactAnalysisRequest, ImpactAnalysisResponse, TraceResponse
 
 

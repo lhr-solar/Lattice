@@ -9,14 +9,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.revision_guard import get_revision_or_404
 from app.core.time import utc_now
-from app.infrastructure.db.enums import EntityKind, RevisionStatus
-from app.infrastructure.db.models.instances import ConnectorInstance, EnclosureInstance, PcbInstance, Pin
-from app.infrastructure.db.models.revision import RevisionChange, RevisionSnapshot
-from app.infrastructure.db.models.shorts import ConnectorInstancePinShort
-from app.infrastructure.db.models.topology import ConnectionEdge, PinSignalAssignment, Signal
-from app.infrastructure.db.models.vehicle import Revision, VehicleHead
+from app.infra.db.enums import EntityKind, RevisionStatus
+from app.infra.db.models.instances import ConnectorInstance, EnclosureInstance, PcbInstance, Pin
+from app.infra.db.models.revision import RevisionChange, RevisionSnapshot
+from app.infra.db.models.shorts import ConnectorInstancePinShort
+from app.infra.db.models.topology import ConnectionEdge, PinSignalAssignment, Signal
+from app.infra.db.models.vehicle import Revision, VehicleHead
 from app.schemas.revisions import RevisionDiffItem, RevisionPublishResponse
 from app.schemas.vehicles import RevisionResponse
+from app.services.revision_sync_service import RevisionSyncService
 
 
 class RevisionService:
@@ -34,7 +35,13 @@ class RevisionService:
     ) -> RevisionPublishResponse:
         revision = await get_revision_or_404(self.db, revision_id, vehicle_id)
         if revision.is_immutable:
-            raise HTTPException(status_code=409, detail="Revision already published")
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "revision_already_published",
+                    "message": "Revision already published",
+                },
+            )
 
         snapshot = await self._build_snapshot(revision_id)
         checksum = hashlib.sha256(json.dumps(snapshot, sort_keys=True, default=str).encode()).hexdigest()
@@ -80,6 +87,12 @@ class RevisionService:
             head.current_revision_id = new_revision.id
 
         await self.db.flush()
+        await RevisionSyncService(self.db).notify_published(
+            vehicle_id=vehicle_id,
+            old_revision_id=revision_id,
+            new_revision_id=new_revision.id,
+            changed_by=published_by,
+        )
         return RevisionPublishResponse(
             published_revision=self._to_response(revision),
             new_draft_revision=self._to_response(new_revision),
@@ -272,6 +285,7 @@ class RevisionService:
             label=revision.label,
             is_immutable=revision.is_immutable,
             created_at=revision.created_at,
+            edit_sequence=revision.edit_sequence,
         )
 
 

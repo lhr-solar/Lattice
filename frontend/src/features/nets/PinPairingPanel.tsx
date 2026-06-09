@@ -22,6 +22,7 @@ export function PinPairingPanel() {
   const [selectedNetId, setSelectedNetId] = useState("");
   const [newNetName, setNewNetName] = useState("");
   const [wireColor, setWireColor] = useState("");
+  const [pairError, setPairError] = useState<string | null>(null);
 
   const { data: pins = [] } = useQuery({
     queryKey: ["pins", vehicleId, revisionId, connectorId],
@@ -50,10 +51,14 @@ export function PinPairingPanel() {
       }),
     onSuccess: () => {
       clearPairing();
+      setPairError(null);
       queryClient.invalidateQueries({ queryKey: ["nets"] });
       queryClient.invalidateQueries({ queryKey: ["pins"] });
       queryClient.invalidateQueries({ queryKey: ["design-projection"] });
       queryClient.invalidateQueries({ queryKey: ["topology-summary"] });
+    },
+    onError: (error) => {
+      setPairError(error instanceof Error ? error.message : "Failed to pair pins.");
     },
   });
 
@@ -74,8 +79,9 @@ export function PinPairingPanel() {
         )}
       </div>
       <p className="mb-2 text-xs text-tesla-muted">
-        Wire mode: click pin A, then pin B on the graph or list to create/update a harness wire.
+        Wire mode: click pin A, then pin B on the graph or list to create a harness wire.
       </p>
+      {pairError && <p className="mb-2 text-xs text-amber-200">{pairError}</p>}
 
       {!connectorId && (
         <p className="text-sm text-tesla-muted">

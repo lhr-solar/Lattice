@@ -88,12 +88,36 @@ export function createConnector(
   );
 }
 
+export function updateEnclosureInstance(
+  vehicleId: string,
+  revisionId: string,
+  enclosureInstanceId: string,
+  body: { nickname?: string | null; expected_edit_sequence?: number },
+) {
+  return apiFetch<EnclosureInstance>(
+    `/vehicles/${vehicleId}/revisions/${revisionId}/instances/enclosures/${enclosureInstanceId}`,
+    { method: "PATCH", body: JSON.stringify(body) },
+  );
+}
+
+export function updatePcbInstance(
+  vehicleId: string,
+  revisionId: string,
+  pcbInstanceId: string,
+  body: { nickname?: string | null; expected_edit_sequence?: number },
+) {
+  return apiFetch<PcbInstance>(
+    `/vehicles/${vehicleId}/revisions/${revisionId}/instances/pcbs/${pcbInstanceId}`,
+    { method: "PATCH", body: JSON.stringify(body) },
+  );
+}
+
 export function updateConnectorPin(
   vehicleId: string,
   revisionId: string,
   connectorInstanceId: string,
   pinId: string,
-  body: { name: string },
+  body: { name: string; expected_edit_sequence?: number },
 ) {
   return apiFetch<PinInstance>(
     `/vehicles/${vehicleId}/revisions/${revisionId}/instances/connectors/${connectorInstanceId}/pins/${pinId}`,
