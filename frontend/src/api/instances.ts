@@ -88,6 +88,18 @@ export function createConnector(
   );
 }
 
+export function updateConnectorInstance(
+  vehicleId: string,
+  revisionId: string,
+  connectorInstanceId: string,
+  body: { nickname?: string | null },
+) {
+  return apiFetch<ConnectorInstance>(
+    `/vehicles/${vehicleId}/revisions/${revisionId}/instances/connectors/${connectorInstanceId}`,
+    { method: "PATCH", body: JSON.stringify(body) },
+  );
+}
+
 export function updateConnectorPin(
   vehicleId: string,
   revisionId: string,

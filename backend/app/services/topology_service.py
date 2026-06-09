@@ -8,8 +8,8 @@ from app.core.revision_guard import ensure_mutable_revision
 from app.core.time import utc_now
 from app.domains.manufacturing.classifier import classify_edge_scope
 from app.domains.topology.pin_context import load_pin_context
-from app.infrastructure.db.models.instances import ConnectorInstance, EnclosureInstance, PcbInstance, Pin
-from app.infrastructure.db.models.topology import ConnectionEdge, Signal
+from app.infra.db.models.instances import ConnectorInstance, EnclosureInstance, PcbInstance, Pin
+from app.infra.db.models.topology import ConnectionEdge, Signal
 from app.schemas.topology import (
     ConnectionEdgeCreate,
     ConnectionEdgeResponse,

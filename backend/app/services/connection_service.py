@@ -1,24 +1,34 @@
+from dataclasses import dataclass
 from uuid import UUID
 
 from fastapi import HTTPException
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.display import resolve_display_name
+from app.core.display import (
+    resolve_connector_labels,
+    resolve_connector_with_slot,
+    resolve_display_name,
+)
 from app.core.revision_guard import ensure_mutable_revision
 from app.domains.topology.net_naming import is_auto_net_name
 from app.domains.topology.pin_shorts import load_short_index
-from app.infrastructure.db.enums import SignalKind
-from app.infrastructure.db.models.catalog import ConnectorTemplate
-from app.infrastructure.db.models.instances import (
+from app.infra.db.enums import SignalKind
+from app.infra.db.models.catalog import ConnectorTemplate
+from app.infra.db.models.instances import (
     ConnectorInstance,
     EnclosureInstance,
     PcbInstance,
     Pin,
 )
-from app.infrastructure.db.models.shorts import ConnectorInstancePinShort
-from app.infrastructure.db.models.templates import EnclosureTemplate, PcbTemplate
-from app.infrastructure.db.models.topology import ConnectionEdge, PinSignalAssignment, Signal
+from app.infra.db.models.shorts import ConnectorInstancePinShort
+from app.infra.db.models.templates import (
+    EnclosureTemplate,
+    EnclosureTemplatePanelSlot,
+    PcbTemplate,
+    PcbTemplateConnectorSlot,
+)
+from app.infra.db.models.topology import ConnectionEdge, PinSignalAssignment, Signal
 from app.schemas.connections import (
     AssignNetByNameRequest,
     ConnectionDestination,
@@ -32,37 +42,21 @@ from app.services.net_service import NetService
 from app.services.topology_service import TopologyService
 
 
+@dataclass
 class _ConnectorCtx:
-    __slots__ = (
-        "label",
-        "connector_kind",
-        "container_kind",
-        "container_label",
-        "enclosure_id",
-        "enclosure_label",
-        "node_id",
-        "node_label",
-    )
-
-    def __init__(
-        self,
-        label,
-        connector_kind,
-        container_kind,
-        container_label,
-        enclosure_id,
-        enclosure_label,
-        node_id,
-        node_label,
-    ):
-        self.label = label
-        self.connector_kind = connector_kind
-        self.container_kind = container_kind
-        self.container_label = container_label
-        self.enclosure_id = enclosure_id
-        self.enclosure_label = enclosure_label
-        self.node_id = node_id
-        self.node_label = node_label
+    label: str
+    connector_kind: str | None
+    container_kind: str
+    container_label: str | None
+    enclosure_id: UUID | None
+    enclosure_label: str | None
+    node_id: UUID | None
+    node_label: str | None
+    slot_key: str | None = None
+    # Template names shown as muted secondary context when a nickname is in use.
+    connector_template_name: str | None = None
+    node_template_name: str | None = None
+    enclosure_template_name: str | None = None
 
 
 class ConnectionService:
@@ -84,11 +78,14 @@ class ConnectionService:
             )
         ).all()
         node_label: dict[UUID, str] = {}
+        node_template: dict[UUID, str | None] = {}
         node_enclosure: dict[UUID, UUID | None] = {}
         for node, tmpl in node_rows:
-            node_label[node.id] = resolve_display_name(
+            primary, subtitle = resolve_connector_labels(
                 template_name=tmpl.name, nickname=node.nickname, use_template_name=node.use_template_name
             )
+            node_label[node.id] = primary
+            node_template[node.id] = subtitle
             node_enclosure[node.id] = node.enclosure_instance_id
 
         enc_rows = (
@@ -99,10 +96,33 @@ class ConnectionService:
             )
         ).all()
         enc_label: dict[UUID, str] = {}
+        enc_template: dict[UUID, str | None] = {}
         for enc, tmpl in enc_rows:
-            enc_label[enc.id] = resolve_display_name(
+            primary, subtitle = resolve_connector_labels(
                 template_name=tmpl.name, nickname=enc.nickname, use_template_name=enc.use_template_name
             )
+            enc_label[enc.id] = primary
+            enc_template[enc.id] = subtitle
+
+        pcb_slots: dict[UUID, tuple[str, str | None]] = {
+            row[0]: (row[1], row[2])
+            for row in (
+                await self.db.execute(
+                    select(
+                        PcbTemplateConnectorSlot.id,
+                        PcbTemplateConnectorSlot.slot_key,
+                        PcbTemplateConnectorSlot.nickname,
+                    )
+                )
+            ).all()
+        }
+        panel_slot_keys: dict[UUID, str] = dict(
+            (
+                await self.db.execute(
+                    select(EnclosureTemplatePanelSlot.id, EnclosureTemplatePanelSlot.slot_key)
+                )
+            ).all()
+        )
 
         conn_rows = (
             await self.db.execute(
@@ -113,8 +133,25 @@ class ConnectionService:
         ).all()
         ctx: dict[UUID, _ConnectorCtx] = {}
         for conn, tmpl in conn_rows:
-            label = resolve_display_name(
-                template_name=tmpl.name, nickname=conn.nickname, use_template_name=conn.use_template_name
+            slot_key: str | None = None
+            slot_nickname: str | None = None
+            for slot_id in (
+                conn.pcb_template_slot_id,
+                conn.enclosure_panel_slot_id,
+                conn.source_pcb_template_slot_id,
+            ):
+                if slot_id and slot_id in pcb_slots:
+                    slot_key, slot_nickname = pcb_slots[slot_id]
+                    break
+                if slot_id and slot_id in panel_slot_keys:
+                    slot_key = panel_slot_keys[slot_id]
+                    break
+            label, conn_template, _ = resolve_connector_with_slot(
+                template_name=tmpl.name,
+                instance_nickname=conn.nickname,
+                use_template_name=conn.use_template_name,
+                slot_key=slot_key,
+                slot_nickname=slot_nickname,
             )
             if conn.source_pcb_instance_id is not None:
                 connector_kind = "pigtail"
@@ -131,32 +168,67 @@ class ConnectionService:
                 if enc_id and enc_id in enc_label:
                     container = f"{enc_label[enc_id]} / {container}"
                 ctx[conn.id] = _ConnectorCtx(
-                    label,
-                    connector_kind,
-                    "node",
-                    container,
-                    enc_id,
-                    enc_label.get(enc_id) if enc_id else None,
-                    node_id,
-                    node_label[node_id],
+                    label=label,
+                    connector_kind=connector_kind,
+                    container_kind="node",
+                    container_label=container,
+                    enclosure_id=enc_id,
+                    enclosure_label=enc_label.get(enc_id) if enc_id else None,
+                    node_id=node_id,
+                    node_label=node_label[node_id],
+                    slot_key=slot_key,
+                    connector_template_name=conn_template,
+                    node_template_name=node_template.get(node_id),
+                    enclosure_template_name=enc_template.get(enc_id) if enc_id else None,
                 )
             elif conn.enclosure_instance_id and conn.enclosure_instance_id in enc_label:
                 enc_id = conn.enclosure_instance_id
                 ctx[conn.id] = _ConnectorCtx(
-                    label,
-                    connector_kind,
-                    "enclosure",
-                    f"{enc_label[enc_id]} / Panel",
-                    enc_id,
-                    enc_label[enc_id],
-                    None,
-                    None,
+                    label=label,
+                    connector_kind=connector_kind,
+                    container_kind="enclosure",
+                    container_label=f"{enc_label[enc_id]} / Panel",
+                    enclosure_id=enc_id,
+                    enclosure_label=enc_label[enc_id],
+                    node_id=None,
+                    node_label=None,
+                    slot_key=slot_key,
+                    connector_template_name=conn_template,
+                    enclosure_template_name=enc_template.get(enc_id),
                 )
             else:
                 ctx[conn.id] = _ConnectorCtx(
-                    label, connector_kind, "inline", "Inline connectors", None, None, None, None
+                    label=label,
+                    connector_kind=connector_kind,
+                    container_kind="inline",
+                    container_label="Inline connectors",
+                    enclosure_id=None,
+                    enclosure_label=None,
+                    node_id=None,
+                    node_label=None,
+                    slot_key=slot_key,
+                    connector_template_name=conn_template,
                 )
         return ctx
+
+    @staticmethod
+    def _path_label(cctx: "_ConnectorCtx | None", pin: Pin) -> str:
+        """enclosure / board / connector (or slot #) / pin name (or #pin)."""
+        pin_seg = pin.name if pin.name and pin.name.strip() != str(pin.pin_number) else f"#{pin.pin_number}"
+        if cctx is None:
+            return pin_seg
+        name = cctx.label or cctx.slot_key or "connector"
+        if cctx.slot_key and cctx.slot_key != name:
+            connector_seg = f"{cctx.slot_key} {name}"
+        else:
+            connector_seg = name
+        parts = [
+            cctx.enclosure_label,
+            cctx.node_label,
+            connector_seg,
+            pin_seg,
+        ]
+        return " / ".join(p for p in parts if p)
 
     def _scope_connector_ids(
         self,
@@ -246,6 +318,7 @@ class ConnectionService:
                 other_connector_instance_id=other.connector_instance_id,
                 other_connector_label=octx.label if octx else "?",
                 other_container_label=octx.container_label if octx else None,
+                other_path_label=self._path_label(octx, other),
                 wire_color=edge.wire_color,
                 gauge_awg=edge.gauge_awg,
             )
@@ -286,6 +359,10 @@ class ConnectionService:
                     connector_instance_id=pin.connector_instance_id,
                     connector_label=cctx.label if cctx else "?",
                     connector_kind=cctx.connector_kind if cctx else None,
+                    slot_key=cctx.slot_key if cctx else None,
+                    connector_template_name=cctx.connector_template_name if cctx else None,
+                    node_template_name=cctx.node_template_name if cctx else None,
+                    enclosure_template_name=cctx.enclosure_template_name if cctx else None,
                     container_label=cctx.container_label if cctx else None,
                     container_kind=cctx.container_kind if cctx else None,
                     node_label=cctx.node_label if cctx else None,

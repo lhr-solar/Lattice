@@ -1,38 +1,38 @@
-from app.infrastructure.db.models.catalog import ConnectorTemplate, ConnectorTemplatePin
-from app.infrastructure.db.models.shorts import (
+from app.infra.db.models.catalog import ConnectorTemplate, ConnectorTemplatePin
+from app.infra.db.models.shorts import (
     ConnectorInstancePinShort,
     ConnectorTemplatePinShort,
     ConnectorTemplatePinShortByName,
 )
-from app.infrastructure.db.models.instances import (
+from app.infra.db.models.instances import (
     ConnectorInstance,
     EnclosureInstance,
     PcbInstance,
     Pin,
 )
-from app.infrastructure.db.models.layout import NodeLayout, SavedView
-from app.infrastructure.db.models.manufacturing import (
+from app.infra.db.models.layout import NodeLayout, SavedView
+from app.infra.db.models.manufacturing import (
     ContinuityCheck,
     HarnessGroup,
     HarnessGroupEdge,
     ManufacturingRecord,
 )
-from app.infrastructure.db.models.pin_names import PinNameLibraryEntry
-from app.infrastructure.db.models.templates import (
+from app.infra.db.models.pin_names import PinNameLibraryEntry
+from app.infra.db.models.templates import (
     EnclosureTemplate,
     EnclosureTemplatePcbSlot,
     EnclosureTemplatePanelSlot,
     PcbTemplate,
     PcbTemplateConnectorSlot,
 )
-from app.infrastructure.db.models.topology import (
+from app.infra.db.models.topology import (
     ConnectionEdge,
     PinSignalAssignment,
     Signal,
     SpliceConnection,
     SpliceNode,
 )
-from app.infrastructure.db.models.vehicle import Revision, Vehicle, VehicleHead
+from app.infra.db.models.vehicle import Revision, Vehicle, VehicleHead
 
 __all__ = [
     "ConnectorTemplate",

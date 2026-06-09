@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from app.domains.graph.topology_graph import TopologyGraph
-from app.infrastructure.db.enums import EntityKind
+from app.infra.db.enums import EntityKind
 from app.schemas.graph import ImpactAnalysisResponse, ImpactTarget, SeveredConnection
 
 

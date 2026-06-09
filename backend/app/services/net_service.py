@@ -4,6 +4,7 @@ from fastapi import HTTPException
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.display import resolve_display_name
 from app.core.revision_guard import ensure_mutable_revision
 from app.domains.topology.net_naming import (
     NET_ARROW,
@@ -13,10 +14,10 @@ from app.domains.topology.net_naming import (
     is_auto_net_name,
 )
 from app.domains.topology.pin_shorts import expand_pins_with_shorts
-from app.infrastructure.db.enums import SignalKind
-from app.infrastructure.db.models.catalog import ConnectorTemplate
-from app.infrastructure.db.models.instances import ConnectorInstance, Pin
-from app.infrastructure.db.models.topology import ConnectionEdge, PinSignalAssignment, Signal
+from app.infra.db.enums import SignalKind
+from app.infra.db.models.catalog import ConnectorTemplate
+from app.infra.db.models.instances import ConnectorInstance, Pin
+from app.infra.db.models.topology import ConnectionEdge, PinSignalAssignment, Signal
 from app.schemas.nets import (
     NetCreate,
     NetDeleteResult,
@@ -390,7 +391,11 @@ class NetService:
                     pin_number=pin.pin_number,
                     pin_name=pin.name,
                     connector_instance_id=conn.id,
-                    connector_label=tmpl.name,
+                    connector_label=resolve_display_name(
+                        template_name=tmpl.name,
+                        nickname=conn.nickname,
+                        use_template_name=conn.use_template_name,
+                    ),
                     primary_net_id=net_info[0] if net_info else None,
                     primary_net_name=net_info[1] if net_info else None,
                 )

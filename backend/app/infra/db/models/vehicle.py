@@ -5,8 +5,8 @@ from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, UniqueConstra
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.infrastructure.db.base import Base, TimestampMixin, uuid_pk
-from app.infrastructure.db.enums import RevisionStatus
+from app.infra.db.base import Base, TimestampMixin, uuid_pk
+from app.infra.db.enums import RevisionStatus
 
 
 class Vehicle(Base, TimestampMixin):

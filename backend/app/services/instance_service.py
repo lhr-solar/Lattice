@@ -8,23 +8,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.display import resolve_display_name
 from app.core.time import utc_now
 from app.core.revision_guard import ensure_mutable_revision
-from app.infrastructure.db.models.catalog import ConnectorTemplate, ConnectorTemplatePin
-from app.infrastructure.db.models.instances import (
+from app.infra.db.models.catalog import ConnectorTemplate, ConnectorTemplatePin
+from app.infra.db.models.instances import (
     ConnectorInstance,
     EnclosureInstance,
     PcbInstance,
     Pin,
 )
-from app.infrastructure.db.models.layout import NodeLayout
-from app.infrastructure.db.models.manufacturing import HarnessGroup, HarnessGroupEdge
-from app.infrastructure.db.models.templates import (
+from app.infra.db.models.layout import NodeLayout
+from app.infra.db.models.manufacturing import HarnessGroup, HarnessGroupEdge
+from app.infra.db.models.templates import (
     EnclosureTemplate,
     EnclosureTemplatePcbSlot,
     EnclosureTemplatePanelSlot,
     PcbTemplate,
     PcbTemplateConnectorSlot,
 )
-from app.infrastructure.db.models.topology import (
+from app.infra.db.models.topology import (
     ConnectionEdge,
     PinSignalAssignment,
     Signal,
@@ -32,6 +32,7 @@ from app.infrastructure.db.models.topology import (
 )
 from app.schemas.instances import (
     ConnectorInstanceCreate,
+    ConnectorInstanceUpdate,
     ConnectorInstanceResponse,
     EnclosureInstanceCreate,
     EnclosureInstanceResponse,
@@ -214,6 +215,8 @@ class InstanceService:
                 detail="Panel mount connectors cannot specify inline gender",
             )
         inline_gender = payload.inline_gender
+        nickname = (payload.nickname or "").strip() or None
+        use_template_name = False if nickname else payload.use_template_name
 
         now = utc_now()
         instance = ConnectorInstance(
@@ -224,8 +227,8 @@ class InstanceService:
             pcb_instance_id=payload.pcb_instance_id,
             is_panel_mount=payload.is_panel_mount,
             inline_gender=inline_gender,
-            nickname=payload.nickname,
-            use_template_name=payload.use_template_name,
+            nickname=nickname,
+            use_template_name=use_template_name,
             role=payload.role or template.default_role,
             created_at=now,
         )
@@ -238,16 +241,16 @@ class InstanceService:
 
         display = resolve_display_name(
             template_name=template.name,
-            nickname=payload.nickname,
-            use_template_name=payload.use_template_name,
+            nickname=nickname,
+            use_template_name=use_template_name,
         )
         return ConnectorInstanceResponse(
             id=instance.id,
             revision_id=revision_id,
             vehicle_id=vehicle_id,
             display_name=display,
-            nickname=payload.nickname,
-            use_template_name=payload.use_template_name,
+            nickname=nickname,
+            use_template_name=use_template_name,
             created_at=now,
             connector_template_id=template.id,
             pcb_instance_id=payload.pcb_instance_id,
@@ -315,6 +318,52 @@ class InstanceService:
             pin_number=pin.pin_number,
             name=pin.name,
             role=pin.role,
+        )
+
+    async def update_connector(
+        self,
+        vehicle_id: UUID,
+        revision_id: UUID,
+        connector_instance_id: UUID,
+        payload: ConnectorInstanceUpdate,
+    ) -> ConnectorInstanceResponse:
+        await ensure_mutable_revision(self.db, revision_id, vehicle_id)
+        conn = await self.db.get(ConnectorInstance, connector_instance_id)
+        if not conn or conn.revision_id != revision_id or conn.vehicle_id != vehicle_id:
+            raise HTTPException(status_code=404, detail="Connector instance not found")
+
+        if payload.nickname is not None:
+            nickname = payload.nickname.strip() or None
+            conn.nickname = nickname
+            conn.use_template_name = nickname is None
+
+        await self.db.flush()
+        template = await self.db.get(ConnectorTemplate, conn.connector_template_id)
+        pin_ids_result = await self.db.execute(
+            select(Pin.id).where(Pin.connector_instance_id == conn.id)
+        )
+        return ConnectorInstanceResponse(
+            id=conn.id,
+            revision_id=conn.revision_id,
+            vehicle_id=conn.vehicle_id,
+            display_name=resolve_display_name(
+                template_name=template.name if template else "?",
+                nickname=conn.nickname,
+                use_template_name=conn.use_template_name,
+            ),
+            nickname=conn.nickname,
+            use_template_name=conn.use_template_name,
+            created_at=conn.created_at,
+            connector_template_id=conn.connector_template_id,
+            pcb_instance_id=conn.pcb_instance_id,
+            enclosure_instance_id=conn.enclosure_instance_id,
+            source_pcb_template_slot_id=conn.source_pcb_template_slot_id,
+            source_pcb_instance_id=conn.source_pcb_instance_id,
+            pin_origin_note=conn.pin_origin_note,
+            is_panel_mount=conn.is_panel_mount,
+            inline_gender=conn.inline_gender,
+            role=conn.role,
+            pin_ids=list(pin_ids_result.scalars().all()),
         )
 
     async def delete_connector(

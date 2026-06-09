@@ -20,6 +20,7 @@ import {
   type PinShort,
 } from "@/api/shorts";
 import { useAppStore } from "@/stores/appStore";
+import { ConnectorInstanceLabel } from "@/components/library/ConnectorInstanceLabel";
 
 function invalidateAll(qc: QueryClient) {
   for (const key of [
@@ -40,9 +41,13 @@ interface ConnectorBucket {
   connectorId: string;
   label: string;
   kind: string | null;
+  slotKey: string | null;
+  templateName: string | null;
   container: string | null;
   node: string | null;
+  nodeTemplate: string | null;
   enclosure: string | null;
+  enclosureTemplate: string | null;
   rows: PinConnectionRow[];
 }
 
@@ -66,9 +71,13 @@ function buildSections(rows: PinConnectionRow[], scopeKind: string): TableSectio
         connectorId: r.connector_instance_id,
         label: r.connector_label,
         kind: r.connector_kind,
+        slotKey: r.slot_key,
+        templateName: r.connector_template_name,
         container: r.container_label,
         node: r.node_label,
+        nodeTemplate: r.node_template_name,
         enclosure: r.enclosure_label,
+        enclosureTemplate: r.enclosure_template_name,
         rows: [],
       };
       buckets.set(r.connector_instance_id, b);
@@ -83,10 +92,16 @@ function buildSections(rows: PinConnectionRow[], scopeKind: string): TableSectio
 
   const sections = new Map<string, TableSection>();
   const order: string[] = [];
-  const push = (key: string, title: string, sortHint: number, bucket: ConnectorBucket) => {
+  const push = (
+    key: string,
+    title: string,
+    sortHint: number,
+    bucket: ConnectorBucket,
+    subtitle?: string | null,
+  ) => {
     let s = sections.get(key);
     if (!s) {
-      s = { key, title, connectors: [] };
+      s = { key, title, subtitle: subtitle ?? undefined, connectors: [] };
       sections.set(key, s);
       order.push(key);
       (s as TableSection & { _sort?: number })._sort = sortHint;
@@ -97,7 +112,7 @@ function buildSections(rows: PinConnectionRow[], scopeKind: string): TableSectio
   if (scopeKind === "enclosure") {
     for (const b of list) {
       if (b.kind === "pcb" && b.node) {
-        push(`node:${b.node}`, b.node, 1, b);
+        push(`node:${b.node}`, b.node, 1, b, b.nodeTemplate);
       } else {
         push("__panel__", "Panel / Pigtail", 0, b);
       }
@@ -105,8 +120,8 @@ function buildSections(rows: PinConnectionRow[], scopeKind: string): TableSectio
   } else {
     // vehicle / all
     for (const b of list) {
-      if (b.enclosure) push(`enc:${b.enclosure}`, b.enclosure, 0, b);
-      else if (b.node) push(`node:${b.node}`, b.node, 1, b);
+      if (b.enclosure) push(`enc:${b.enclosure}`, b.enclosure, 0, b, b.enclosureTemplate);
+      else if (b.node) push(`node:${b.node}`, b.node, 1, b, b.nodeTemplate);
       else push("__inline__", "Inline / standalone", 2, b);
     }
   }
@@ -263,6 +278,8 @@ export function ConnectionTable() {
                       label={group.label}
                       container={group.container}
                       kindTag={group.kind}
+                      slotKey={group.slotKey}
+                      templateName={group.templateName}
                       rows={group.rows}
                       allPins={allPins}
                       nets={nets}
@@ -379,6 +396,8 @@ function ConnectorGroup({
   label,
   container,
   kindTag,
+  slotKey,
+  templateName,
   rows,
   allPins,
   nets,
@@ -391,6 +410,8 @@ function ConnectorGroup({
   label: string;
   container: string | null;
   kindTag?: string | null;
+  slotKey?: string | null;
+  templateName?: string | null;
   rows: PinConnectionRow[];
   allPins: NetPinInfo[];
   nets: { id: string; name: string }[];
@@ -405,8 +426,17 @@ function ConnectorGroup({
 
   return (
     <div className="border-b border-tesla-border/60">
-      <div className="sticky top-0 z-[1] flex items-center gap-3 bg-tesla-bg/95 px-3 py-2 backdrop-blur">
-        <span className="text-sm font-semibold text-tesla-text">{label}</span>
+      <div className="sticky top-0 z-[1] flex items-center gap-2 bg-tesla-bg/95 px-3 py-2 backdrop-blur">
+        {slotKey && (
+          <span className="rounded bg-tesla-border/50 px-1.5 py-0.5 font-mono text-[11px] text-tesla-text">
+            {slotKey}
+          </span>
+        )}
+        <ConnectorInstanceLabel
+          label={label}
+          templateLabel={templateName}
+          className="text-sm font-semibold text-tesla-text"
+        />
         {kindTag && (
           <span
             className={clsx(
@@ -817,17 +847,16 @@ function DestinationsCell({
       {row.destinations.map((d) => (
         <span
           key={d.edge_id}
-          className="inline-flex items-center gap-1 rounded border border-tesla-border bg-tesla-bg px-2 py-0.5 text-xs"
-          title={`${d.other_container_label ?? ""} · ${d.other_connector_label} #${d.other_pin_number} ${d.other_pin_name}`}
+          className="inline-flex max-w-full items-center gap-1 rounded border border-tesla-border bg-tesla-bg px-2 py-0.5 text-xs"
+          title={d.other_path_label || `${d.other_connector_label} #${d.other_pin_number} ${d.other_pin_name}`}
         >
-          <span className="text-tesla-muted">{d.other_connector_label}</span>
-          <span>
-            #{d.other_pin_number} {d.other_pin_name}
+          <span className="truncate">
+            {d.other_path_label || `${d.other_connector_label} / #${d.other_pin_number}`}
           </span>
-          {d.wire_color && <span className="text-tesla-muted">· {d.wire_color}</span>}
+          {d.wire_color && <span className="shrink-0 text-tesla-muted">· {d.wire_color}</span>}
           <button
             type="button"
-            className="text-tesla-muted hover:text-tesla-accent"
+            className="shrink-0 text-tesla-muted hover:text-tesla-accent"
             onClick={() => remove.mutate(d.edge_id)}
           >
             ×

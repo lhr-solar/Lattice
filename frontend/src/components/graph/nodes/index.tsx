@@ -1,4 +1,5 @@
 import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { ConnectorInstanceLabel } from "@/components/library/ConnectorInstanceLabel";
 
 const CONTAINER_BG = "#141414";
 const CONTAINER_BORDER = "#2a2a2a";
@@ -15,6 +16,8 @@ function asString(value: unknown, fallback = ""): string {
 /** Titled outer box for a vehicle item, node, or enclosure panel group. */
 export function ContainerNode({ data }: NodeProps) {
   const label = asString(data?.label);
+  const templateLabel =
+    typeof data?.templateLabel === "string" ? data.templateLabel : null;
   return (
     <div
       style={{
@@ -33,12 +36,14 @@ export function ContainerNode({ data }: NodeProps) {
           fontSize: 12,
           fontWeight: 600,
           borderBottom: `1px solid ${CONTAINER_BORDER}`,
-          whiteSpace: "nowrap",
           overflow: "hidden",
-          textOverflow: "ellipsis",
         }}
       >
-        {label}
+        <ConnectorInstanceLabel
+          label={label}
+          templateLabel={templateLabel}
+          stacked={Boolean(templateLabel)}
+        />
       </div>
     </div>
   );
@@ -47,6 +52,9 @@ export function ContainerNode({ data }: NodeProps) {
 /** Bordered sub-box grouping the pins of a single connector. Dotted for pigtails. */
 export function ConnectorGroupNode({ data }: NodeProps) {
   const label = asString(data?.label);
+  const templateLabel =
+    typeof data?.templateLabel === "string" ? data.templateLabel : null;
+  const slotKey = typeof data?.slotKey === "string" ? data.slotKey : null;
   const dotted = data?.groupBorder === "dotted" || data?.isPigtail === true;
   const isPanelMount = data?.isPanelMount === true;
   const isPigtail = data?.isPigtail === true;
@@ -75,13 +83,31 @@ export function ConnectorGroupNode({ data }: NodeProps) {
           overflow: "hidden",
         }}
       >
+        {slotKey && (
+          <span
+            style={{
+              flexShrink: 0,
+              borderRadius: 3,
+              background: "#2a2a2a",
+              padding: "1px 5px",
+              fontFamily: "monospace",
+              fontSize: 10,
+              fontWeight: 500,
+              color: "#e8e8e8",
+            }}
+          >
+            {slotKey}
+          </span>
+        )}
         <span
           style={{
             overflow: "hidden",
             textOverflow: "ellipsis",
+            minWidth: 0,
+            flex: "1 1 auto",
           }}
         >
-          {label}
+          <ConnectorInstanceLabel label={label} templateLabel={templateLabel} />
         </span>
         {tag && (
           <span style={{ marginLeft: "auto", fontSize: 9, fontWeight: 400, color: MUTED }}>{tag}</span>

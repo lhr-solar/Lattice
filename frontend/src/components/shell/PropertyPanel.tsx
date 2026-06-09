@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { fetchTopologySummary } from "@/api/topology";
 import { DesignActions } from "@/features/design/DesignActions";
+import { ConnectorNamePanel } from "@/features/design/ConnectorNamePanel";
 import { PublishRevisionSection } from "@/features/design/PublishRevisionSection";
 import { PinPairingPanel } from "@/features/nets/PinPairingPanel";
 import { PinoutEditorPanel } from "@/features/nets/PinoutEditorPanel";
@@ -78,6 +79,7 @@ export function PropertyPanel() {
           </button>
         )}
         {mode === "design" && <DesignActions />}
+        {mode === "design" && <ConnectorNamePanel />}
         {mode === "design" && <PinoutEditorPanel />}
         {mode === "design" && <PinPairingPanel />}
         {mode === "design" && <PinShortPanel />}

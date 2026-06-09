@@ -5,8 +5,8 @@ from sqlalchemy import Boolean, ForeignKey, Integer, Numeric, String, Text, Uniq
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.infrastructure.db.base import Base, TimestampMixin, uuid_pk
-from app.infrastructure.db.enums import ConnectorGender, ConnectorRole, SignalKind
+from app.infra.db.base import Base, TimestampMixin, uuid_pk
+from app.infra.db.enums import ConnectorGender, ConnectorRole, SignalKind
 
 
 class ConnectorTemplate(Base, TimestampMixin):

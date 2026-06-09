@@ -5,9 +5,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.display import resolve_display_name
-from app.infrastructure.db.models.catalog import ConnectorTemplate
-from app.infrastructure.db.models.instances import ConnectorInstance, Pin
-from app.infrastructure.db.models.topology import Signal
+from app.infra.db.models.catalog import ConnectorTemplate
+from app.infra.db.models.instances import ConnectorInstance, Pin
+from app.infra.db.models.topology import Signal
 
 NET_ARROW = " -> "
 

@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from app.domains.topology.pin_context import PinContext
-from app.infrastructure.db.enums import HarnessScope
+from app.infra.db.enums import HarnessScope
 
 
 def classify_edge_scope(ctx: PinContext, pin_a_id: UUID, pin_b_id: UUID) -> HarnessScope:

@@ -5,8 +5,8 @@ from sqlalchemy import Boolean, Double, ForeignKey, Integer, String, UniqueConst
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.infrastructure.db.base import Base, uuid_pk
-from app.infrastructure.db.enums import EntityKind
+from app.infra.db.base import Base, uuid_pk
+from app.infra.db.enums import EntityKind
 
 
 class NodeLayout(Base):

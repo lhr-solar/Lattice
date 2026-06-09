@@ -4,8 +4,8 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
-from app.infrastructure.db.models.instances import ConnectorInstance
-from app.infrastructure.db.models.templates import (
+from app.infra.db.models.instances import ConnectorInstance
+from app.infra.db.models.templates import (
     EnclosureTemplate,
     EnclosureTemplatePcbSlot,
     EnclosureTemplatePanelSlot,

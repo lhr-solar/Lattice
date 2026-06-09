@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
 from app.core.time import utc_now
-from app.infrastructure.db.models.revision import UserSession
+from app.infra.db.models.revision import UserSession
 from app.schemas.session import SessionCreate, SessionResponse
 
 router = APIRouter(prefix="/session", tags=["session"])

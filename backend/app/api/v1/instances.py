@@ -7,6 +7,7 @@ from app.api.deps import get_db
 from app.schemas.instances import (
     ConnectorInstanceCreate,
     ConnectorInstanceResponse,
+    ConnectorInstanceUpdate,
     EnclosureInstanceCreate,
     EnclosureInstanceResponse,
     PinResponse,
@@ -55,6 +56,19 @@ async def create_connector(
     db: AsyncSession = Depends(get_db),
 ) -> ConnectorInstanceResponse:
     return await InstanceService(db).create_connector(vehicle_id, revision_id, payload)
+
+
+@router.patch("/connectors/{connector_instance_id}", response_model=ConnectorInstanceResponse)
+async def update_connector(
+    vehicle_id: UUID,
+    revision_id: UUID,
+    connector_instance_id: UUID,
+    payload: ConnectorInstanceUpdate,
+    db: AsyncSession = Depends(get_db),
+) -> ConnectorInstanceResponse:
+    return await InstanceService(db).update_connector(
+        vehicle_id, revision_id, connector_instance_id, payload
+    )
 
 
 @router.patch("/connectors/{connector_instance_id}/pins/{pin_id}", response_model=PinResponse)

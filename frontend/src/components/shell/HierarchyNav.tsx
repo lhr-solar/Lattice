@@ -7,6 +7,7 @@ import { fetchVehicles, createVehicle, deleteVehicle, updateVehicleName } from "
 import { useAppStore } from "@/stores/appStore";
 import type { ProjectionLevel } from "@/api/types";
 import { ConfirmModal, PromptModal } from "@/components/ui/Modal";
+import { ConnectorInstanceLabel, connectorNodeTitle } from "@/components/library/ConnectorInstanceLabel";
 
 function TreeNode({
   node,
@@ -32,6 +33,9 @@ function TreeNode({
   const hasChildren = node.children.length > 0;
   const canDelete = node.kind !== "vehicle" && node.kind !== "inlineGroup";
 
+  const isConnector = node.kind === "connector" || node.kind === "panelMount";
+  const title = isConnector ? connectorNodeTitle(node.label, node.template_label) : node.label;
+
   return (
     <li>
       <div
@@ -50,16 +54,28 @@ function TreeNode({
             if (level) onSelect(node.id, node.kind, level);
           }}
           style={{ paddingLeft: `${depth * 12 + 8}px` }}
-          className="min-w-0 flex-1 truncate py-1.5 text-left text-sm"
-          title={node.label}
+          className={clsx(
+            "min-w-0 flex-1 py-1.5 text-left text-sm",
+            isConnector ? "flex items-center gap-1" : "truncate",
+          )}
+          title={title}
         >
-          <span className="mr-1 opacity-60">{iconFor(node.kind)}</span>
-          {node.label}
+          <span className="mr-1 shrink-0 opacity-60">{iconFor(node.kind)}</span>
+          {isConnector ? (
+            <ConnectorInstanceLabel
+              label={node.label}
+              templateLabel={node.template_label}
+              stacked
+              className="min-w-0 flex-1"
+            />
+          ) : (
+            node.label
+          )}
         </button>
         {canDelete ? (
           <button
             type="button"
-            title={`Delete ${node.label}`}
+            title={`Delete ${title}`}
             className="shrink-0 rounded px-1.5 py-0.5 text-xs text-tesla-muted transition hover:bg-tesla-border hover:text-tesla-text"
             onClick={(e) => {
               e.stopPropagation();

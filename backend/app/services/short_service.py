@@ -11,11 +11,11 @@ from app.domains.topology.net_naming import (
     get_pin_endpoint,
 )
 from app.domains.topology.pin_shorts import load_short_index
-from app.infrastructure.db.enums import SignalKind
-from app.infrastructure.db.models.shorts import ConnectorTemplatePinShort, ConnectorTemplatePinShortByName
-from app.infrastructure.db.models.instances import ConnectorInstance, Pin
-from app.infrastructure.db.models.shorts import ConnectorInstancePinShort
-from app.infrastructure.db.models.topology import PinSignalAssignment, Signal
+from app.infra.db.enums import SignalKind
+from app.infra.db.models.shorts import ConnectorTemplatePinShort, ConnectorTemplatePinShortByName
+from app.infra.db.models.instances import ConnectorInstance, Pin
+from app.infra.db.models.shorts import ConnectorInstancePinShort
+from app.infra.db.models.topology import PinSignalAssignment, Signal
 from app.schemas.shorts import PinShortCreate, PinShortResponse, TemplatePinShortCreate
 
 

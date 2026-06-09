@@ -3,7 +3,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.infrastructure.db.models.shorts import ConnectorInstancePinShort
+from app.infra.db.models.shorts import ConnectorInstancePinShort
 
 
 class PinShortIndex:
@@ -60,7 +60,7 @@ async def expand_pins_with_shorts(
 ) -> list[UUID]:
     if not pin_ids:
         return []
-    from app.infrastructure.db.models.instances import Pin
+    from app.infra.db.models.instances import Pin
 
     first_pin = await db.get(Pin, pin_ids[0])
     if not first_pin:

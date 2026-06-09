@@ -4,7 +4,7 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-from app.infrastructure.db.enums import EdgeManufacturingState
+from app.infra.db.enums import EdgeManufacturingState
 
 
 class ConnectionEdgeCreate(BaseModel):

@@ -8,8 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
 from app.core.revision_guard import ensure_mutable_revision
-from app.infrastructure.db.enums import EntityKind
-from app.infrastructure.db.models.layout import NodeLayout
+from app.infra.db.enums import EntityKind
+from app.infra.db.models.layout import NodeLayout
 
 router = APIRouter(prefix="/vehicles/{vehicle_id}/revisions/{revision_id}/layouts", tags=["layouts"])
 

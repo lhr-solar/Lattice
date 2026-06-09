@@ -6,8 +6,8 @@ from sqlalchemy import CheckConstraint, ForeignKey, Numeric, String, Text, Uniqu
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.infrastructure.db.base import Base, uuid_pk
-from app.infrastructure.db.enums import EdgeManufacturingState, HarnessScope, SignalKind
+from app.infra.db.base import Base, uuid_pk
+from app.infra.db.enums import EdgeManufacturingState, HarnessScope, SignalKind
 
 
 class Signal(Base):

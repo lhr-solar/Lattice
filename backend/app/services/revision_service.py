@@ -9,12 +9,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.revision_guard import get_revision_or_404
 from app.core.time import utc_now
-from app.infrastructure.db.enums import EntityKind, RevisionStatus
-from app.infrastructure.db.models.instances import ConnectorInstance, EnclosureInstance, PcbInstance, Pin
-from app.infrastructure.db.models.revision import RevisionChange, RevisionSnapshot
-from app.infrastructure.db.models.shorts import ConnectorInstancePinShort
-from app.infrastructure.db.models.topology import ConnectionEdge, PinSignalAssignment, Signal
-from app.infrastructure.db.models.vehicle import Revision, VehicleHead
+from app.infra.db.enums import EntityKind, RevisionStatus
+from app.infra.db.models.instances import ConnectorInstance, EnclosureInstance, PcbInstance, Pin
+from app.infra.db.models.revision import RevisionChange, RevisionSnapshot
+from app.infra.db.models.shorts import ConnectorInstancePinShort
+from app.infra.db.models.topology import ConnectionEdge, PinSignalAssignment, Signal
+from app.infra.db.models.vehicle import Revision, VehicleHead
 from app.schemas.revisions import RevisionDiffItem, RevisionPublishResponse
 from app.schemas.vehicles import RevisionResponse
 

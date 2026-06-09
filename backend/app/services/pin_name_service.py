@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.infrastructure.db.models.pin_names import PinNameLibraryEntry
+from app.infra.db.models.pin_names import PinNameLibraryEntry
 from app.schemas.pin_names import PinNameEntryCreate, PinNameEntryResponse, PinNameEntryUpdate
 
 

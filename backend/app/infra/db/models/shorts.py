@@ -4,7 +4,7 @@ from sqlalchemy import ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.infrastructure.db.base import Base, uuid_pk
+from app.infra.db.base import Base, uuid_pk
 
 
 class ConnectorTemplatePinShort(Base):

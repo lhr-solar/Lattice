@@ -2,7 +2,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from app.infrastructure.db.enums import ConnectorRole
+from app.infra.db.enums import ConnectorRole
 from app.schemas.common import SchemaBase, TimestampSchema
 
 
