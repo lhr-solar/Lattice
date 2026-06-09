@@ -35,10 +35,12 @@ from app.schemas.instances import (
     ConnectorInstanceUpdate,
     ConnectorInstanceResponse,
     EnclosureInstanceCreate,
+    EnclosureInstanceUpdate,
     EnclosureInstanceResponse,
     PinResponse,
     PinUpdate,
     PcbInstanceCreate,
+    PcbInstanceUpdate,
     PcbInstanceResponse,
 )
 from app.services.short_service import ShortService
@@ -59,13 +61,16 @@ class InstanceService:
         if not template or template.vehicle_id != vehicle_id:
             raise HTTPException(status_code=404, detail="Enclosure template not found")
 
+        nickname = (payload.nickname or "").strip() or None
+        use_template_name = False if nickname else payload.use_template_name
+
         now = utc_now()
         instance = EnclosureInstance(
             revision_id=revision_id,
             vehicle_id=vehicle_id,
             enclosure_template_id=template.id,
-            nickname=payload.nickname,
-            use_template_name=payload.use_template_name,
+            nickname=nickname,
+            use_template_name=use_template_name,
             created_at=now,
         )
         self.db.add(instance)
@@ -108,16 +113,16 @@ class InstanceService:
 
         display = resolve_display_name(
             template_name=template.name,
-            nickname=payload.nickname,
-            use_template_name=payload.use_template_name,
+            nickname=nickname,
+            use_template_name=use_template_name,
         )
         return EnclosureInstanceResponse(
             id=instance.id,
             revision_id=revision_id,
             vehicle_id=vehicle_id,
             display_name=display,
-            nickname=payload.nickname,
-            use_template_name=payload.use_template_name,
+            nickname=nickname,
+            use_template_name=use_template_name,
             created_at=now,
             enclosure_template_id=template.id,
             connector_instance_ids=connector_ids,
@@ -140,14 +145,17 @@ class InstanceService:
             if not enc or enc.revision_id != revision_id:
                 raise HTTPException(status_code=404, detail="Enclosure instance not found")
 
+        nickname = (payload.nickname or "").strip() or None
+        use_template_name = False if nickname else payload.use_template_name
+
         now = utc_now()
         instance = PcbInstance(
             revision_id=revision_id,
             vehicle_id=vehicle_id,
             pcb_template_id=template.id,
             enclosure_instance_id=payload.enclosure_instance_id,
-            nickname=payload.nickname,
-            use_template_name=payload.use_template_name,
+            nickname=nickname,
+            use_template_name=use_template_name,
             created_at=now,
         )
         self.db.add(instance)
@@ -178,16 +186,16 @@ class InstanceService:
 
         display = resolve_display_name(
             template_name=template.name,
-            nickname=payload.nickname,
-            use_template_name=payload.use_template_name,
+            nickname=nickname,
+            use_template_name=use_template_name,
         )
         return PcbInstanceResponse(
             id=instance.id,
             revision_id=revision_id,
             vehicle_id=vehicle_id,
             display_name=display,
-            nickname=payload.nickname,
-            use_template_name=payload.use_template_name,
+            nickname=nickname,
+            use_template_name=use_template_name,
             created_at=now,
             pcb_template_id=template.id,
             enclosure_instance_id=payload.enclosure_instance_id,
@@ -318,6 +326,81 @@ class InstanceService:
             pin_number=pin.pin_number,
             name=pin.name,
             role=pin.role,
+        )
+
+    async def update_enclosure(
+        self,
+        vehicle_id: UUID,
+        revision_id: UUID,
+        enclosure_instance_id: UUID,
+        payload: EnclosureInstanceUpdate,
+    ) -> EnclosureInstanceResponse:
+        await ensure_mutable_revision(self.db, revision_id, vehicle_id)
+        enc = await self.db.get(EnclosureInstance, enclosure_instance_id)
+        if not enc or enc.revision_id != revision_id or enc.vehicle_id != vehicle_id:
+            raise HTTPException(status_code=404, detail="Enclosure instance not found")
+
+        if payload.nickname is not None:
+            nickname = payload.nickname.strip() or None
+            enc.nickname = nickname
+            enc.use_template_name = nickname is None
+
+        await self.db.flush()
+        template = await self.db.get(EnclosureTemplate, enc.enclosure_template_id)
+        return EnclosureInstanceResponse(
+            id=enc.id,
+            revision_id=enc.revision_id,
+            vehicle_id=enc.vehicle_id,
+            display_name=resolve_display_name(
+                template_name=template.name if template else "?",
+                nickname=enc.nickname,
+                use_template_name=enc.use_template_name,
+            ),
+            nickname=enc.nickname,
+            use_template_name=enc.use_template_name,
+            created_at=enc.created_at,
+            enclosure_template_id=enc.enclosure_template_id,
+            connector_instance_ids=await self._connector_ids_for_enclosure(enc.id),
+            pcb_instance_ids=await self._pcb_ids_for_enclosure(enc.id),
+        )
+
+    async def update_pcb(
+        self,
+        vehicle_id: UUID,
+        revision_id: UUID,
+        pcb_instance_id: UUID,
+        payload: PcbInstanceUpdate,
+    ) -> PcbInstanceResponse:
+        await ensure_mutable_revision(self.db, revision_id, vehicle_id)
+        pcb = await self.db.get(PcbInstance, pcb_instance_id)
+        if not pcb or pcb.revision_id != revision_id or pcb.vehicle_id != vehicle_id:
+            raise HTTPException(status_code=404, detail="PCB instance not found")
+
+        if payload.nickname is not None:
+            nickname = payload.nickname.strip() or None
+            pcb.nickname = nickname
+            pcb.use_template_name = nickname is None
+
+        await self.db.flush()
+        template = await self.db.get(PcbTemplate, pcb.pcb_template_id)
+        connector_ids_result = await self.db.execute(
+            select(ConnectorInstance.id).where(ConnectorInstance.pcb_instance_id == pcb.id)
+        )
+        return PcbInstanceResponse(
+            id=pcb.id,
+            revision_id=pcb.revision_id,
+            vehicle_id=pcb.vehicle_id,
+            display_name=resolve_display_name(
+                template_name=template.name if template else "?",
+                nickname=pcb.nickname,
+                use_template_name=pcb.use_template_name,
+            ),
+            nickname=pcb.nickname,
+            use_template_name=pcb.use_template_name,
+            created_at=pcb.created_at,
+            pcb_template_id=pcb.pcb_template_id,
+            enclosure_instance_id=pcb.enclosure_instance_id,
+            connector_instance_ids=list(connector_ids_result.scalars().all()),
         )
 
     async def update_connector(

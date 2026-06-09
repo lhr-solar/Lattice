@@ -9,10 +9,12 @@ from app.schemas.instances import (
     ConnectorInstanceResponse,
     ConnectorInstanceUpdate,
     EnclosureInstanceCreate,
+    EnclosureInstanceUpdate,
     EnclosureInstanceResponse,
     PinResponse,
     PinUpdate,
     PcbInstanceCreate,
+    PcbInstanceUpdate,
     PcbInstanceResponse,
 )
 from app.services.instance_service import InstanceService
@@ -56,6 +58,30 @@ async def create_connector(
     db: AsyncSession = Depends(get_db),
 ) -> ConnectorInstanceResponse:
     return await InstanceService(db).create_connector(vehicle_id, revision_id, payload)
+
+
+@router.patch("/enclosures/{enclosure_instance_id}", response_model=EnclosureInstanceResponse)
+async def update_enclosure(
+    vehicle_id: UUID,
+    revision_id: UUID,
+    enclosure_instance_id: UUID,
+    payload: EnclosureInstanceUpdate,
+    db: AsyncSession = Depends(get_db),
+) -> EnclosureInstanceResponse:
+    return await InstanceService(db).update_enclosure(
+        vehicle_id, revision_id, enclosure_instance_id, payload
+    )
+
+
+@router.patch("/pcbs/{pcb_instance_id}", response_model=PcbInstanceResponse)
+async def update_pcb(
+    vehicle_id: UUID,
+    revision_id: UUID,
+    pcb_instance_id: UUID,
+    payload: PcbInstanceUpdate,
+    db: AsyncSession = Depends(get_db),
+) -> PcbInstanceResponse:
+    return await InstanceService(db).update_pcb(vehicle_id, revision_id, pcb_instance_id, payload)
 
 
 @router.patch("/connectors/{connector_instance_id}", response_model=ConnectorInstanceResponse)

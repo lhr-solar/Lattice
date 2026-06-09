@@ -105,7 +105,6 @@ export function DesignActions() {
       await createConnector(vehicleId, revisionId, {
         connector_template_id: templateId,
         is_panel_mount: false,
-        nickname: nickname.trim() || undefined,
       });
     },
     onSuccess: () => {
@@ -242,15 +241,17 @@ export function DesignActions() {
               }}
             />
           )}
-          <label className="flex flex-col gap-1 text-xs text-tesla-muted">
-            Name
-            <input
-              value={nickname}
-              onChange={(e) => setNickname(e.target.value)}
-              placeholder="Optional nickname for this instance"
-              className="rounded border border-tesla-border bg-tesla-bg px-2 py-1 text-sm text-tesla-text outline-none focus:border-tesla-accent"
-            />
-          </label>
+          {(activeAdd === "enclosure" || activeAdd === "node") && (
+            <label className="flex flex-col gap-1 text-xs text-tesla-muted">
+              Custom name
+              <input
+                value={nickname}
+                onChange={(e) => setNickname(e.target.value)}
+                placeholder="Optional — uses template name if blank"
+                className="rounded border border-tesla-border bg-tesla-bg px-2 py-1 text-sm text-tesla-text outline-none focus:border-tesla-accent"
+              />
+            </label>
+          )}
         </div>
       </Modal>
     </div>

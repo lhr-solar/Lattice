@@ -79,3 +79,11 @@ class PinUpdate(BaseModel):
 
 class ConnectorInstanceUpdate(BaseModel):
     nickname: str | None = Field(default=None, max_length=255)
+
+
+class EnclosureInstanceUpdate(BaseModel):
+    nickname: str | None = Field(default=None, max_length=255)
+
+
+class PcbInstanceUpdate(BaseModel):
+    nickname: str | None = Field(default=None, max_length=255)

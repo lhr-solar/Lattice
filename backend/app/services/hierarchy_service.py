@@ -4,11 +4,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.display import (
-    resolve_connector_labels,
-    resolve_connector_with_slot,
-    resolve_display_name,
-)
+from app.core.display import resolve_connector_labels, resolve_connector_with_slot
 from app.infra.db.models.instances import ConnectorInstance, EnclosureInstance, PcbInstance
 from app.infra.db.models.templates import (
     EnclosureTemplate,
@@ -34,14 +30,16 @@ class HierarchyService:
             .where(EnclosureInstance.revision_id == revision_id)
         )
         for enc, tmpl in enc_result.all():
+            enc_label, enc_template = resolve_connector_labels(
+                template_name=tmpl.name,
+                nickname=enc.nickname,
+                use_template_name=enc.use_template_name,
+            )
             enc_node = HierarchyNode(
                 id=enc.id,
                 kind="enclosure",
-                label=resolve_display_name(
-                    template_name=tmpl.name,
-                    nickname=enc.nickname,
-                    use_template_name=enc.use_template_name,
-                ),
+                label=enc_label,
+                template_label=enc_template,
                 children=[],
             )
 
@@ -54,14 +52,16 @@ class HierarchyService:
                 )
             )
             for pcb, pcb_tmpl in pcb_result.all():
+                pcb_label, pcb_template = resolve_connector_labels(
+                    template_name=pcb_tmpl.name,
+                    nickname=pcb.nickname,
+                    use_template_name=pcb.use_template_name,
+                )
                 pcb_node = HierarchyNode(
                     id=pcb.id,
                     kind="node",
-                    label=resolve_display_name(
-                        template_name=pcb_tmpl.name,
-                        nickname=pcb.nickname,
-                        use_template_name=pcb.use_template_name,
-                    ),
+                    label=pcb_label,
+                    template_label=pcb_template,
                     children=[],
                 )
                 await self._attach_connectors(

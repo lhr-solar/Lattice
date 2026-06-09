@@ -33,8 +33,13 @@ function TreeNode({
   const hasChildren = node.children.length > 0;
   const canDelete = node.kind !== "vehicle" && node.kind !== "inlineGroup";
 
+  const hasTemplateLabel = Boolean(node.template_label);
   const isConnector = node.kind === "connector" || node.kind === "panelMount";
-  const title = isConnector ? connectorNodeTitle(node.label, node.template_label) : node.label;
+  const showStackedLabel =
+    isConnector || node.kind === "enclosure" || node.kind === "node";
+  const title = hasTemplateLabel || isConnector
+    ? connectorNodeTitle(node.label, node.template_label)
+    : node.label;
 
   return (
     <li>
@@ -56,12 +61,12 @@ function TreeNode({
           style={{ paddingLeft: `${depth * 12 + 8}px` }}
           className={clsx(
             "min-w-0 flex-1 py-1.5 text-left text-sm",
-            isConnector ? "flex items-center gap-1" : "truncate",
+            showStackedLabel ? "flex items-center gap-1" : "truncate",
           )}
           title={title}
         >
           <span className="mr-1 shrink-0 opacity-60">{iconFor(node.kind)}</span>
-          {isConnector ? (
+          {showStackedLabel ? (
             <ConnectorInstanceLabel
               label={node.label}
               templateLabel={node.template_label}

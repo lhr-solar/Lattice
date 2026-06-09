@@ -1,32 +1,29 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchHierarchy } from "@/api/hierarchy";
-import { updateConnectorInstance } from "@/api/instances";
+import { updateEnclosureInstance, updatePcbInstance } from "@/api/instances";
 import { useAppStore } from "@/stores/appStore";
 import { ConnectorInstanceLabel } from "@/components/library/ConnectorInstanceLabel";
 
-export function ConnectorNamePanel() {
+export function InstanceNicknamePanel() {
   const queryClient = useQueryClient();
   const vehicleId = useAppStore((s) => s.selectedVehicleId);
   const revisionId = useAppStore((s) => s.selectedRevisionId);
   const selectedNodeKind = useAppStore((s) => s.selectedNodeKind);
   const focusId = useAppStore((s) => s.focusId);
 
-  const isConnector =
-    selectedNodeKind === "connector" ||
-    selectedNodeKind === "panelMount" ||
-    selectedNodeKind === "group";
-
-  const connectorId = isConnector ? focusId : null;
+  const isEnclosure = selectedNodeKind === "enclosure";
+  const isNode = selectedNodeKind === "node";
+  const instanceId = isEnclosure || isNode ? focusId : null;
 
   const { data: hierarchy } = useQuery({
     queryKey: ["hierarchy", vehicleId, revisionId],
     queryFn: () => fetchHierarchy(vehicleId!, revisionId!),
-    enabled: Boolean(vehicleId && revisionId && connectorId),
+    enabled: Boolean(vehicleId && revisionId && instanceId),
   });
 
   const node =
-    connectorId && hierarchy ? findConnectorNode(hierarchy.root, connectorId) : null;
+    instanceId && hierarchy ? findHierarchyNode(hierarchy.root, instanceId) : null;
 
   const [draft, setDraft] = useState("");
   const [message, setMessage] = useState<string | null>(null);
@@ -42,28 +39,34 @@ export function ConnectorNamePanel() {
   }, [node?.id, node?.label, node?.template_label]);
 
   const save = useMutation({
-    mutationFn: (nickname: string) =>
-      updateConnectorInstance(vehicleId!, revisionId!, connectorId!, { nickname }),
+    mutationFn: async (nickname: string) => {
+      if (!vehicleId || !revisionId || !instanceId) throw new Error("Missing context");
+      if (isEnclosure) {
+        await updateEnclosureInstance(vehicleId, revisionId, instanceId, { nickname });
+        return;
+      }
+      await updatePcbInstance(vehicleId, revisionId, instanceId, { nickname });
+    },
     onSuccess: () => {
-      setMessage("Connector name saved.");
+      setMessage("Name saved.");
       queryClient.invalidateQueries({ queryKey: ["hierarchy"] });
       queryClient.invalidateQueries({ queryKey: ["design-projection"] });
       queryClient.invalidateQueries({ queryKey: ["connection-table"] });
-      queryClient.invalidateQueries({ queryKey: ["pins"] });
       queryClient.invalidateQueries({ queryKey: ["topology-summary"] });
     },
-    onError: () => setMessage("Failed to save connector name."),
+    onError: () => setMessage("Failed to save name."),
   });
 
-  if (!vehicleId || !revisionId || !connectorId || !node) return null;
+  if (!vehicleId || !revisionId || !instanceId || !node) return null;
 
+  const title = isEnclosure ? "Enclosure name" : "Node name";
   const hasCustomName = Boolean(node.template_label);
   const unchanged = hasCustomName ? draft.trim() === node.label : draft.trim() === "";
 
   return (
     <div className="mt-4 border-t border-tesla-border pt-4">
       <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-tesla-muted">
-        Connector name
+        {title}
       </h3>
       <div className="mb-2 text-sm">
         <ConnectorInstanceLabel
@@ -111,16 +114,15 @@ export function ConnectorNamePanel() {
 
 interface HierarchyLike {
   id: string;
-  kind: string;
   label: string;
   template_label?: string | null;
   children?: HierarchyLike[];
 }
 
-function findConnectorNode(node: HierarchyLike, id: string): HierarchyLike | null {
+function findHierarchyNode(node: HierarchyLike, id: string): HierarchyLike | null {
   if (node.id === id) return node;
   for (const child of node.children ?? []) {
-    const found = findConnectorNode(child, id);
+    const found = findHierarchyNode(child, id);
     if (found) return found;
   }
   return null;
