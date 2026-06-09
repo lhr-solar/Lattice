@@ -19,7 +19,7 @@ export function LoginGate() {
     setError(null);
     try {
       const auth = await login(trimmedUsername, password);
-      setUser(auth.user.username, auth.user.is_admin);
+      setUser(auth.user.id, auth.user.username, auth.user.is_admin);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Login failed");
     } finally {

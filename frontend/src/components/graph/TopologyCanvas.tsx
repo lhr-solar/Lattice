@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -18,6 +18,8 @@ import { disconnectEdge } from "@/api/connections";
 import { deletePinShort } from "@/api/shorts";
 import { ApiError } from "@/api/client";
 import type { DesignNodeDto } from "@/api/types";
+import { handleMutationError } from "@/lib/mutationErrors";
+import { invalidateRevisionDomains } from "@/lib/revisionInvalidation";
 import { useAppStore } from "@/stores/appStore";
 import { CONTAINER_KINDS, nodeTypes } from "./nodes";
 import { edgeTypes } from "./edges/DeletableEdge";
@@ -130,6 +132,18 @@ export function TopologyCanvas() {
   const setPairingPinA = useAppStore((s) => s.setPairingPinA);
   const clearPairing = useAppStore((s) => s.clearPairing);
   const queryClient = useQueryClient();
+  const [wireError, setWireError] = useState<string | null>(null);
+
+  function invalidateWiring() {
+    invalidateRevisionDomains(queryClient, [
+      "nets",
+      "pins",
+      "design-projection",
+      "topology-summary",
+      "connection-table",
+      "shorts",
+    ]);
+  }
 
   const quickPairMutation = useMutation({
     mutationFn: ({ pinAId, pinBId }: { pinAId: string; pinBId: string }) =>
@@ -140,32 +154,29 @@ export function TopologyCanvas() {
       }),
     onSuccess: () => {
       clearPairing();
-      queryClient.invalidateQueries({ queryKey: ["nets"] });
-      queryClient.invalidateQueries({ queryKey: ["pins"] });
-      queryClient.invalidateQueries({ queryKey: ["design-projection"] });
-      queryClient.invalidateQueries({ queryKey: ["topology-summary"] });
-      queryClient.invalidateQueries({ queryKey: ["connection-table"] });
+      setWireError(null);
+      invalidateWiring();
     },
+    onError: (error) => setWireError(handleMutationError(error, "Failed to create wire.")),
   });
-
-  function invalidateAfterEdgeChange() {
-    queryClient.invalidateQueries({ queryKey: ["design-projection"] });
-    queryClient.invalidateQueries({ queryKey: ["nets"] });
-    queryClient.invalidateQueries({ queryKey: ["pins"] });
-    queryClient.invalidateQueries({ queryKey: ["shorts"] });
-    queryClient.invalidateQueries({ queryKey: ["topology-summary"] });
-    queryClient.invalidateQueries({ queryKey: ["connection-table"] });
-  }
 
   const deleteWireMutation = useMutation({
     mutationFn: (edgeId: string) => disconnectEdge(vehicleId!, revisionId!, edgeId),
-    onSuccess: invalidateAfterEdgeChange,
+    onSuccess: () => {
+      setWireError(null);
+      invalidateWiring();
+    },
+    onError: (error) => setWireError(handleMutationError(error, "Failed to remove wire.")),
   });
 
   const deleteShortMutation = useMutation({
     mutationFn: ({ connectorId, shortId }: { connectorId: string; shortId: string }) =>
       deletePinShort(vehicleId!, revisionId!, connectorId, shortId),
-    onSuccess: invalidateAfterEdgeChange,
+    onSuccess: () => {
+      setWireError(null);
+      invalidateWiring();
+    },
+    onError: (error) => setWireError(handleMutationError(error, "Failed to remove short.")),
   });
 
   const { data, isLoading, isError, error } = useQuery({
@@ -262,6 +273,11 @@ export function TopologyCanvas() {
       {wireMode && (
         <div className="pointer-events-none absolute left-3 top-3 z-10 rounded border border-tesla-accent/40 bg-tesla-bg/90 px-2 py-1 text-xs text-tesla-muted">
           Wire mode: {pairingPinAId ? "pick pin B (or drag) to finish wire" : "pick pin A or drag between pins"}
+        </div>
+      )}
+      {wireError && (
+        <div className="absolute left-3 top-12 z-10 max-w-sm rounded border border-amber-500/40 bg-tesla-bg/95 px-2 py-1 text-xs text-amber-100">
+          {wireError}
         </div>
       )}
       <ReactFlow

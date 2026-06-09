@@ -9,6 +9,8 @@ import { NetManager } from "@/features/nets/NetManager";
 import { PinNameLibraryModal } from "@/features/pins/PinNameLibraryModal";
 import { ConnectionTable } from "@/features/connections/ConnectionTable";
 import { LibraryBuilders } from "@/features/library/LibraryBuilders";
+import { useAutoSelectVehicle } from "@/hooks/useAutoSelectVehicle";
+import { useRevisionSync } from "@/hooks/useRevisionSync";
 import { useAppStore } from "@/stores/appStore";
 
 interface AppShellProps {
@@ -17,6 +19,8 @@ interface AppShellProps {
 
 export function AppShell({ onOpenAdmin }: AppShellProps) {
   const mode = useAppStore((s) => s.mode);
+  useAutoSelectVehicle();
+  useRevisionSync();
 
   return (
     <div className="flex h-screen flex-col">

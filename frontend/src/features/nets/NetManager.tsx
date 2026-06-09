@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import {
@@ -9,7 +9,11 @@ import {
   updateNet,
   type NetSummary,
 } from "@/api/nets";
+import { StaleRevisionBanner } from "@/components/shell/StaleRevisionBanner";
+import { handleMutationError } from "@/lib/mutationErrors";
+import { invalidateRevisionDomains } from "@/lib/revisionInvalidation";
 import { useAppStore } from "@/stores/appStore";
+import { useRevisionSyncStore } from "@/stores/revisionSyncStore";
 import { ConfirmModal } from "@/components/ui/Modal";
 
 type FilterTab = "all" | "named" | "auto";
@@ -27,6 +31,10 @@ export function NetManager() {
   const [editName, setEditName] = useState("");
   const [newNetName, setNewNetName] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const editSequence = useRevisionSyncStore((s) => s.editSequence);
+  const staleRevision = useRevisionSyncStore((s) => s.staleRevision);
+  const setDirtyForm = useRevisionSyncStore((s) => s.setDirtyForm);
 
   const autoNamedOnly = filter === "auto" ? true : filter === "named" ? false : undefined;
 
@@ -47,12 +55,25 @@ export function NetManager() {
   });
 
   const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: ["nets"] });
-    queryClient.invalidateQueries({ queryKey: ["net-detail"] });
-    queryClient.invalidateQueries({ queryKey: ["pins"] });
-    queryClient.invalidateQueries({ queryKey: ["design-projection"] });
-    queryClient.invalidateQueries({ queryKey: ["topology-summary"] });
+    invalidateRevisionDomains(queryClient, [
+      "nets",
+      "net-detail",
+      "pins",
+      "design-projection",
+      "topology-summary",
+      "connection-table",
+    ]);
   };
+
+  const nameDirty = Boolean(
+    selectedNetId && netDetail && editName.trim() !== netDetail.name,
+  );
+
+  useEffect(() => {
+    if (!showNetManager) return;
+    setDirtyForm(nameDirty);
+    return () => setDirtyForm(false);
+  }, [showNetManager, nameDirty, setDirtyForm]);
 
   const createMutation = useMutation({
     mutationFn: (name: string) => createNet(vehicleId!, revisionId!, { name }),
@@ -60,24 +81,36 @@ export function NetManager() {
       setNewNetName("");
       setSelectedNetId(net.id);
       setEditName(net.name);
+      setErrorMessage(null);
       invalidate();
     },
+    onError: (error) => setErrorMessage(handleMutationError(error, "Failed to create net.")),
   });
 
   const updateMutation = useMutation({
-    mutationFn: () => updateNet(vehicleId!, revisionId!, selectedNetId!, { name: editName }),
-    onSuccess: invalidate,
+    mutationFn: () =>
+      updateNet(vehicleId!, revisionId!, selectedNetId!, {
+        name: editName,
+        expected_edit_sequence: editSequence,
+      }),
+    onSuccess: () => {
+      setErrorMessage(null);
+      invalidate();
+    },
+    onError: (error) => setErrorMessage(handleMutationError(error, "Failed to rename net.")),
   });
 
   const deleteMutation = useMutation({
     mutationFn: () => deleteNet(vehicleId!, revisionId!, selectedNetId!),
     onSuccess: (result) => {
       setSelectedNetId(null);
+      setErrorMessage(null);
       invalidate();
       if (result.created_auto_nets.length) {
         setFilter("auto");
       }
     },
+    onError: (error) => setErrorMessage(handleMutationError(error, "Failed to delete net.")),
   });
 
   const sortedNets = useMemo(
@@ -105,6 +138,11 @@ export function NetManager() {
             ✕
           </button>
         </header>
+
+        <div className="space-y-2 border-b border-tesla-border px-4 py-2">
+          <StaleRevisionBanner />
+          {errorMessage && <p className="text-xs text-amber-200">{errorMessage}</p>}
+        </div>
 
         <div className="flex min-h-0 flex-1">
           <div className="flex w-1/2 flex-col border-r border-tesla-border">
@@ -183,7 +221,11 @@ export function NetManager() {
                   />
                   <button
                     type="button"
-                    disabled={updateMutation.isPending || editName === netDetail.name}
+                    disabled={
+                      updateMutation.isPending ||
+                      editName === netDetail.name ||
+                      staleRevision
+                    }
                     onClick={() => updateMutation.mutate()}
                     className="rounded border border-tesla-border px-2 py-1 text-sm hover:border-tesla-accent"
                   >

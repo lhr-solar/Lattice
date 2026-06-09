@@ -1,4 +1,5 @@
 import { logout } from "@/api/auth";
+import { SyncStatusIndicator } from "@/components/shell/SyncStatusIndicator";
 import { useSessionStore } from "@/stores/sessionStore";
 import { useAppStore } from "@/stores/appStore";
 
@@ -59,6 +60,7 @@ export function TopBar({ onOpenAdmin }: TopBarProps) {
         className="max-w-md flex-1 rounded-md border border-tesla-border bg-tesla-bg px-3 py-1.5 text-sm outline-none transition focus:border-tesla-accent"
       />
       <div className="ml-auto flex items-center gap-3 text-sm text-tesla-muted">
+        <SyncStatusIndicator />
         {isAdmin && onOpenAdmin && (
           <button
             type="button"

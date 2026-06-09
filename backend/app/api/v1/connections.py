@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
+from app.core.auth_context import UserContext, get_current_user
 from app.schemas.connections import (
     AssignNetByNameRequest,
     ConnectionScopesResponse,
@@ -55,8 +56,11 @@ async def connect_pins(
     revision_id: UUID,
     payload: ConnectPinsRequest,
     db: AsyncSession = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
 ) -> ConnectPinsResult:
-    return await ConnectionService(db).connect_pins(vehicle_id, revision_id, payload)
+    return await ConnectionService(db).connect_pins(
+        vehicle_id, revision_id, payload, changed_by=user.username
+    )
 
 
 @router.delete("/edges/{edge_id}", status_code=204)
@@ -65,8 +69,11 @@ async def disconnect(
     revision_id: UUID,
     edge_id: UUID,
     db: AsyncSession = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
 ) -> Response:
-    await ConnectionService(db).disconnect(vehicle_id, revision_id, edge_id)
+    await ConnectionService(db).disconnect(
+        vehicle_id, revision_id, edge_id, changed_by=user.username
+    )
     return Response(status_code=204)
 
 
@@ -77,5 +84,8 @@ async def assign_net_by_name(
     pin_id: UUID,
     payload: AssignNetByNameRequest,
     db: AsyncSession = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
 ) -> dict:
-    return await ConnectionService(db).assign_net_by_name(vehicle_id, revision_id, pin_id, payload)
+    return await ConnectionService(db).assign_net_by_name(
+        vehicle_id, revision_id, pin_id, payload, changed_by=user.username
+    )

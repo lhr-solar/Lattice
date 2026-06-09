@@ -14,6 +14,10 @@ class UserResponse(BaseModel):
     is_admin: bool
 
 
+class AdminUserResponse(UserResponse):
+    is_connected: bool = False
+
+
 class UserCreate(BaseModel):
     username: str = Field(min_length=1, max_length=64)
     password: str = Field(min_length=6, max_length=128)

@@ -16,11 +16,26 @@ from app.schemas.topology import (
     ConnectionEdgeUpdate,
     TopologySummary,
 )
+from app.services.revision_sync_service import DOMAINS_WIRING, RevisionSyncService
 
 
 class TopologyService:
     def __init__(self, db: AsyncSession):
         self.db = db
+
+    async def _sync(
+        self,
+        vehicle_id: UUID,
+        revision_id: UUID,
+        *,
+        changed_by: str | None = None,
+    ) -> None:
+        await RevisionSyncService(self.db).bump_and_notify(
+            vehicle_id=vehicle_id,
+            revision_id=revision_id,
+            domains=DOMAINS_WIRING,
+            changed_by=changed_by,
+        )
 
     async def summary(self, revision_id: UUID) -> TopologySummary:
         async def count_where(column):
@@ -37,7 +52,13 @@ class TopologyService:
         )
 
     async def create_edge(
-        self, vehicle_id: UUID, revision_id: UUID, payload: ConnectionEdgeCreate
+        self,
+        vehicle_id: UUID,
+        revision_id: UUID,
+        payload: ConnectionEdgeCreate,
+        *,
+        sync: bool = True,
+        changed_by: str | None = None,
     ) -> ConnectionEdgeResponse:
         await ensure_mutable_revision(self.db, revision_id, vehicle_id)
         if payload.pin_a_id == payload.pin_b_id:
@@ -72,7 +93,10 @@ class TopologyService:
         )
         self.db.add(edge)
         await self.db.flush()
-        return self._edge_response(edge)
+        response = self._edge_response(edge)
+        if sync:
+            await self._sync(vehicle_id, revision_id, changed_by=changed_by)
+        return response
 
     async def list_edges(self, revision_id: UUID) -> list[ConnectionEdgeResponse]:
         result = await self.db.execute(
@@ -86,6 +110,8 @@ class TopologyService:
         revision_id: UUID,
         edge_id: UUID,
         payload: ConnectionEdgeUpdate,
+        *,
+        changed_by: str | None = None,
     ) -> ConnectionEdgeResponse:
         await ensure_mutable_revision(self.db, revision_id, vehicle_id)
         edge = await self.db.get(ConnectionEdge, edge_id)
@@ -95,14 +121,26 @@ class TopologyService:
         for key, value in payload.model_dump(exclude_unset=True).items():
             setattr(edge, key, value)
         await self.db.flush()
-        return self._edge_response(edge)
+        response = self._edge_response(edge)
+        await self._sync(vehicle_id, revision_id, changed_by=changed_by)
+        return response
 
-    async def delete_edge(self, vehicle_id: UUID, revision_id: UUID, edge_id: UUID) -> None:
+    async def delete_edge(
+        self,
+        vehicle_id: UUID,
+        revision_id: UUID,
+        edge_id: UUID,
+        *,
+        sync: bool = True,
+        changed_by: str | None = None,
+    ) -> None:
         await ensure_mutable_revision(self.db, revision_id, vehicle_id)
         edge = await self.db.get(ConnectionEdge, edge_id)
         if not edge or edge.revision_id != revision_id:
             raise HTTPException(status_code=404, detail="Edge not found")
         await self.db.delete(edge)
+        if sync:
+            await self._sync(vehicle_id, revision_id, changed_by=changed_by)
 
     @staticmethod
     def _edge_response(edge: ConnectionEdge) -> ConnectionEdgeResponse:

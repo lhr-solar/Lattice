@@ -5,6 +5,7 @@ PYTHON ?= python3
 # Full first-time setup: env files, postgres, deps, migrations
 setup:
 	cp -n .env.example .env 2>/dev/null || true
+	cp -n backend/.env.example backend/.env 2>/dev/null || true
 	cp -n frontend/.env.example frontend/.env 2>/dev/null || true
 	$(MAKE) up
 	$(MAKE) install

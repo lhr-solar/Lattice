@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ApiError } from "@/api/client";
 import { assignPinNet, fetchNets, fetchPins } from "@/api/nets";
 import { fetchPinNameLibrary } from "@/api/pinNames";
 import { updateConnectorPin } from "@/api/instances";
+import { StaleRevisionBanner } from "@/components/shell/StaleRevisionBanner";
+import { handleMutationError } from "@/lib/mutationErrors";
 import { useAppStore } from "@/stores/appStore";
+import { useRevisionSyncStore } from "@/stores/revisionSyncStore";
 import { InstancePicker } from "@/components/library/TemplatePickers";
 import { PinNamePicker } from "@/components/library/PinNamePicker";
 
@@ -68,6 +70,9 @@ function PinoutEditorModal({
   const revisionId = useAppStore((s) => s.selectedRevisionId);
   const setShowNetManager = useAppStore((s) => s.setShowNetManager);
   const setShowPinNameLibrary = useAppStore((s) => s.setShowPinNameLibrary);
+  const editSequence = useRevisionSyncStore((s) => s.editSequence);
+  const staleRevision = useRevisionSyncStore((s) => s.staleRevision);
+  const setDirtyForm = useRevisionSyncStore((s) => s.setDirtyForm);
 
   const [draftNetAssignments, setDraftNetAssignments] = useState<Record<string, string>>({});
   const [draftNames, setDraftNames] = useState<Record<string, string>>({});
@@ -119,6 +124,12 @@ function PinoutEditorModal({
     [sortedPins, draftNetAssignments, draftNames],
   );
 
+  useEffect(() => {
+    if (!open) return;
+    setDirtyForm(hasChanges);
+    return () => setDirtyForm(false);
+  }, [open, hasChanges, setDirtyForm]);
+
   const saveAll = useMutation({
     mutationFn: async () => {
       const tasks: Promise<unknown>[] = [];
@@ -136,7 +147,12 @@ function PinoutEditorModal({
         }
         const name = (draftNames[pin.pin_id] ?? pin.pin_name).trim();
         if (name && name !== pin.pin_name) {
-          tasks.push(updateConnectorPin(vehicleId!, revisionId!, connectorId, pin.pin_id, { name }));
+          tasks.push(
+            updateConnectorPin(vehicleId!, revisionId!, connectorId, pin.pin_id, {
+              name,
+              expected_edit_sequence: editSequence,
+            }),
+          );
         }
       }
       await Promise.all(tasks);
@@ -153,11 +169,7 @@ function PinoutEditorModal({
         queryClient.invalidateQueries({ queryKey: ["connection-table"] }),
       ]);
     },
-    onError: (error) => {
-      setMessage(
-        error instanceof ApiError ? `Failed to save pinout (${error.status}).` : "Failed to save pinout.",
-      );
-    },
+    onError: (error) => setMessage(handleMutationError(error, "Failed to save pinout.")),
   });
 
   if (!open) return null;
@@ -178,6 +190,10 @@ function PinoutEditorModal({
             ✕
           </button>
         </header>
+
+        <div className="border-b border-tesla-border px-4 py-2">
+          <StaleRevisionBanner />
+        </div>
 
         <div className="min-h-0 flex-1 overflow-auto p-4">
           {isLoading && <p className="text-sm text-tesla-muted">Loading pins…</p>}
@@ -246,7 +262,7 @@ function PinoutEditorModal({
             </button>
             <button
               type="button"
-              disabled={!hasChanges || saveAll.isPending || sortedPins.length === 0}
+              disabled={!hasChanges || saveAll.isPending || sortedPins.length === 0 || staleRevision}
               onClick={() => saveAll.mutate()}
               className="rounded bg-tesla-accent px-3 py-1.5 text-sm text-white transition hover:bg-tesla-accent/90 disabled:opacity-40"
             >

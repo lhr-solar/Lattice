@@ -28,6 +28,7 @@ from app.schemas.nets import (
     PinPairRequest,
     PinPairResponse,
 )
+from app.services.revision_sync_service import DOMAINS_NETS, RevisionSyncService
 from app.services.topology_service import TopologyService
 
 
@@ -35,6 +36,20 @@ class NetService:
     def __init__(self, db: AsyncSession):
         self.db = db
         self._topology = TopologyService(db)
+
+    async def _sync(
+        self,
+        vehicle_id: UUID,
+        revision_id: UUID,
+        *,
+        changed_by: str | None = None,
+    ) -> None:
+        await RevisionSyncService(self.db).bump_and_notify(
+            vehicle_id=vehicle_id,
+            revision_id=revision_id,
+            domains=DOMAINS_NETS,
+            changed_by=changed_by,
+        )
 
     async def list_nets(
         self, revision_id: UUID, search: str | None = None, auto_named_only: bool | None = None
@@ -76,7 +91,14 @@ class NetService:
         signal = await self._get_net_or_404(revision_id, net_id)
         return await self._build_net_detail(signal)
 
-    async def create_net(self, vehicle_id: UUID, revision_id: UUID, payload: NetCreate) -> NetDetail:
+    async def create_net(
+        self,
+        vehicle_id: UUID,
+        revision_id: UUID,
+        payload: NetCreate,
+        *,
+        changed_by: str | None = None,
+    ) -> NetDetail:
         await ensure_mutable_revision(self.db, revision_id, vehicle_id)
         await self._ensure_unique_name(revision_id, payload.name)
         signal = Signal(
@@ -87,12 +109,23 @@ class NetService:
         )
         self.db.add(signal)
         await self.db.flush()
-        return await self._build_net_detail(signal)
+        detail = await self._build_net_detail(signal)
+        await self._sync(vehicle_id, revision_id, changed_by=changed_by)
+        return detail
 
     async def update_net(
-        self, vehicle_id: UUID, revision_id: UUID, net_id: UUID, payload: NetUpdate
+        self,
+        vehicle_id: UUID,
+        revision_id: UUID,
+        net_id: UUID,
+        payload: NetUpdate,
+        *,
+        changed_by: str | None = None,
     ) -> NetDetail:
         await ensure_mutable_revision(self.db, revision_id, vehicle_id)
+        await RevisionSyncService(self.db).check_expected_sequence(
+            revision_id, payload.expected_edit_sequence, vehicle_id
+        )
         signal = await self._get_net_or_404(revision_id, net_id)
         if payload.name is not None:
             name = payload.name.strip()
@@ -102,9 +135,18 @@ class NetService:
         if payload.signal_kind is not None:
             signal.signal_kind = payload.signal_kind
         await self.db.flush()
-        return await self._build_net_detail(signal)
+        detail = await self._build_net_detail(signal)
+        await self._sync(vehicle_id, revision_id, changed_by=changed_by)
+        return detail
 
-    async def delete_net(self, vehicle_id: UUID, revision_id: UUID, net_id: UUID) -> NetDeleteResult:
+    async def delete_net(
+        self,
+        vehicle_id: UUID,
+        revision_id: UUID,
+        net_id: UUID,
+        *,
+        changed_by: str | None = None,
+    ) -> NetDeleteResult:
         await ensure_mutable_revision(self.db, revision_id, vehicle_id)
         signal = await self._get_net_or_404(revision_id, net_id)
         net_name = signal.name
@@ -176,12 +218,14 @@ class NetService:
             created_auto.append(auto_name)
 
         await self.db.flush()
-        return NetDeleteResult(
+        result = NetDeleteResult(
             deleted_net_id=net_id,
             deleted_net_name=net_name,
             pins_reassigned=len(created_auto),
             created_auto_nets=created_auto,
         )
+        await self._sync(vehicle_id, revision_id, changed_by=changed_by)
+        return result
 
     async def assign_pin_to_net(
         self,
@@ -190,6 +234,9 @@ class NetService:
         net_id: UUID | None,
         pin_id: UUID,
         replace_existing_primary: bool = True,
+        *,
+        sync: bool = True,
+        changed_by: str | None = None,
     ) -> NetDetail | None:
         await ensure_mutable_revision(self.db, revision_id, vehicle_id)
         pin = await self.db.get(Pin, pin_id)
@@ -224,12 +271,22 @@ class NetService:
                     )
         await self.db.flush()
         if net_id is None:
+            if sync:
+                await self._sync(vehicle_id, revision_id, changed_by=changed_by)
             return None
         signal = await self._get_net_or_404(revision_id, net_id)
-        return await self._build_net_detail(signal)
+        detail = await self._build_net_detail(signal)
+        if sync:
+            await self._sync(vehicle_id, revision_id, changed_by=changed_by)
+        return detail
 
     async def pair_pins(
-        self, vehicle_id: UUID, revision_id: UUID, payload: PinPairRequest
+        self,
+        vehicle_id: UUID,
+        revision_id: UUID,
+        payload: PinPairRequest,
+        *,
+        changed_by: str | None = None,
     ) -> PinPairResponse:
         await ensure_mutable_revision(self.db, revision_id, vehicle_id)
         if payload.pin_a_id == payload.pin_b_id:
@@ -334,14 +391,17 @@ class NetService:
                         wire_color=payload.wire_color,
                         gauge_awg=payload.gauge_awg,
                     ),
+                    sync=False,
                 )
 
         detail = await self._build_net_detail(signal)
-        return PinPairResponse(
+        response = PinPairResponse(
             net=detail,
             edge=edge_response,
             assignments_created=assignments_created,
         )
+        await self._sync(vehicle_id, revision_id, changed_by=changed_by)
+        return response
 
     async def list_pins(
         self,

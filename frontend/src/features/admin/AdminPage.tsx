@@ -7,6 +7,7 @@ import {
   createVehicle,
   deleteUser,
   deleteVehicle,
+  fetchConnectedCount,
   fetchUsers,
   updateVehicleName,
 } from "@/api/admin";
@@ -14,6 +15,7 @@ import { fetchVehicles } from "@/api/vehicles";
 import { ApiError } from "@/api/client";
 import { logout } from "@/api/auth";
 import { ConfirmModal, PromptModal } from "@/components/ui/Modal";
+import { usePresenceStore } from "@/stores/presenceStore";
 import { useSessionStore } from "@/stores/sessionStore";
 
 interface AdminPageProps {
@@ -29,6 +31,7 @@ export function AdminPage({ onBack }: AdminPageProps) {
   const [newUsername, setNewUsername] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [userError, setUserError] = useState<string | null>(null);
+  const [connectedOnly, setConnectedOnly] = useState(false);
   const [deleteUserTarget, setDeleteUserTarget] = useState<{ id: string; username: string } | null>(
     null,
   );
@@ -47,7 +50,38 @@ export function AdminPage({ onBack }: AdminPageProps) {
     queryKey: ["admin-users"],
     queryFn: fetchUsers,
     enabled: isAdmin,
+    staleTime: 0,
   });
+
+  const { data: connectedCountData } = useQuery({
+    queryKey: ["admin-connected-count"],
+    queryFn: fetchConnectedCount,
+    enabled: isAdmin,
+    staleTime: 0,
+  });
+
+  const hasPresenceSnapshot = usePresenceStore((s) => s.hasSnapshot);
+  const liveConnectedIds = usePresenceStore((s) => s.connectedUserIds);
+  const liveConnectedCount = usePresenceStore((s) => s.connectedCount);
+
+  const usersWithPresence = users.map((user) => ({
+    ...user,
+    is_connected: hasPresenceSnapshot
+      ? liveConnectedIds.includes(user.id)
+      : user.is_connected || liveConnectedIds.includes(user.id),
+  }));
+
+  const connectedCount = hasPresenceSnapshot
+    ? liveConnectedCount
+    : Math.max(
+        connectedCountData?.count ?? 0,
+        liveConnectedCount,
+        usersWithPresence.filter((u) => u.is_connected).length,
+      );
+
+  const visibleUsers = connectedOnly
+    ? usersWithPresence.filter((u) => u.is_connected)
+    : usersWithPresence;
 
   const { data: vehicles = [] } = useQuery({
     queryKey: ["vehicles"],
@@ -161,8 +195,28 @@ export function AdminPage({ onBack }: AdminPageProps) {
 
       <main className="mx-auto w-full max-w-4xl flex-1 space-y-8 p-6">
         <section className="rounded-lg border border-tesla-border bg-tesla-surface p-5">
-          <h2 className="mb-1 text-lg font-medium text-tesla-text">User management</h2>
-          <p className="mb-4 text-sm text-tesla-muted">Create and remove user accounts.</p>
+          <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="mb-1 text-lg font-medium text-tesla-text">User management</h2>
+              <p className="text-sm text-tesla-muted">Create and remove user accounts.</p>
+            </div>
+            <div className="rounded-md border border-tesla-border bg-tesla-bg px-3 py-2 text-sm">
+              <span className="font-medium text-tesla-text">{connectedCount}</span>
+              <span className="text-tesla-muted">
+                {" "}
+                user{connectedCount === 1 ? "" : "s"} connected
+              </span>
+            </div>
+          </div>
+          <label className="mb-4 flex items-center gap-2 text-sm text-tesla-muted">
+            <input
+              type="checkbox"
+              checked={connectedOnly}
+              onChange={(e) => setConnectedOnly(e.target.checked)}
+              className="rounded border-tesla-border"
+            />
+            Show connected users only
+          </label>
           <form
             className="mb-4 flex flex-wrap items-end gap-3"
             onSubmit={(e) => {
@@ -200,12 +254,22 @@ export function AdminPage({ onBack }: AdminPageProps) {
           </form>
           {userError && <p className="mb-3 text-sm text-red-400">{userError}</p>}
           <ul className="divide-y divide-tesla-border rounded border border-tesla-border">
-            {users.map((user) => (
+            {visibleUsers.map((user) => (
               <li key={user.id} className="flex items-center justify-between px-3 py-2 text-sm">
-                <span className="text-tesla-text">
+                <span className="flex items-center gap-2 text-tesla-text">
+                  <span
+                    className={clsx(
+                      "h-2 w-2 shrink-0 rounded-full",
+                      user.is_connected ? "bg-emerald-400" : "bg-tesla-border",
+                    )}
+                    title={user.is_connected ? "Connected" : "Offline"}
+                  />
                   {user.username}
+                  <span className="text-xs text-tesla-muted">
+                    {user.is_connected ? "Connected" : "Offline"}
+                  </span>
                   {user.is_admin && (
-                    <span className="ml-2 text-xs text-tesla-muted">(admin)</span>
+                    <span className="text-xs text-tesla-muted">(admin)</span>
                   )}
                 </span>
                 {!user.is_admin && (
@@ -219,6 +283,11 @@ export function AdminPage({ onBack }: AdminPageProps) {
                 )}
               </li>
             ))}
+            {visibleUsers.length === 0 && (
+              <li className="px-3 py-4 text-center text-sm text-tesla-muted">
+                {connectedOnly ? "No users connected right now." : "No users yet."}
+              </li>
+            )}
           </ul>
         </section>
 

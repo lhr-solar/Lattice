@@ -3,6 +3,7 @@ import { fetchMe } from "@/api/auth";
 import { AppShell } from "@/components/shell/AppShell";
 import { AdminPage } from "@/features/admin/AdminPage";
 import { LoginGate } from "@/features/auth/LoginGate";
+import { usePresence } from "@/hooks/usePresence";
 import { useSessionStore } from "@/stores/sessionStore";
 
 export default function App() {
@@ -18,7 +19,7 @@ export default function App() {
       try {
         const auth = await fetchMe();
         if (!cancelled) {
-          setUser(auth.user.username, auth.user.is_admin);
+          setUser(auth.user.id, auth.user.username, auth.user.is_admin);
         }
       } catch {
         if (!cancelled) {
@@ -35,6 +36,9 @@ export default function App() {
       cancelled = true;
     };
   }, [setUser, clearSession]);
+
+  const sessionReady = isAuthenticated && !checkingSession;
+  usePresence(sessionReady);
 
   if (checkingSession) {
     return (

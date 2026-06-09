@@ -4,6 +4,7 @@ import clsx from "clsx";
 import { fetchHierarchy, type HierarchyNode } from "@/api/hierarchy";
 import { deleteConnector, deleteEnclosure, deletePcb } from "@/api/instances";
 import { fetchVehicles } from "@/api/vehicles";
+import { handleMutationError } from "@/lib/mutationErrors";
 import { useAppStore } from "@/stores/appStore";
 import type { ProjectionLevel } from "@/api/types";
 import { ConfirmModal } from "@/components/ui/Modal";
@@ -143,6 +144,7 @@ export function HierarchyNav() {
   const setLibraryTab = useAppStore((s) => s.setLibraryTab);
   const searchQuery = useAppStore((s) => s.searchQuery).toLowerCase();
   const [deleteTopologyTarget, setDeleteTopologyTarget] = useState<HierarchyNode | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const { data: vehicles = [], isLoading } = useQuery({
     queryKey: ["vehicles"],
@@ -186,7 +188,9 @@ export function HierarchyNav() {
       queryClient.invalidateQueries({ queryKey: ["nets"] });
       queryClient.invalidateQueries({ queryKey: ["connection-table"] });
       setDeleteTopologyTarget(null);
+      setDeleteError(null);
     },
+    onError: (error) => setDeleteError(handleMutationError(error, "Failed to delete.")),
   });
 
   function handleNodeSelect(id: string, kind: string, level: ProjectionLevel) {
@@ -210,6 +214,9 @@ export function HierarchyNav() {
           <span className="text-xs font-medium uppercase tracking-wider text-tesla-muted">
             Vehicles
           </span>
+          {deleteError && (
+            <p className="mt-2 text-xs text-amber-200">{deleteError}</p>
+          )}
         </div>
         <ul className="max-h-36 overflow-y-auto border-b border-tesla-border p-2">
           {isLoading && <li className="px-2 py-1 text-sm text-tesla-muted">Loading…</li>}

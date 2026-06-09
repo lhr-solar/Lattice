@@ -31,3 +31,4 @@ class RevisionResponse(SchemaBase):
     label: str | None
     is_immutable: bool
     created_at: datetime
+    edit_sequence: int = 0
