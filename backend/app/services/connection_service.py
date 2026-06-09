@@ -128,6 +128,9 @@ class ConnectionService:
                         PcbTemplateConnectorSlot.slot_key,
                         PcbTemplateConnectorSlot.nickname,
                     )
+                    .join(PcbTemplate, PcbTemplateConnectorSlot.pcb_template_id == PcbTemplate.id)
+                    .join(PcbInstance, PcbInstance.pcb_template_id == PcbTemplate.id)
+                    .where(PcbInstance.revision_id == revision_id)
                 )
             ).all()
         }
@@ -135,6 +138,15 @@ class ConnectionService:
             (
                 await self.db.execute(
                     select(EnclosureTemplatePanelSlot.id, EnclosureTemplatePanelSlot.slot_key)
+                    .join(
+                        EnclosureTemplate,
+                        EnclosureTemplatePanelSlot.enclosure_template_id == EnclosureTemplate.id,
+                    )
+                    .join(
+                        EnclosureInstance,
+                        EnclosureInstance.enclosure_template_id == EnclosureTemplate.id,
+                    )
+                    .where(EnclosureInstance.revision_id == revision_id)
                 )
             ).all()
         )

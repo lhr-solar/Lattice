@@ -51,6 +51,8 @@ async def presence_ws(websocket: WebSocket) -> None:
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
+        pass
+    finally:
         await ws_hub.disconnect(websocket)
 
 
@@ -73,4 +75,6 @@ async def revision_sync_ws(websocket: WebSocket, vehicle_id: UUID, revision_id: 
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
+        pass
+    finally:
         await ws_hub.disconnect(websocket)

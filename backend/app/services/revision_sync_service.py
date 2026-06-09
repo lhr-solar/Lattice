@@ -1,10 +1,9 @@
 from uuid import UUID
 
 from fastapi import HTTPException
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.revision_guard import get_revision_or_404
 from app.infra.db.models.vehicle import Revision
 from app.realtime.ws_hub import ws_hub
 
@@ -44,7 +43,13 @@ class RevisionSyncService:
     ) -> None:
         if expected_edit_sequence is None:
             return
-        revision = await get_revision_or_404(self.db, revision_id, vehicle_id)
+        stmt = select(Revision).where(Revision.id == revision_id).with_for_update()
+        if vehicle_id:
+            stmt = stmt.where(Revision.vehicle_id == vehicle_id)
+        result = await self.db.execute(stmt)
+        revision = result.scalar_one_or_none()
+        if not revision:
+            raise HTTPException(status_code=404, detail="Revision not found")
         if revision.edit_sequence != expected_edit_sequence:
             raise HTTPException(
                 status_code=409,

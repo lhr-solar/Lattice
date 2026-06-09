@@ -44,8 +44,6 @@ class WsHub:
 
     async def connect_presence(self, websocket: WebSocket, *, user_id: UUID) -> None:
         await websocket.accept()
-        stale = [s for s in self._presence if s.user_id == user_id and s.websocket is not websocket]
-        self._presence = [s for s in self._presence if s.user_id != user_id]
         self._presence.append(PresenceSubscription(websocket=websocket, user_id=user_id))
         payload = self._presence_payload()
         try:
@@ -53,11 +51,6 @@ class WsHub:
         except Exception:
             pass
         await self._broadcast_presence_changed()
-        for sub in stale:
-            try:
-                await sub.websocket.close(code=4000, reason="replaced")
-            except Exception:
-                pass
 
     def connected_user_ids(self) -> set[UUID]:
         revision_users = {sub.user_id for sub in self._subscriptions}
@@ -68,15 +61,10 @@ class WsHub:
         return len(self.connected_user_ids())
 
     async def disconnect(self, websocket: WebSocket) -> None:
-        presence_user_id = next(
-            (sub.user_id for sub in self._presence if sub.websocket is websocket),
-            None,
-        )
+        old_users = self.connected_user_ids()
         self._subscriptions = [s for s in self._subscriptions if s.websocket is not websocket]
         self._presence = [s for s in self._presence if s.websocket is not websocket]
-        if presence_user_id is not None and not any(
-            sub.user_id == presence_user_id for sub in self._presence
-        ):
+        if self.connected_user_ids() != old_users:
             await self._broadcast_presence_changed()
 
     def _presence_payload(self) -> str:
@@ -90,15 +78,18 @@ class WsHub:
         )
 
     async def _broadcast_presence_changed(self) -> None:
-        payload = self._presence_payload()
-        dead: list[WebSocket] = []
-        for sub in self._presence:
-            try:
-                await sub.websocket.send_text(payload)
-            except Exception:
-                dead.append(sub.websocket)
-        for ws in dead:
-            await self.disconnect(ws)
+        while True:
+            payload = self._presence_payload()
+            dead: list[WebSocket] = []
+            for sub in list(self._presence):
+                try:
+                    await sub.websocket.send_text(payload)
+                except Exception:
+                    dead.append(sub.websocket)
+            if not dead:
+                break
+            self._subscriptions = [s for s in self._subscriptions if s.websocket not in dead]
+            self._presence = [s for s in self._presence if s.websocket not in dead]
 
     async def broadcast_revision_changed(
         self,
@@ -143,7 +134,7 @@ class WsHub:
 
     async def _broadcast_to_revision(self, vehicle_id: UUID, revision_id: UUID, payload: str) -> None:
         dead: list[WebSocket] = []
-        for sub in self._subscriptions:
+        for sub in list(self._subscriptions):
             if sub.vehicle_id != vehicle_id or sub.revision_id != revision_id:
                 continue
             try:

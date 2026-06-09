@@ -12,6 +12,8 @@ export function buildWsUrl(path: string): string {
   }
 
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const basePath = API_BASE.replace(/\/$/, "");
-  return `${proto}//${window.location.host}${basePath}${normalizedPath}`;
+  const url = new URL(API_BASE, window.location.href);
+  url.protocol = proto;
+  const basePath = url.pathname.replace(/\/$/, "");
+  return `${url.protocol}//${url.host}${basePath}${normalizedPath}`;
 }
