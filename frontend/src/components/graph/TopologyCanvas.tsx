@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -18,6 +18,7 @@ import { disconnectEdge } from "@/api/connections";
 import { deletePinShort } from "@/api/shorts";
 import { ApiError } from "@/api/client";
 import type { DesignNodeDto } from "@/api/types";
+import { useAutoDismiss } from "@/hooks/useAutoDismiss";
 import { handleMutationError } from "@/lib/mutationErrors";
 import { invalidateRevisionDomains } from "@/lib/revisionInvalidation";
 import { useAppStore } from "@/stores/appStore";
@@ -133,6 +134,8 @@ export function TopologyCanvas() {
   const clearPairing = useAppStore((s) => s.clearPairing);
   const queryClient = useQueryClient();
   const [wireError, setWireError] = useState<string | null>(null);
+  const clearWireError = useCallback(() => setWireError(null), []);
+  useAutoDismiss(wireError, clearWireError);
 
   function invalidateWiring() {
     invalidateRevisionDomains(queryClient, [

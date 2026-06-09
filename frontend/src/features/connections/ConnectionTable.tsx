@@ -22,6 +22,7 @@ import {
 import { useAppStore } from "@/stores/appStore";
 import { ConnectorInstanceLabel } from "@/components/library/ConnectorInstanceLabel";
 
+import { useAutoDismiss } from "@/hooks/useAutoDismiss";
 import { invalidateRevisionDomains } from "@/lib/revisionInvalidation";
 
 function invalidateAll(qc: QueryClient) {
@@ -157,11 +158,7 @@ export function ConnectionTable() {
     null,
   );
 
-  useEffect(() => {
-    if (!flash) return;
-    const t = setTimeout(() => setFlash(null), 6000);
-    return () => clearTimeout(t);
-  }, [flash]);
+  useAutoDismiss(flash, () => setFlash(null));
 
   const scopeParams = useMemo(() => {
     if (scope.kind === "vehicle") return { vehicle_level: true };
