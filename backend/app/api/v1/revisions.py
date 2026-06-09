@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
-from app.core.auth_context import UserContext, get_optional_user_context
+from app.core.auth_context import UserContext, get_current_user
 from app.schemas.revisions import RevisionDiffItem, RevisionListResponse, RevisionPublishResponse
 from app.services.revision_service import RevisionService
 
@@ -22,9 +22,9 @@ async def publish_revision(
     vehicle_id: UUID,
     revision_id: UUID,
     db: AsyncSession = Depends(get_db),
-    user: UserContext | None = Depends(get_optional_user_context),
+    user: UserContext = Depends(get_current_user),
 ) -> RevisionPublishResponse:
-    published_by = user.display_name if user else None
+    published_by = user.username
     return await RevisionService(db).publish(vehicle_id, revision_id, published_by)
 
 

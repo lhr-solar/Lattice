@@ -25,7 +25,6 @@ import {
   updatePcbTemplate,
 } from "@/api/templates";
 import { ApiError } from "@/api/client";
-import { clearVehicleData } from "@/api/devTools";
 import { useAppStore } from "@/stores/appStore";
 import { ConfirmModal, Modal } from "@/components/ui/Modal";
 
@@ -49,8 +48,6 @@ export function LibraryBuilders() {
   const [editingEnclosureId, setEditingEnclosureId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<DeletionTarget | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [showClearVehicleConfirm, setShowClearVehicleConfirm] = useState(false);
-  const [clearVehicleError, setClearVehicleError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 
   const { data: connectorTemplates = [] } = useQuery({
@@ -118,18 +115,6 @@ export function LibraryBuilders() {
     mutationFn: (id: string) => deleteEnclosureTemplate(vehicleId!, id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["enclosure-templates", vehicleId] }),
   });
-  const clearVehicleMutation = useMutation({
-    mutationFn: (id: string) => clearVehicleData(id),
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["vehicles"] }),
-        queryClient.invalidateQueries({ queryKey: ["connector-templates"] }),
-        queryClient.invalidateQueries({ queryKey: ["pcb-templates"] }),
-        queryClient.invalidateQueries({ queryKey: ["enclosure-templates"] }),
-      ]);
-    },
-  });
-
   const connectorEditing = connectorTemplates.find((c) => c.id === editingConnectorId) ?? null;
   const pcbEditing = pcbTemplates.find((p) => p.id === editingPcbId) ?? null;
   const enclosureEditing = enclosureTemplates.find((e) => e.id === editingEnclosureId) ?? null;
@@ -137,7 +122,6 @@ export function LibraryBuilders() {
     vehicles.find((v) => v.id === vehicleId)?.name ??
     (vehicleId ? `${vehicleId.slice(0, 8)}…` : "No vehicle selected");
   const deletePending = connectorDelete.isPending || pcbDelete.isPending || enclosureDelete.isPending;
-  const isDevMode = import.meta.env.DEV;
 
   useEffect(() => {
     if (!showLibraryManager) return;
@@ -188,19 +172,6 @@ export function LibraryBuilders() {
             >
               + Add
             </button>
-            {isDevMode && (
-              <button
-                type="button"
-                className="rounded border border-red-500/50 px-2 py-1 text-xs text-red-300"
-                onClick={() => {
-                  setClearVehicleError(null);
-                  setShowClearVehicleConfirm(true);
-                }}
-                disabled={!vehicleId}
-              >
-                Clear Vehicle Data (Dev)
-              </button>
-            )}
           </div>
           <input
             value={search}
@@ -411,33 +382,6 @@ export function LibraryBuilders() {
               setDeleteError(null);
             },
             onError: (error) => setDeleteError(getApiErrorMessage(error)),
-          });
-        }}
-      />
-      <ConfirmModal
-        open={showClearVehicleConfirm}
-        title="Clear vehicle data (dev)"
-        message={`Delete all design data and library items tied to vehicle "${
-          selectedVehicleName
-        }"? This action is for local development only.${
-          clearVehicleError ? `\n\n${clearVehicleError}` : ""
-        }`}
-        confirmLabel={clearVehicleMutation.isPending ? "Clearing..." : "Clear vehicle"}
-        destructive
-        disabled={clearVehicleMutation.isPending || !vehicleId}
-        onCancel={() => {
-          setShowClearVehicleConfirm(false);
-          setClearVehicleError(null);
-        }}
-        onConfirm={() => {
-          if (!vehicleId) return;
-          clearVehicleMutation.mutate(vehicleId, {
-            onSuccess: () => {
-              setShowClearVehicleConfirm(false);
-              setClearVehicleError(null);
-              setShowLibraryManager(false);
-            },
-            onError: (error) => setClearVehicleError(getApiErrorMessage(error)),
           });
         }}
       />

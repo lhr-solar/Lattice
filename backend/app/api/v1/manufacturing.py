@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
-from app.core.auth_context import UserContext, get_user_context
+from app.core.auth_context import UserContext, get_current_user
 from app.schemas.manufacturing import (
     ContinuityCheckCreate,
     ContinuityCheckResponse,
@@ -54,11 +54,11 @@ async def update_record(
     record_id: UUID,
     payload: ManufacturingRecordUpdate,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(get_user_context),
+    user: UserContext = Depends(get_current_user),
 ) -> ManufacturingRecordResponse:
     _ = vehicle_id
     return await ManufacturingService(db).update_record(
-        revision_id, record_id, payload, user.display_name
+        revision_id, record_id, payload, user.username
     )
 
 
@@ -73,9 +73,9 @@ async def add_continuity_check(
     record_id: UUID,
     payload: ContinuityCheckCreate,
     db: AsyncSession = Depends(get_db),
-    user: UserContext = Depends(get_user_context),
+    user: UserContext = Depends(get_current_user),
 ) -> ContinuityCheckResponse:
     _ = vehicle_id
     return await ManufacturingService(db).add_continuity_check(
-        revision_id, record_id, payload, user.display_name
+        revision_id, record_id, payload, user.username
     )

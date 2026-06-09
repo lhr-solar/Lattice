@@ -13,11 +13,9 @@ export async function apiFetch<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
-  const displayName = localStorage.getItem("crimpassist_user");
   const headers = new Headers(options.headers);
-  headers.set("Content-Type", "application/json");
-  if (displayName) {
-    headers.set("X-User-Name", displayName);
+  if (options.body) {
+    headers.set("Content-Type", "application/json");
   }
 
   const response = await fetch(`${API_BASE}${path}`, {
@@ -28,7 +26,14 @@ export async function apiFetch<T>(
 
   if (!response.ok) {
     const body = await response.text();
-    throw new ApiError(body || response.statusText, response.status);
+    let message = body || response.statusText;
+    try {
+      const parsed = JSON.parse(body) as { detail?: string };
+      if (parsed.detail) message = parsed.detail;
+    } catch {
+      // keep raw body
+    }
+    throw new ApiError(message, response.status);
   }
 
   if (response.status === 204) {

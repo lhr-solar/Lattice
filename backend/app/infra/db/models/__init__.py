@@ -32,9 +32,11 @@ from app.infra.db.models.topology import (
     SpliceConnection,
     SpliceNode,
 )
+from app.infra.db.models.user import User
 from app.infra.db.models.vehicle import Revision, Vehicle, VehicleHead
 
 __all__ = [
+    "User",
     "ConnectorTemplate",
     "ConnectorTemplatePin",
     "ConnectorTemplatePinShort",
