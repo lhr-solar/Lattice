@@ -17,7 +17,7 @@ SESSION_MAX_AGE = 60 * 60 * 24 * 365
 
 def _set_session_cookie(response: Response, session_id: str) -> None:
     response.set_cookie(
-        key="crimpassist_session",
+        key="lattice_session",
         value=session_id,
         httponly=True,
         samesite="lax",
@@ -26,7 +26,7 @@ def _set_session_cookie(response: Response, session_id: str) -> None:
 
 
 def _clear_session_cookie(response: Response) -> None:
-    response.delete_cookie(key="crimpassist_session", httponly=True, samesite="lax")
+    response.delete_cookie(key="lattice_session", httponly=True, samesite="lax")
 
 
 @router.post("/login", response_model=AuthResponse)

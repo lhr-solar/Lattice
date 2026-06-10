@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { PasswordInput } from "@/components/ui/PasswordInput";
 
 export type ModalLayer = "dialog" | "manager" | "stacked";
 
@@ -137,6 +138,7 @@ interface PromptModalProps {
   title: string;
   message?: string;
   value: string;
+  inputType?: "text" | "password";
   submitLabel?: string;
   cancelLabel?: string;
   disabled?: boolean;
@@ -151,6 +153,7 @@ export function PromptModal({
   title,
   message,
   value,
+  inputType = "text",
   submitLabel = "Save",
   cancelLabel = "Cancel",
   disabled = false,
@@ -187,12 +190,17 @@ export function PromptModal({
     >
       <div className="space-y-2">
         {message ? <p>{message}</p> : null}
-        <input
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="w-full rounded-md border border-tesla-border bg-tesla-bg px-3 py-1.5 text-sm text-tesla-text outline-none focus:border-tesla-accent"
-          autoFocus
-        />
+        {inputType === "password" ? (
+          <PasswordInput value={value} onChange={onChange} autoFocus />
+        ) : (
+          <input
+            type={inputType}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            className="w-full rounded-md border border-tesla-border bg-tesla-bg px-3 py-1.5 text-sm text-tesla-text outline-none focus:border-tesla-accent"
+            autoFocus
+          />
+        )}
       </div>
     </Modal>
   );

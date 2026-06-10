@@ -15,7 +15,7 @@ target_metadata = Base.metadata
 
 database_url = os.getenv(
     "DATABASE_URL",
-    "postgresql+psycopg2://crimpassist:crimpassist@localhost:5432/crimpassist",
+    "postgresql+psycopg2://lattice:lattice@localhost:5432/lattice",
 ).replace("postgresql+asyncpg://", "postgresql+psycopg2://")
 
 config.set_main_option("sqlalchemy.url", database_url)

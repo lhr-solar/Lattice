@@ -33,10 +33,13 @@ from app.infra.db.models.topology import (
     SpliceConnection,
     SpliceNode,
 )
+from app.infra.db.models.revision import RevisionChange, RevisionSnapshot, UserSession
+from app.infra.db.models.settings import AppSetting
 from app.infra.db.models.user import User
 from app.infra.db.models.vehicle import Revision, Vehicle, VehicleHead
 
 __all__ = [
+    "AppSetting",
     "User",
     "ConnectorTemplate",
     "ConnectorTemplatePin",

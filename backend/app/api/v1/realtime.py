@@ -14,7 +14,7 @@ router = APIRouter(tags=["realtime"])
 
 
 async def _authenticate_ws(websocket: WebSocket) -> UserContext | None:
-    session_id = websocket.cookies.get("crimpassist_session")
+    session_id = websocket.cookies.get("lattice_session")
     if not session_id:
         return None
     try:

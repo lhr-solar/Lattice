@@ -5,7 +5,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
 from app.core.auth_context import UserContext, get_admin_user
-from app.schemas.auth import AdminUserResponse, UserCreate, UserResponse
+from app.schemas.auth import (
+    AdminUserResponse,
+    BulkActionResponse,
+    BulkCreateUsersResponse,
+    DefaultPasswordResponse,
+    DefaultPasswordUpdate,
+    UserCreate,
+    UserPasswordUpdate,
+    UserResponse,
+    UsersBulkCreate,
+    UsersBulkDelete,
+    UsersBulkPasswordUpdate,
+)
 from app.realtime.ws_hub import ws_hub
 from app.schemas.vehicles import VehicleCreate, VehicleResponse, VehicleUpdate
 from app.services.user_service import UserService
@@ -56,6 +68,63 @@ async def delete_user(
 ) -> None:
     await UserService(db).delete_user(user_id, admin.user_id)
     return None
+
+
+@router.patch("/users/{user_id}/password", status_code=204)
+async def update_user_password(
+    user_id: UUID,
+    payload: UserPasswordUpdate,
+    db: AsyncSession = Depends(get_db),
+    _admin: UserContext = Depends(get_admin_user),
+) -> None:
+    await UserService(db).update_password(user_id, payload.password)
+    return None
+
+
+@router.post("/users/bulk", response_model=BulkCreateUsersResponse, status_code=201)
+async def create_users_bulk(
+    payload: UsersBulkCreate,
+    db: AsyncSession = Depends(get_db),
+    _admin: UserContext = Depends(get_admin_user),
+) -> BulkCreateUsersResponse:
+    return await UserService(db).create_users_bulk(payload.usernames, payload.password)
+
+
+@router.post("/users/bulk/delete", response_model=BulkActionResponse)
+async def delete_users_bulk(
+    payload: UsersBulkDelete,
+    db: AsyncSession = Depends(get_db),
+    admin: UserContext = Depends(get_admin_user),
+) -> BulkActionResponse:
+    return await UserService(db).delete_users_bulk(payload.user_ids, admin.user_id)
+
+
+@router.patch("/users/bulk/password", response_model=BulkActionResponse)
+async def update_users_password_bulk(
+    payload: UsersBulkPasswordUpdate,
+    db: AsyncSession = Depends(get_db),
+    _admin: UserContext = Depends(get_admin_user),
+) -> BulkActionResponse:
+    return await UserService(db).update_passwords_bulk(payload.user_ids, payload.password)
+
+
+@router.get("/settings/default-password", response_model=DefaultPasswordResponse)
+async def get_default_password(
+    db: AsyncSession = Depends(get_db),
+    _admin: UserContext = Depends(get_admin_user),
+) -> DefaultPasswordResponse:
+    password = await UserService(db).get_default_password()
+    return DefaultPasswordResponse(password=password)
+
+
+@router.patch("/settings/default-password", response_model=DefaultPasswordResponse)
+async def update_default_password(
+    payload: DefaultPasswordUpdate,
+    db: AsyncSession = Depends(get_db),
+    _admin: UserContext = Depends(get_admin_user),
+) -> DefaultPasswordResponse:
+    password = await UserService(db).set_default_password(payload.password)
+    return DefaultPasswordResponse(password=password)
 
 
 @router.post("/vehicles", response_model=VehicleResponse, status_code=201)

@@ -19,7 +19,7 @@ class UserContext:
 
 
 async def get_current_user(
-    session_id: str | None = Cookie(default=None, alias="crimpassist_session"),
+    session_id: str | None = Cookie(default=None, alias="lattice_session"),
     db: AsyncSession = Depends(get_db),
 ) -> UserContext:
     if not session_id:

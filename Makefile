@@ -15,7 +15,7 @@ up:
 	docker compose up -d db
 	@echo "Waiting for PostgreSQL..."
 	@for i in 1 2 3 4 5 6 7 8 9 10; do \
-		docker compose exec -T db pg_isready -U crimpassist >/dev/null 2>&1 && break; \
+		docker compose exec -T db pg_isready -U lattice >/dev/null 2>&1 && break; \
 		sleep 1; \
 	done
 
