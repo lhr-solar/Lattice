@@ -60,11 +60,11 @@ class WsHub:
     def connected_count(self) -> int:
         return len(self.connected_user_ids())
 
-    async def disconnect(self, websocket: WebSocket) -> None:
+    async def disconnect(self, websocket: WebSocket, *, broadcast: bool = True) -> None:
         old_users = self.connected_user_ids()
         self._subscriptions = [s for s in self._subscriptions if s.websocket is not websocket]
         self._presence = [s for s in self._presence if s.websocket is not websocket]
-        if self.connected_user_ids() != old_users:
+        if broadcast and self.connected_user_ids() != old_users:
             await self._broadcast_presence_changed()
 
     def _presence_payload(self) -> str:
@@ -142,7 +142,7 @@ class WsHub:
             except Exception:
                 dead.append(sub.websocket)
         for ws in dead:
-            await self.disconnect(ws)
+            await self.disconnect(ws, broadcast=False)
 
 
 ws_hub = WsHub()

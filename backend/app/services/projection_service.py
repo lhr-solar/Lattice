@@ -623,25 +623,25 @@ class ProjectionService:
                     PcbTemplateConnectorSlot.id,
                     PcbTemplateConnectorSlot.slot_key,
                     PcbTemplateConnectorSlot.nickname,
+                ).where(
+                    PcbTemplateConnectorSlot.pcb_template_id.in_(
+                        select(PcbInstance.pcb_template_id).where(
+                            PcbInstance.revision_id == revision_id
+                        )
+                    )
                 )
-                .join(PcbTemplate, PcbTemplateConnectorSlot.pcb_template_id == PcbTemplate.id)
-                .join(PcbInstance, PcbInstance.pcb_template_id == PcbTemplate.id)
-                .where(PcbInstance.revision_id == revision_id)
             )
         ).all():
             lookup[slot_id] = (slot_key, nickname)
         for slot_id, slot_key in (
             await self.db.execute(
-                select(EnclosureTemplatePanelSlot.id, EnclosureTemplatePanelSlot.slot_key)
-                .join(
-                    EnclosureTemplate,
-                    EnclosureTemplatePanelSlot.enclosure_template_id == EnclosureTemplate.id,
+                select(EnclosureTemplatePanelSlot.id, EnclosureTemplatePanelSlot.slot_key).where(
+                    EnclosureTemplatePanelSlot.enclosure_template_id.in_(
+                        select(EnclosureInstance.enclosure_template_id).where(
+                            EnclosureInstance.revision_id == revision_id
+                        )
+                    )
                 )
-                .join(
-                    EnclosureInstance,
-                    EnclosureInstance.enclosure_template_id == EnclosureTemplate.id,
-                )
-                .where(EnclosureInstance.revision_id == revision_id)
             )
         ).all():
             lookup[slot_id] = (slot_key, None)

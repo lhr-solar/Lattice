@@ -7,6 +7,54 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.infra.db.models.vehicle import Revision
 from app.realtime.ws_hub import ws_hub
 
+PENDING_REVISION_BROADCASTS = "pending_revision_broadcasts"
+PENDING_REVISION_PUBLISHED = "pending_revision_published"
+
+
+def _queue_revision_changed(
+    db: AsyncSession,
+    *,
+    vehicle_id: UUID,
+    revision_id: UUID,
+    edit_sequence: int,
+    domains: list[str],
+    changed_by: str | None,
+) -> None:
+    db.info.setdefault(PENDING_REVISION_BROADCASTS, []).append(
+        {
+            "vehicle_id": vehicle_id,
+            "revision_id": revision_id,
+            "edit_sequence": edit_sequence,
+            "domains": domains,
+            "changed_by": changed_by,
+        }
+    )
+
+
+def _queue_revision_published(
+    db: AsyncSession,
+    *,
+    vehicle_id: UUID,
+    old_revision_id: UUID,
+    new_revision_id: UUID,
+    changed_by: str | None,
+) -> None:
+    db.info.setdefault(PENDING_REVISION_PUBLISHED, []).append(
+        {
+            "vehicle_id": vehicle_id,
+            "old_revision_id": old_revision_id,
+            "new_revision_id": new_revision_id,
+            "changed_by": changed_by,
+        }
+    )
+
+
+async def flush_pending_broadcasts(session: AsyncSession) -> None:
+    for msg in session.info.pop(PENDING_REVISION_BROADCASTS, []):
+        await ws_hub.broadcast_revision_changed(**msg)
+    for msg in session.info.pop(PENDING_REVISION_PUBLISHED, []):
+        await ws_hub.broadcast_revision_published(**msg)
+
 DOMAINS_INSTANCES = [
     "hierarchy",
     "design-projection",
@@ -80,7 +128,8 @@ class RevisionSyncService:
         if row is None:
             raise HTTPException(status_code=404, detail="Revision not found")
         edit_sequence = int(row[0])
-        await ws_hub.broadcast_revision_changed(
+        _queue_revision_changed(
+            self.db,
             vehicle_id=vehicle_id,
             revision_id=revision_id,
             edit_sequence=edit_sequence,
@@ -107,7 +156,8 @@ class RevisionSyncService:
         if row is None:
             raise HTTPException(status_code=404, detail="Revision not found")
         edit_sequence = int(row[0])
-        await ws_hub.broadcast_revision_changed(
+        _queue_revision_changed(
+            self.db,
             vehicle_id=vehicle_id,
             revision_id=revision_id,
             edit_sequence=edit_sequence,
@@ -124,7 +174,8 @@ class RevisionSyncService:
         new_revision_id: UUID,
         changed_by: str | None = None,
     ) -> None:
-        await ws_hub.broadcast_revision_published(
+        _queue_revision_published(
+            self.db,
             vehicle_id=vehicle_id,
             old_revision_id=old_revision_id,
             new_revision_id=new_revision_id,

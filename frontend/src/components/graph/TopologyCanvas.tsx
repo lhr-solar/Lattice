@@ -47,9 +47,19 @@ function buildNodes(dto: DesignNodeDto[]): Node[] {
   const portsByParent = new Map<string, DesignNodeDto[]>();
   for (const n of dto) {
     if (n.kind === "connectorGroup" && n.parent_id) {
-      groupsByParent.set(n.parent_id, [...(groupsByParent.get(n.parent_id) ?? []), n]);
+      let arr = groupsByParent.get(n.parent_id);
+      if (!arr) {
+        arr = [];
+        groupsByParent.set(n.parent_id, arr);
+      }
+      arr.push(n);
     } else if (n.kind === "pinPort" && n.parent_id) {
-      portsByParent.set(n.parent_id, [...(portsByParent.get(n.parent_id) ?? []), n]);
+      let arr = portsByParent.get(n.parent_id);
+      if (!arr) {
+        arr = [];
+        portsByParent.set(n.parent_id, arr);
+      }
+      arr.push(n);
     }
   }
 

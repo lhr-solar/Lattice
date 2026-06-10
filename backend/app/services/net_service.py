@@ -274,22 +274,14 @@ class NetService:
                 )
             )
             if net_id is not None:
-                dup = await self.db.execute(
-                    select(PinSignalAssignment).where(
-                        PinSignalAssignment.pin_id == expanded_pin,
-                        PinSignalAssignment.signal_id == net_id,
-                        PinSignalAssignment.assignment_role == "primary",
+                self.db.add(
+                    PinSignalAssignment(
+                        revision_id=revision_id,
+                        pin_id=expanded_pin,
+                        signal_id=net_id,
+                        assignment_role="primary",
                     )
                 )
-                if not dup.scalar_one_or_none():
-                    self.db.add(
-                        PinSignalAssignment(
-                            revision_id=revision_id,
-                            pin_id=expanded_pin,
-                            signal_id=net_id,
-                            assignment_role="primary",
-                        )
-                    )
         await self.db.flush()
         if net_id is None:
             await self.prune_stale_auto_nets(
@@ -542,6 +534,8 @@ class NetService:
                 )
             ).scalars().all()
             if not pin_ids:
+                await self.db.delete(signal)
+                deleted += 1
                 continue
 
             has_destination = await self.db.execute(

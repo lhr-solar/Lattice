@@ -44,6 +44,7 @@ async def login(
     session = UserSession(user_id=user.id, created_at=now, last_seen_at=now)
     db.add(session)
     await db.flush()
+    await db.commit()
     _set_session_cookie(response, str(session.id))
     return AuthResponse(user=UserResponse(id=user.id, username=user.username, is_admin=user.is_admin))
 
@@ -57,6 +58,7 @@ async def logout(
     session = await db.get(UserSession, user.session_id)
     if session:
         await db.delete(session)
+        await db.commit()
     _clear_session_cookie(response)
     return None
 

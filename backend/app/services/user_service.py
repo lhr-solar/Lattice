@@ -1,12 +1,13 @@
 from uuid import UUID
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.security import hash_password, verify_password
 from app.core.time import utc_now
+from app.infra.db.models.revision import UserSession
 from app.infra.db.models.user import User
 from app.schemas.auth import UserCreate, UserResponse
 
@@ -65,4 +66,5 @@ class UserService:
             raise HTTPException(status_code=404, detail="User not found")
         if user.is_admin:
             raise HTTPException(status_code=400, detail="Cannot delete admin accounts")
+        await self.db.execute(delete(UserSession).where(UserSession.user_id == user_id))
         await self.db.delete(user)

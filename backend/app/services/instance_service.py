@@ -24,6 +24,7 @@ from app.infra.db.models.templates import (
     PcbTemplate,
     PcbTemplateConnectorSlot,
 )
+from app.infra.db.models.shorts import ConnectorInstancePinShort
 from app.infra.db.models.topology import (
     ConnectionEdge,
     PinSignalAssignment,
@@ -545,6 +546,7 @@ class InstanceService:
         pin_ids = await self._pin_ids_for_connectors(connector_ids)
         await self._cleanup_pins_topology(revision_id, pin_ids)
         await self._delete_node_layouts(revision_id, [pcb_instance_id, *connector_ids])
+        await self._delete_pins_and_connectors(pin_ids, connector_ids)
         await self.db.delete(pcb)
         await self.db.flush()
         await self._prune_orphan_signals(revision_id)
@@ -575,6 +577,7 @@ class InstanceService:
             .where(HarnessGroup.enclosure_instance_id == enclosure_instance_id)
             .values(enclosure_instance_id=None)
         )
+        await self._delete_pins_and_connectors(pin_ids, connector_ids)
         for pcb_id in pcb_ids:
             pcb = await self.db.get(PcbInstance, pcb_id)
             if pcb:
@@ -610,6 +613,22 @@ class InstanceService:
             clauses.append(ConnectorInstance.pcb_instance_id.in_(pcb_ids))
         result = await self.db.execute(select(ConnectorInstance.id).where(or_(*clauses)))
         return list(result.scalars().all())
+
+    async def _delete_pins_and_connectors(
+        self, pin_ids: list[UUID], connector_ids: list[UUID]
+    ) -> None:
+        if connector_ids:
+            await self.db.execute(
+                delete(ConnectorInstancePinShort).where(
+                    ConnectorInstancePinShort.connector_instance_id.in_(connector_ids)
+                )
+            )
+        if pin_ids:
+            await self.db.execute(delete(Pin).where(Pin.id.in_(pin_ids)))
+        if connector_ids:
+            await self.db.execute(
+                delete(ConnectorInstance).where(ConnectorInstance.id.in_(connector_ids))
+            )
 
     async def _cleanup_pins_topology(self, revision_id: UUID, pin_ids: list[UUID]) -> None:
         if not pin_ids:
