@@ -91,7 +91,7 @@ async def delete_vehicle(
 async def clear_vehicle_data(
     vehicle_id: UUID,
     db: AsyncSession = Depends(get_db),
-    _admin: UserContext = Depends(get_admin_user),
+    admin: UserContext = Depends(get_admin_user),
 ) -> None:
-    await VehicleService(db).delete_vehicle(vehicle_id)
+    await VehicleService(db).clear_vehicle_data(vehicle_id, created_by=admin.username)
     return None

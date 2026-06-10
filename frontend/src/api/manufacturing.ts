@@ -12,12 +12,14 @@ export interface WireRow {
   source_connector: string;
   source_pin: string;
   source_pin_number: number;
+  source_pin_name: string;
   destination_node: string | null;
   destination_enclosure: string | null;
   destination_connector_kind: string | null;
   destination_connector: string;
   destination_pin: string;
   destination_pin_number: number;
+  destination_pin_name: string;
   wire_color: string | null;
   effective_wire_color: string | null;
   gauge_label: string;

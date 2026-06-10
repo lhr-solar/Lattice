@@ -240,7 +240,12 @@ export function NetManager() {
                   />
                   <button
                     type="button"
-                    disabled={updateMutation.isPending || !formDirty || staleRevision}
+                    disabled={
+                      updateMutation.isPending ||
+                      !formDirty ||
+                      staleRevision ||
+                      !editName.trim()
+                    }
                     onClick={() => updateMutation.mutate()}
                     className="rounded border border-tesla-border px-2 py-1 text-sm hover:border-tesla-accent"
                   >

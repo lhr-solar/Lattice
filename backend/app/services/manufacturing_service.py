@@ -17,7 +17,9 @@ from app.infra.db.models.manufacturing import (
     HarnessGroupEdge,
     ManufacturingRecord,
 )
+from app.infra.db.models.instances import Pin
 from app.infra.db.models.topology import ConnectionEdge
+from app.schemas.connections import ConnectionDestination, PinConnectionRow
 from app.infra.db.models.user import User
 from app.schemas.manufacturing import (
     ContinuityCheckCreate,
@@ -238,12 +240,14 @@ class ManufacturingService:
                         "source_connector": row.connector_label,
                         "source_pin": pin_label,
                         "source_pin_number": row.pin_number,
+                        "source_pin_name": row.pin_name,
                         "destination_node": dest.other_node_label,
                         "destination_enclosure": dest.other_enclosure_label,
                         "destination_connector_kind": dest.other_connector_kind,
                         "destination_connector": dest.other_connector_label,
                         "destination_pin": dest_pin_label,
                         "destination_pin_number": dest.other_pin_number,
+                        "destination_pin_name": dest.other_pin_name,
                         "wire_color": dest.wire_color,
                         "effective_wire_color": dest.effective_wire_color,
                         "gauge_label": dest.gauge_label,
@@ -307,12 +311,14 @@ class ManufacturingService:
                     source_connector=draft["source_connector"],
                     source_pin=draft["source_pin"],
                     source_pin_number=draft["source_pin_number"],
+                    source_pin_name=draft["source_pin_name"],
                     destination_node=draft["destination_node"],
                     destination_enclosure=draft["destination_enclosure"],
                     destination_connector_kind=draft["destination_connector_kind"],
                     destination_connector=draft["destination_connector"],
                     destination_pin=draft["destination_pin"],
                     destination_pin_number=draft["destination_pin_number"],
+                    destination_pin_name=draft["destination_pin_name"],
                     wire_color=draft["wire_color"],
                     effective_wire_color=draft["effective_wire_color"],
                     gauge_label=draft["gauge_label"],
@@ -447,11 +453,147 @@ class ManufacturingService:
             changed_by=user.username,
         )
 
-        table = await self.build_wire_table(vehicle_id, revision_id)
-        for row in table.rows:
-            if row.edge_id == edge_id:
-                return row
-        raise HTTPException(status_code=404, detail="Wire row not found after update")
+        return await self._wire_row_for_edge(vehicle_id, revision_id, edge)
+
+    async def _wire_row_for_edge(
+        self, vehicle_id: UUID, revision_id: UUID, edge: ConnectionEdge
+    ) -> WireRow:
+        revision = await get_revision_or_404(self.db, revision_id, vehicle_id)
+        pin_a = await self.db.get(Pin, edge.pin_a_id)
+        pin_b = await self.db.get(Pin, edge.pin_b_id)
+        if not pin_a or not pin_b:
+            raise HTTPException(status_code=404, detail="Wire row not found after update")
+
+        conn_svc = ConnectionService(self.db)
+        draft: dict | None = None
+        for connector_id in {pin_a.connector_instance_id, pin_b.connector_instance_id}:
+            pin_rows = await conn_svc.build_table(
+                revision_id, connector_instance_id=connector_id
+            )
+            for row in pin_rows:
+                for dest in row.destinations:
+                    if dest.edge_id == edge.id:
+                        draft = self._draft_from_pin_dest(row, dest)
+                        break
+                if draft:
+                    break
+            if draft:
+                break
+
+        if draft is None:
+            raise HTTPException(status_code=404, detail="Wire row not found after update")
+
+        user_ids: set[UUID] = set()
+        if edge.manufactured_by_user_id:
+            user_ids.add(edge.manufactured_by_user_id)
+        if edge.continuity_checked_by_user_id:
+            user_ids.add(edge.continuity_checked_by_user_id)
+        users_by_id: dict[UUID, User] = {}
+        if user_ids:
+            users_result = await self.db.execute(select(User).where(User.id.in_(user_ids)))
+            users_by_id = {u.id: u for u in users_result.scalars().all()}
+
+        return self._wire_row_from_draft(draft, edge, revision.edit_sequence, users_by_id)
+
+    @staticmethod
+    def _draft_from_pin_dest(row: PinConnectionRow, dest: ConnectionDestination) -> dict:
+        if row.enclosure_label:
+            section_key = f"enc:{row.enclosure_label}"
+            section_title = row.enclosure_label
+        elif row.node_label:
+            section_key = f"node:{row.node_label}"
+            section_title = row.node_label
+        else:
+            section_key = "__inline__"
+            section_title = "Inline / standalone"
+
+        pin_label = (
+            row.pin_name
+            if row.pin_name and row.pin_name.strip() != str(row.pin_number)
+            else f"#{row.pin_number}"
+        )
+        dest_pin_label = (
+            dest.other_pin_name
+            if dest.other_pin_name and dest.other_pin_name.strip() != str(dest.other_pin_number)
+            else f"#{dest.other_pin_number}"
+        )
+
+        return {
+            "edge_id": dest.edge_id,
+            "signal_name": row.primary_net_name,
+            "source_node": row.node_label,
+            "source_connector": row.connector_label,
+            "source_pin": pin_label,
+            "source_pin_number": row.pin_number,
+            "source_pin_name": row.pin_name,
+            "destination_node": dest.other_node_label,
+            "destination_enclosure": dest.other_enclosure_label,
+            "destination_connector_kind": dest.other_connector_kind,
+            "destination_connector": dest.other_connector_label,
+            "destination_pin": dest_pin_label,
+            "destination_pin_number": dest.other_pin_number,
+            "destination_pin_name": dest.other_pin_name,
+            "wire_color": dest.wire_color,
+            "effective_wire_color": dest.effective_wire_color,
+            "gauge_label": dest.gauge_label,
+            "section_key": section_key,
+            "section_title": section_title,
+        }
+
+    def _wire_row_from_draft(
+        self,
+        draft: dict,
+        edge: ConnectionEdge,
+        edit_seq: int,
+        users_by_id: dict[UUID, User],
+    ) -> WireRow:
+        def user_info(uid: UUID | None) -> WireManufacturingUserInfo | None:
+            if uid is None:
+                return None
+            user = users_by_id.get(uid)
+            if user is None:
+                return None
+            return WireManufacturingUserInfo(user_id=user.id, username=user.username)
+
+        return WireRow(
+            edge_id=edge.id,
+            signal_name=draft["signal_name"],
+            source_node=draft["source_node"],
+            source_connector=draft["source_connector"],
+            source_pin=draft["source_pin"],
+            source_pin_number=draft["source_pin_number"],
+            source_pin_name=draft["source_pin_name"],
+            destination_node=draft["destination_node"],
+            destination_enclosure=draft["destination_enclosure"],
+            destination_connector_kind=draft["destination_connector_kind"],
+            destination_connector=draft["destination_connector"],
+            destination_pin=draft["destination_pin"],
+            destination_pin_number=draft["destination_pin_number"],
+            destination_pin_name=draft["destination_pin_name"],
+            wire_color=draft["wire_color"],
+            effective_wire_color=draft["effective_wire_color"],
+            gauge_label=draft["gauge_label"],
+            notes=edge.notes,
+            harness_scope=edge.harness_scope,
+            section_key=draft["section_key"],
+            section_title=draft["section_title"],
+            manufactured=edge.manufactured,
+            manufactured_by=user_info(edge.manufactured_by_user_id),
+            manufactured_at=edge.manufactured_at,
+            manufactured_stale=bool(
+                edge.manufactured
+                and edge.manufactured_at_edit_sequence is not None
+                and edge.manufactured_at_edit_sequence < edit_seq
+            ),
+            continuity_checked=edge.continuity_checked,
+            continuity_checked_by=user_info(edge.continuity_checked_by_user_id),
+            continuity_checked_at=edge.continuity_checked_at,
+            continuity_checked_stale=bool(
+                edge.continuity_checked
+                and edge.continuity_checked_at_edit_sequence is not None
+                and edge.continuity_checked_at_edit_sequence < edit_seq
+            ),
+        )
 
     async def _audit_manufacturing_change(
         self,

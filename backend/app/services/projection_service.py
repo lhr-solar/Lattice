@@ -351,11 +351,9 @@ class ProjectionService:
         edges: list[DesignEdgeDto] = []
         pin_to_port_node: dict[UUID, str] = {}
 
-        all_pin_ids: list[UUID] = []
-        for item in item_specs:
-            for conn, _tmpl in item["connectors"]:
-                pins = await self._pins_for_connector(revision_id, conn.id)
-                all_pin_ids.extend([pin.id for pin in pins])
+        connector_ids = [conn.id for item in item_specs for conn, _ in item["connectors"]]
+        pins_by_connector = await self._pins_for_connectors(revision_id, connector_ids)
+        all_pin_ids = [pin.id for pins in pins_by_connector.values() for pin in pins]
         net_by_pin = await self._pin_net_names(revision_id, all_pin_ids)
         slot_lookup = await self._slot_lookup(revision_id)
 
@@ -403,7 +401,7 @@ class ProjectionService:
                         },
                     )
                 )
-                pins = await self._pins_for_connector(revision_id, conn.id)
+                pins = pins_by_connector.get(conn.id, [])
                 for pin_idx, pin in enumerate(pins):
                     port_id = f"port:{pin.id}"
                     net_name = net_by_pin.get(pin.id, "UNASSIGNED")
@@ -519,13 +517,28 @@ class ProjectionService:
         ).all()
 
     async def _pins_for_connector(self, revision_id: UUID, connector_id: UUID) -> list[Pin]:
-        return (
+        by_connector = await self._pins_for_connectors(revision_id, [connector_id])
+        return by_connector.get(connector_id, [])
+
+    async def _pins_for_connectors(
+        self, revision_id: UUID, connector_ids: list[UUID]
+    ) -> dict[UUID, list[Pin]]:
+        if not connector_ids:
+            return {}
+        rows = (
             await self.db.execute(
                 select(Pin)
-                .where(Pin.revision_id == revision_id, Pin.connector_instance_id == connector_id)
-                .order_by(Pin.pin_number)
+                .where(
+                    Pin.revision_id == revision_id,
+                    Pin.connector_instance_id.in_(connector_ids),
+                )
+                .order_by(Pin.connector_instance_id, Pin.pin_number)
             )
         ).scalars().all()
+        grouped: dict[UUID, list[Pin]] = {}
+        for pin in rows:
+            grouped.setdefault(pin.connector_instance_id, []).append(pin)
+        return grouped
 
     async def _pin_net_names(self, revision_id: UUID, pin_ids: list[UUID]) -> dict[UUID, str]:
         if not pin_ids:

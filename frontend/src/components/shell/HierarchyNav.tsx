@@ -150,11 +150,12 @@ function VehiclesList({
         <li key={v.id}>
           <button
             type="button"
+            disabled={!v.current_revision_id}
             onClick={() => {
               if (v.current_revision_id) onSelect(v.id, v.current_revision_id);
             }}
             className={clsx(
-              "w-full rounded-md text-left transition",
+              "w-full rounded-md text-left transition disabled:cursor-not-allowed disabled:opacity-40",
               compact ? "px-1.5 py-1 text-xs" : "px-2 py-2 text-sm",
               vehicleId === v.id
                 ? "bg-tesla-accent/15 text-tesla-text"

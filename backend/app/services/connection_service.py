@@ -12,7 +12,7 @@ from app.core.display import (
 )
 from app.core.revision_guard import ensure_mutable_revision
 from app.domains.topology.net_naming import is_auto_named_signal
-from app.domains.topology.pin_shorts import load_short_index
+from app.domains.topology.pin_shorts import load_short_indexes_for_connectors
 from app.domains.topology.wire_defaults import (
     default_gauge_for_pin_pair,
     effective_wire_color,
@@ -134,26 +134,26 @@ class ConnectionService:
                         PcbTemplateConnectorSlot.id,
                         PcbTemplateConnectorSlot.slot_key,
                         PcbTemplateConnectorSlot.nickname,
+                    ).where(
+                        PcbTemplateConnectorSlot.pcb_template_id.in_(
+                            select(PcbInstance.pcb_template_id).where(
+                                PcbInstance.revision_id == revision_id
+                            )
+                        )
                     )
-                    .join(PcbTemplate, PcbTemplateConnectorSlot.pcb_template_id == PcbTemplate.id)
-                    .join(PcbInstance, PcbInstance.pcb_template_id == PcbTemplate.id)
-                    .where(PcbInstance.revision_id == revision_id)
                 )
             ).all()
         }
         panel_slot_keys: dict[UUID, str] = dict(
             (
                 await self.db.execute(
-                    select(EnclosureTemplatePanelSlot.id, EnclosureTemplatePanelSlot.slot_key)
-                    .join(
-                        EnclosureTemplate,
-                        EnclosureTemplatePanelSlot.enclosure_template_id == EnclosureTemplate.id,
+                    select(EnclosureTemplatePanelSlot.id, EnclosureTemplatePanelSlot.slot_key).where(
+                        EnclosureTemplatePanelSlot.enclosure_template_id.in_(
+                            select(EnclosureInstance.enclosure_template_id).where(
+                                EnclosureInstance.revision_id == revision_id
+                            )
+                        )
                     )
-                    .join(
-                        EnclosureInstance,
-                        EnclosureInstance.enclosure_template_id == EnclosureTemplate.id,
-                    )
-                    .where(EnclosureInstance.revision_id == revision_id)
                 )
             ).all()
         )
@@ -801,8 +801,10 @@ class ConnectionService:
     ) -> dict[UUID, set[UUID]]:
         connector_ids = list(scope_ids) if scope_ids is not None else list(ctx.keys())
         partners: dict[UUID, set[UUID]] = {}
-        for cid in connector_ids:
-            index = await load_short_index(self.db, revision_id, cid)
+        short_indexes = await load_short_indexes_for_connectors(
+            self.db, revision_id, connector_ids
+        )
+        for index in short_indexes.values():
             seen_roots: set[UUID] = set()
             for pid in list(index.parent.keys()):
                 root = index.find(pid)

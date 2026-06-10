@@ -121,7 +121,11 @@ class HierarchyService:
         enclosure_instance_id: UUID | None = None,
         panel_only: bool = False,
     ) -> None:
-        q = select(ConnectorInstance).where(ConnectorInstance.revision_id == revision_id)
+        q = (
+            select(ConnectorInstance, ConnectorTemplate)
+            .join(ConnectorTemplate, ConnectorInstance.connector_template_id == ConnectorTemplate.id)
+            .where(ConnectorInstance.revision_id == revision_id)
+        )
         if pcb_instance_id:
             q = q.where(ConnectorInstance.pcb_instance_id == pcb_instance_id)
         if enclosure_instance_id:
@@ -130,11 +134,10 @@ class HierarchyService:
             q = q.where(ConnectorInstance.is_panel_mount.is_(True))
 
         result = await self.db.execute(q)
-        for conn in result.scalars().all():
-            tmpl = await self.db.get(ConnectorTemplate, conn.connector_template_id)
+        for conn, tmpl in result.all():
             slot_key, slot_nickname = self._slot_for_connector(conn, slot_lookup)
             label, template_label, _ = resolve_connector_with_slot(
-                template_name=tmpl.name if tmpl else "?",
+                template_name=tmpl.name,
                 instance_nickname=conn.nickname,
                 use_template_name=conn.use_template_name,
                 slot_key=slot_key,

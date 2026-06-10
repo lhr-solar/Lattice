@@ -799,6 +799,9 @@ function WireDestinationChip({
       const body: { gauge_awg?: number | null; wire_color?: string | null } = {};
       const gaugeTrim = gaugeText.trim();
       const newGauge = gaugeTrim ? Number(gaugeTrim) : null;
+      if (newGauge !== null && Number.isNaN(newGauge)) {
+        return Promise.resolve(null);
+      }
       const currentGauge = dest.gauge_awg ? Number(dest.gauge_awg) : null;
       if (newGauge !== currentGauge) body.gauge_awg = newGauge;
       const newColor = colorText.trim() || null;

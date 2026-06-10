@@ -305,6 +305,18 @@ function connectorKindLabel(kind: string | null | undefined): string | null {
   return null;
 }
 
+function PinCell({ number, name }: { number: number; name: string }) {
+  const trimmed = name.trim();
+  return (
+    <div className="leading-snug">
+      <span className="font-semibold text-tesla-text">{number}</span>
+      {trimmed && (
+        <span className="mt-0.5 block text-[10px] text-tesla-muted">{trimmed}</span>
+      )}
+    </div>
+  );
+}
+
 function EndpointNodeCell({
   node,
   connectorKind,
@@ -375,7 +387,9 @@ function WireRowView({
       <td className="px-2 py-2 pr-3">{row.signal_name ?? "—"}</td>
       <td className="px-2 py-2 text-tesla-muted">{row.source_node ?? "—"}</td>
       <td className="px-2 py-2">{row.source_connector}</td>
-      <td className="px-2 py-2">{row.source_pin}</td>
+      <td className="px-2 py-2">
+        <PinCell number={row.source_pin_number} name={row.source_pin_name} />
+      </td>
       <td className="px-2 py-2 text-tesla-muted">{row.destination_enclosure ?? "—"}</td>
       <td className="px-2 py-2">
         <EndpointNodeCell
@@ -384,7 +398,9 @@ function WireRowView({
         />
       </td>
       <td className="px-2 py-2">{row.destination_connector}</td>
-      <td className="px-2 py-2">{row.destination_pin}</td>
+      <td className="px-2 py-2">
+        <PinCell number={row.destination_pin_number} name={row.destination_pin_name} />
+      </td>
       <td className="px-2 py-2">
         <WireColorSwatch label={row.effective_wire_color ?? row.wire_color} />
       </td>

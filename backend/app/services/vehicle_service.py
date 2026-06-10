@@ -114,6 +114,37 @@ class VehicleService:
         await self.db.flush()
         return await self.get_vehicle(vehicle_id)  # type: ignore[return-value]
 
+    async def clear_vehicle_data(self, vehicle_id: UUID, *, created_by: str | None = None) -> None:
+        vehicle = await self.db.get(Vehicle, vehicle_id)
+        if not vehicle:
+            raise HTTPException(status_code=404, detail="Vehicle not found")
+
+        revision_ids = list(
+            (
+                await self.db.execute(select(Revision.id).where(Revision.vehicle_id == vehicle_id))
+            ).scalars()
+        )
+        if revision_ids:
+            await self._delete_revision_scoped_data(revision_ids)
+
+        await self.db.execute(delete(VehicleHead).where(VehicleHead.vehicle_id == vehicle_id))
+        await self._delete_vehicle_templates(vehicle_id)
+        await self.db.execute(delete(Revision).where(Revision.vehicle_id == vehicle_id))
+
+        revision = Revision(
+            vehicle_id=vehicle.id,
+            revision_number=1,
+            status=RevisionStatus.DRAFT,
+            label="Initial draft",
+            is_immutable=False,
+            created_by=created_by,
+            created_at=utc_now(),
+        )
+        self.db.add(revision)
+        await self.db.flush()
+        self.db.add(VehicleHead(vehicle_id=vehicle.id, current_revision_id=revision.id))
+        await self.db.flush()
+
     async def delete_vehicle(self, vehicle_id: UUID) -> None:
         vehicle = await self.db.get(Vehicle, vehicle_id)
         if not vehicle:
@@ -125,63 +156,73 @@ class VehicleService:
         )
 
         if revision_ids:
-            # Delete revision-scoped rows first because many FK columns do not use DB-level cascade.
-            await self.db.execute(
-                delete(HarnessGroupEdge).where(
-                    HarnessGroupEdge.connection_edge_id.in_(
-                        select(ConnectionEdge.id).where(ConnectionEdge.revision_id.in_(revision_ids))
-                    )
-                )
-            )
-            await self.db.execute(
-                delete(HarnessGroupEdge).where(
-                    HarnessGroupEdge.harness_group_id.in_(
-                        select(HarnessGroup.id).where(HarnessGroup.revision_id.in_(revision_ids))
-                    )
-                )
-            )
-            await self.db.execute(
-                delete(ContinuityCheck).where(
-                    ContinuityCheck.manufacturing_record_id.in_(
-                        select(ManufacturingRecord.id).where(
-                            ManufacturingRecord.revision_id.in_(revision_ids)
-                        )
-                    )
-                )
-            )
-            await self.db.execute(
-                delete(ManufacturingRecord).where(ManufacturingRecord.revision_id.in_(revision_ids))
-            )
-            await self.db.execute(delete(HarnessGroup).where(HarnessGroup.revision_id.in_(revision_ids)))
-            await self.db.execute(delete(ConnectorInstancePinShort).where(
-                ConnectorInstancePinShort.revision_id.in_(revision_ids)
-            ))
-            await self.db.execute(
-                delete(PinSignalAssignment).where(PinSignalAssignment.revision_id.in_(revision_ids))
-            )
-            await self.db.execute(
-                delete(SpliceConnection).where(SpliceConnection.revision_id.in_(revision_ids))
-            )
-            await self.db.execute(delete(ConnectionEdge).where(ConnectionEdge.revision_id.in_(revision_ids)))
-            await self.db.execute(delete(SpliceNode).where(SpliceNode.revision_id.in_(revision_ids)))
-            await self.db.execute(delete(Signal).where(Signal.revision_id.in_(revision_ids)))
-            await self.db.execute(delete(Pin).where(Pin.revision_id.in_(revision_ids)))
-            await self.db.execute(
-                delete(ConnectorInstance).where(ConnectorInstance.revision_id.in_(revision_ids))
-            )
-            await self.db.execute(delete(PcbInstance).where(PcbInstance.revision_id.in_(revision_ids)))
-            await self.db.execute(
-                delete(EnclosureInstance).where(EnclosureInstance.revision_id.in_(revision_ids))
-            )
-            await self.db.execute(delete(NodeLayout).where(NodeLayout.revision_id.in_(revision_ids)))
-            await self.db.execute(delete(SavedView).where(SavedView.revision_id.in_(revision_ids)))
-            await self.db.execute(
-                delete(RevisionSnapshot).where(RevisionSnapshot.revision_id.in_(revision_ids))
-            )
-            await self.db.execute(delete(RevisionChange).where(RevisionChange.revision_id.in_(revision_ids)))
+            await self._delete_revision_scoped_data(revision_ids)
 
-        # Delete vehicle-scoped artifacts and then revisions/vehicle rows.
         await self.db.execute(delete(VehicleHead).where(VehicleHead.vehicle_id == vehicle_id))
+        await self._delete_vehicle_templates(vehicle_id)
+        await self.db.execute(delete(Revision).where(Revision.vehicle_id == vehicle_id))
+        await self.db.execute(delete(Vehicle).where(Vehicle.id == vehicle_id))
+        await self.db.flush()
+
+    async def _delete_revision_scoped_data(self, revision_ids: list[UUID]) -> None:
+        # Delete revision-scoped rows first because many FK columns do not use DB-level cascade.
+        await self.db.execute(
+            delete(HarnessGroupEdge).where(
+                HarnessGroupEdge.connection_edge_id.in_(
+                    select(ConnectionEdge.id).where(ConnectionEdge.revision_id.in_(revision_ids))
+                )
+            )
+        )
+        await self.db.execute(
+            delete(HarnessGroupEdge).where(
+                HarnessGroupEdge.harness_group_id.in_(
+                    select(HarnessGroup.id).where(HarnessGroup.revision_id.in_(revision_ids))
+                )
+            )
+        )
+        await self.db.execute(
+            delete(ContinuityCheck).where(
+                ContinuityCheck.manufacturing_record_id.in_(
+                    select(ManufacturingRecord.id).where(
+                        ManufacturingRecord.revision_id.in_(revision_ids)
+                    )
+                )
+            )
+        )
+        await self.db.execute(
+            delete(ManufacturingRecord).where(ManufacturingRecord.revision_id.in_(revision_ids))
+        )
+        await self.db.execute(delete(HarnessGroup).where(HarnessGroup.revision_id.in_(revision_ids)))
+        await self.db.execute(
+            delete(ConnectorInstancePinShort).where(
+                ConnectorInstancePinShort.revision_id.in_(revision_ids)
+            )
+        )
+        await self.db.execute(
+            delete(PinSignalAssignment).where(PinSignalAssignment.revision_id.in_(revision_ids))
+        )
+        await self.db.execute(
+            delete(SpliceConnection).where(SpliceConnection.revision_id.in_(revision_ids))
+        )
+        await self.db.execute(delete(ConnectionEdge).where(ConnectionEdge.revision_id.in_(revision_ids)))
+        await self.db.execute(delete(SpliceNode).where(SpliceNode.revision_id.in_(revision_ids)))
+        await self.db.execute(delete(Signal).where(Signal.revision_id.in_(revision_ids)))
+        await self.db.execute(delete(Pin).where(Pin.revision_id.in_(revision_ids)))
+        await self.db.execute(
+            delete(ConnectorInstance).where(ConnectorInstance.revision_id.in_(revision_ids))
+        )
+        await self.db.execute(delete(PcbInstance).where(PcbInstance.revision_id.in_(revision_ids)))
+        await self.db.execute(
+            delete(EnclosureInstance).where(EnclosureInstance.revision_id.in_(revision_ids))
+        )
+        await self.db.execute(delete(NodeLayout).where(NodeLayout.revision_id.in_(revision_ids)))
+        await self.db.execute(delete(SavedView).where(SavedView.revision_id.in_(revision_ids)))
+        await self.db.execute(
+            delete(RevisionSnapshot).where(RevisionSnapshot.revision_id.in_(revision_ids))
+        )
+        await self.db.execute(delete(RevisionChange).where(RevisionChange.revision_id.in_(revision_ids)))
+
+    async def _delete_vehicle_templates(self, vehicle_id: UUID) -> None:
         await self.db.execute(
             delete(PcbTemplateConnectorSlot).where(
                 PcbTemplateConnectorSlot.pcb_template_id.in_(
@@ -205,6 +246,3 @@ class VehicleService:
         )
         await self.db.execute(delete(PcbTemplate).where(PcbTemplate.vehicle_id == vehicle_id))
         await self.db.execute(delete(EnclosureTemplate).where(EnclosureTemplate.vehicle_id == vehicle_id))
-        await self.db.execute(delete(Revision).where(Revision.vehicle_id == vehicle_id))
-        await self.db.execute(delete(Vehicle).where(Vehicle.id == vehicle_id))
-        await self.db.flush()

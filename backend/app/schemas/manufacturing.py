@@ -76,12 +76,14 @@ class WireRow(SchemaBase):
     source_connector: str
     source_pin: str
     source_pin_number: int
+    source_pin_name: str
     destination_node: str | None
     destination_enclosure: str | None
     destination_connector_kind: str | None = None
     destination_connector: str
     destination_pin: str
     destination_pin_number: int
+    destination_pin_name: str
     wire_color: str | None
     effective_wire_color: str | None
     gauge_label: str
