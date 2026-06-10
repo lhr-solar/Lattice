@@ -84,6 +84,7 @@ class NetService:
                 signal_kind=s.signal_kind,
                 is_auto_named=is_auto_named_signal(s.metadata_, s.name),
                 pin_count=counts.get(s.id, 0),
+                default_wire_color=s.default_wire_color,
             )
             for s in signals
         ]
@@ -107,6 +108,7 @@ class NetService:
             vehicle_id=vehicle_id,
             name=payload.name.strip(),
             signal_kind=payload.signal_kind,
+            default_wire_color=payload.default_wire_color,
         )
         self.db.add(signal)
         await self.db.flush()
@@ -139,6 +141,8 @@ class NetService:
             signal.name = name
         if payload.signal_kind is not None:
             signal.signal_kind = payload.signal_kind
+        if "default_wire_color" in payload.model_fields_set:
+            signal.default_wire_color = payload.default_wire_color
         await self.db.flush()
         detail = await self._build_net_detail(signal)
         await self._sync(vehicle_id, revision_id, changed_by=changed_by)
@@ -386,8 +390,14 @@ class NetService:
 
         edge_response = None
         if payload.create_edge:
+            from app.domains.topology.wire_defaults import default_gauge_for_pin_pair
             from app.schemas.topology import ConnectionEdgeCreate
 
+            gauge_awg = payload.gauge_awg
+            if gauge_awg is None:
+                gauge_awg = await default_gauge_for_pin_pair(
+                    self.db, payload.pin_a_id, payload.pin_b_id
+                )
             edge_response = await self._topology.create_edge(
                 vehicle_id,
                 revision_id,
@@ -396,7 +406,7 @@ class NetService:
                     pin_b_id=payload.pin_b_id,
                     signal_id=signal.id,
                     wire_color=payload.wire_color,
-                    gauge_awg=payload.gauge_awg,
+                    gauge_awg=gauge_awg,
                 ),
                 sync=False,
             )
@@ -494,6 +504,7 @@ class NetService:
             signal_kind=signal.signal_kind,
             is_auto_named=is_auto_named_signal(signal.metadata_, signal.name),
             pin_count=len(pins),
+            default_wire_color=signal.default_wire_color,
             pins=pins,
             edge_ids=list(edge_rows.scalars().all()),
         )

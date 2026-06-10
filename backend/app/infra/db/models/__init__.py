@@ -13,6 +13,7 @@ from app.infra.db.models.instances import (
 from app.infra.db.models.layout import NodeLayout, SavedView
 from app.infra.db.models.manufacturing import (
     ContinuityCheck,
+    EdgeManufacturingAudit,
     HarnessGroup,
     HarnessGroupEdge,
     ManufacturingRecord,
@@ -62,7 +63,7 @@ __all__ = [
     "HarnessGroup",
     "HarnessGroupEdge",
     "ManufacturingRecord",
-    "ContinuityCheck",
+    "EdgeManufacturingAudit",
     "RevisionSnapshot",
     "RevisionChange",
     "UserSession",

@@ -16,10 +16,16 @@ class ConnectionDestination(BaseModel):
     other_connector_instance_id: UUID
     other_connector_label: str
     other_container_label: str | None = None
+    other_node_label: str | None = None
+    other_enclosure_label: str | None = None
+    other_connector_kind: str | None = None
     # Full readable path: enclosure / board / connector (or slot) / pin (or #).
     other_path_label: str = ""
     wire_color: str | None = None
+    effective_wire_color: str | None = None
+    net_default_wire_color: str | None = None
     gauge_awg: Decimal | None = None
+    gauge_label: str = "No gauge defined"
 
 
 class PinConnectionRow(BaseModel):

@@ -24,6 +24,7 @@ class Signal(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     signal_kind: Mapped[SignalKind] = mapped_column(nullable=False)
     bus_group_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    default_wire_color: Mapped[str | None] = mapped_column(String(64))
     metadata_: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, server_default="{}")
 
 
@@ -72,6 +73,18 @@ class ConnectionEdge(Base):
         default=EdgeManufacturingState.PLANNED
     )
     manufacturing_metadata: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    manufactured: Mapped[bool] = mapped_column(default=False)
+    manufactured_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    manufactured_at: Mapped[datetime | None] = mapped_column()
+    manufactured_at_edit_sequence: Mapped[int | None] = mapped_column()
+    continuity_checked: Mapped[bool] = mapped_column(default=False)
+    continuity_checked_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    continuity_checked_at: Mapped[datetime | None] = mapped_column()
+    continuity_checked_at_edit_sequence: Mapped[int | None] = mapped_column()
     enclosure_a_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     enclosure_b_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     harness_scope: Mapped[HarnessScope | None] = mapped_column()

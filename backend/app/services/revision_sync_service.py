@@ -24,10 +24,12 @@ DOMAINS_WIRING = [
     "design-projection",
     "topology-summary",
     "connection-table",
+    "manufacturing-wire-table",
     "nets",
     "pins",
 ]
 DOMAINS_SHORTS = ["shorts", "pins", "design-projection", "nets"]
+DOMAINS_MANUFACTURING = ["manufacturing-wire-table"]
 DOMAINS_LAYOUT = ["design-projection"]
 
 
@@ -73,6 +75,33 @@ class RevisionSyncService:
             .where(Revision.id == revision_id, Revision.vehicle_id == vehicle_id)
             .values(edit_sequence=Revision.edit_sequence + 1)
             .returning(Revision.edit_sequence)
+        )
+        row = result.one_or_none()
+        if row is None:
+            raise HTTPException(status_code=404, detail="Revision not found")
+        edit_sequence = int(row[0])
+        await ws_hub.broadcast_revision_changed(
+            vehicle_id=vehicle_id,
+            revision_id=revision_id,
+            edit_sequence=edit_sequence,
+            domains=domains,
+            changed_by=changed_by,
+        )
+        return edit_sequence
+
+    async def notify_domains(
+        self,
+        *,
+        vehicle_id: UUID,
+        revision_id: UUID,
+        domains: list[str],
+        changed_by: str | None = None,
+    ) -> int:
+        """Broadcast domain invalidation without bumping edit_sequence."""
+        result = await self.db.execute(
+            select(Revision.edit_sequence).where(
+                Revision.id == revision_id, Revision.vehicle_id == vehicle_id
+            )
         )
         row = result.one_or_none()
         if row is None:

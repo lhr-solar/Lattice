@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.revision_guard import get_revision_or_404
 from app.core.time import utc_now
-from app.infra.db.enums import EntityKind, RevisionStatus
+from app.infra.db.enums import EdgeManufacturingState, EntityKind, RevisionStatus
 from app.infra.db.models.instances import ConnectorInstance, EnclosureInstance, PcbInstance, Pin
 from app.infra.db.models.revision import RevisionChange, RevisionSnapshot
 from app.infra.db.models.shorts import ConnectorInstancePinShort
@@ -144,6 +144,7 @@ class RevisionService:
                 name=sig.name,
                 signal_kind=sig.signal_kind,
                 bus_group_id=sig.bus_group_id,
+                default_wire_color=sig.default_wire_color,
                 metadata_=sig.metadata_,
             )
             self.db.add(new_sig)
@@ -249,8 +250,8 @@ class RevisionService:
                     shield_group_id=edge.shield_group_id,
                     signal_type=edge.signal_type,
                     notes=edge.notes,
-                    manufacturing_state=edge.manufacturing_state,
-                    manufacturing_metadata=edge.manufacturing_metadata,
+                    manufacturing_state=EdgeManufacturingState.PLANNED,
+                    manufacturing_metadata={},
                     enclosure_a_id=enc_map.get(edge.enclosure_a_id) if edge.enclosure_a_id else None,
                     enclosure_b_id=enc_map.get(edge.enclosure_b_id) if edge.enclosure_b_id else None,
                     harness_scope=edge.harness_scope,
