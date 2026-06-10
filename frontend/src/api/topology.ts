@@ -14,3 +14,24 @@ export function fetchTopologySummary(vehicleId: string, revisionId: string) {
     `/vehicles/${vehicleId}/revisions/${revisionId}/topology/summary`,
   );
 }
+
+export interface ConnectionEdge {
+  id: string;
+  pin_a_id: string;
+  pin_b_id: string;
+  signal_id: string | null;
+  gauge_awg: string | null;
+  wire_color: string | null;
+}
+
+export function updateEdge(
+  vehicleId: string,
+  revisionId: string,
+  edgeId: string,
+  body: { gauge_awg?: number | null; wire_color?: string | null },
+) {
+  return apiFetch<ConnectionEdge>(
+    `/vehicles/${vehicleId}/revisions/${revisionId}/topology/edges/${edgeId}`,
+    { method: "PATCH", body: JSON.stringify(body) },
+  );
+}

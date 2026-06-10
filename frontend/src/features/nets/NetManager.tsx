@@ -15,6 +15,8 @@ import { invalidateRevisionDomains } from "@/lib/revisionInvalidation";
 import { useAppStore } from "@/stores/appStore";
 import { useRevisionSyncStore } from "@/stores/revisionSyncStore";
 import { ConfirmModal } from "@/components/ui/Modal";
+import { WireColorPresetButton } from "@/components/wiring/WireColorSwatch";
+import { WIRE_COLOR_PRESETS } from "@/lib/wireColors";
 
 type FilterTab = "all" | "named" | "auto";
 
@@ -29,6 +31,7 @@ export function NetManager() {
   const [filter, setFilter] = useState<FilterTab>("all");
   const [selectedNetId, setSelectedNetId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
+  const [editWireColor, setEditWireColor] = useState("");
   const [newNetName, setNewNetName] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -68,12 +71,22 @@ export function NetManager() {
   const nameDirty = Boolean(
     selectedNetId && netDetail && editName.trim() !== netDetail.name,
   );
+  const wireColorDirty = Boolean(
+    selectedNetId &&
+      netDetail &&
+      editWireColor.trim() !== (netDetail.default_wire_color ?? ""),
+  );
+  const formDirty = nameDirty || wireColorDirty;
+
+  useEffect(() => {
+    if (netDetail) setEditWireColor(netDetail.default_wire_color ?? "");
+  }, [netDetail]);
 
   useEffect(() => {
     if (!showNetManager) return;
-    setDirtyForm(nameDirty);
+    setDirtyForm(formDirty);
     return () => setDirtyForm(false);
-  }, [showNetManager, nameDirty, setDirtyForm]);
+  }, [showNetManager, formDirty, setDirtyForm]);
 
   const createMutation = useMutation({
     mutationFn: (name: string) => createNet(vehicleId!, revisionId!, { name }),
@@ -88,11 +101,16 @@ export function NetManager() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: () =>
-      updateNet(vehicleId!, revisionId!, selectedNetId!, {
-        name: editName,
-        expected_edit_sequence: editSequence,
-      }),
+    mutationFn: () => {
+      const body: {
+        name?: string;
+        default_wire_color?: string | null;
+        expected_edit_sequence?: number;
+      } = { expected_edit_sequence: editSequence };
+      if (nameDirty) body.name = editName.trim();
+      if (wireColorDirty) body.default_wire_color = editWireColor.trim() || null;
+      return updateNet(vehicleId!, revisionId!, selectedNetId!, body);
+    },
     onSuccess: () => {
       setErrorMessage(null);
       invalidate();
@@ -197,6 +215,7 @@ export function NetManager() {
                   onSelect={() => {
                     setSelectedNetId(net.id);
                     setEditName(net.name);
+                    setEditWireColor(net.default_wire_color ?? "");
                   }}
                 />
               ))}
@@ -221,16 +240,27 @@ export function NetManager() {
                   />
                   <button
                     type="button"
-                    disabled={
-                      updateMutation.isPending ||
-                      editName === netDetail.name ||
-                      staleRevision
-                    }
+                    disabled={updateMutation.isPending || !formDirty || staleRevision}
                     onClick={() => updateMutation.mutate()}
                     className="rounded border border-tesla-border px-2 py-1 text-sm hover:border-tesla-accent"
                   >
                     Save
                   </button>
+                </div>
+                <label className="text-xs text-tesla-muted">Default wire color</label>
+                <p className="mb-1 text-[11px] text-tesla-muted">
+                  Applied to wires on this net unless a wire has its own color override.
+                </p>
+                <input
+                  value={editWireColor}
+                  onChange={(e) => setEditWireColor(e.target.value)}
+                  placeholder="e.g. RED, BLU, BLK/WHT"
+                  className="mb-2 w-full rounded-md border border-tesla-border bg-tesla-bg px-2 py-1.5 text-sm"
+                />
+                <div className="mb-3 flex flex-wrap gap-1">
+                  {WIRE_COLOR_PRESETS.map((c) => (
+                    <WireColorPresetButton key={c} code={c} onClick={() => setEditWireColor(c)} />
+                  ))}
                 </div>
                 <p className="mb-2 text-xs text-tesla-muted">
                   {netDetail.is_auto_named ? "Auto-named" : netDetail.signal_kind} ·{" "}

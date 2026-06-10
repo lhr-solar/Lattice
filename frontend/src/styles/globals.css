@@ -35,8 +35,38 @@
   }
 }
 
+.nav-float-enter {
+  animation: navFloatEnter 280ms ease-out forwards;
+}
+
+.nav-float-backdrop {
+  animation: navBackdropEnter 220ms ease-out forwards;
+}
+
+@keyframes navFloatEnter {
+  from {
+    opacity: 0;
+    transform: translateX(-100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes navBackdropEnter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .panel-fade-in {
+  .panel-fade-in,
+  .nav-float-enter,
+  .nav-float-backdrop {
     animation: none;
   }
 }
