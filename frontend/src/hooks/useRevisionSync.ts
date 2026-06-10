@@ -84,7 +84,7 @@ export function useRevisionSync(): void {
       }
 
       if (event.revision_id !== revisionId) return;
-      if (event.edit_sequence <= sequenceRef.current) return;
+      if (event.edit_sequence < sequenceRef.current) return;
 
       setEditSequence(event.edit_sequence);
 

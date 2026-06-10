@@ -21,7 +21,7 @@ class HierarchyService:
         self.db = db
 
     async def build_hierarchy(self, vehicle_id: UUID, revision_id: UUID) -> VehicleHierarchyResponse:
-        slot_lookup = await self._slot_lookup()
+        slot_lookup = await self._slot_lookup(revision_id)
         root = HierarchyNode(id=vehicle_id, kind="vehicle", label="Vehicle", children=[])
 
         enc_result = await self.db.execute(
@@ -152,7 +152,7 @@ class HierarchyService:
                 )
             )
 
-    async def _slot_lookup(self) -> dict:
+    async def _slot_lookup(self, revision_id: UUID) -> dict:
         lookup: dict = {}
         for slot_id, slot_key, nickname in (
             await self.db.execute(
@@ -161,12 +161,24 @@ class HierarchyService:
                     PcbTemplateConnectorSlot.slot_key,
                     PcbTemplateConnectorSlot.nickname,
                 )
+                .join(PcbTemplate, PcbTemplateConnectorSlot.pcb_template_id == PcbTemplate.id)
+                .join(PcbInstance, PcbInstance.pcb_template_id == PcbTemplate.id)
+                .where(PcbInstance.revision_id == revision_id)
             )
         ).all():
             lookup[slot_id] = (slot_key, nickname)
         for slot_id, slot_key in (
             await self.db.execute(
                 select(EnclosureTemplatePanelSlot.id, EnclosureTemplatePanelSlot.slot_key)
+                .join(
+                    EnclosureTemplate,
+                    EnclosureTemplatePanelSlot.enclosure_template_id == EnclosureTemplate.id,
+                )
+                .join(
+                    EnclosureInstance,
+                    EnclosureInstance.enclosure_template_id == EnclosureTemplate.id,
+                )
+                .where(EnclosureInstance.revision_id == revision_id)
             )
         ).all():
             lookup[slot_id] = (slot_key, None)

@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import { fetchNets, fetchPins, pairPins, type NetPinInfo } from "@/api/nets";
+import { useAutoDismiss } from "@/hooks/useAutoDismiss";
 import { useAppStore } from "@/stores/appStore";
 
 export function PinPairingPanel() {
@@ -23,6 +24,8 @@ export function PinPairingPanel() {
   const [newNetName, setNewNetName] = useState("");
   const [wireColor, setWireColor] = useState("");
   const [pairError, setPairError] = useState<string | null>(null);
+  const clearPairError = useCallback(() => setPairError(null), []);
+  useAutoDismiss(pairError, clearPairError);
 
   const { data: pins = [] } = useQuery({
     queryKey: ["pins", vehicleId, revisionId, connectorId],

@@ -6,6 +6,7 @@ export interface NetSummary {
   signal_kind: string;
   is_auto_named: boolean;
   pin_count: number;
+  default_wire_color: string | null;
 }
 
 export interface NetPinInfo {
@@ -51,7 +52,7 @@ export function fetchNet(vehicleId: string, revisionId: string, netId: string) {
 export function createNet(
   vehicleId: string,
   revisionId: string,
-  body: { name: string; signal_kind?: string },
+  body: { name: string; signal_kind?: string; default_wire_color?: string | null },
 ) {
   return apiFetch<NetDetail>(`/vehicles/${vehicleId}/revisions/${revisionId}/nets`, {
     method: "POST",
@@ -63,7 +64,12 @@ export function updateNet(
   vehicleId: string,
   revisionId: string,
   netId: string,
-  body: { name?: string; signal_kind?: string; expected_edit_sequence?: number },
+  body: {
+    name?: string;
+    signal_kind?: string;
+    default_wire_color?: string | null;
+    expected_edit_sequence?: number;
+  },
 ) {
   return apiFetch<NetDetail>(`/vehicles/${vehicleId}/revisions/${revisionId}/nets/${netId}`, {
     method: "PATCH",

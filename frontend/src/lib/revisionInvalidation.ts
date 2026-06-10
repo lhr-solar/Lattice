@@ -3,6 +3,7 @@ import type { QueryClient } from "@tanstack/react-query";
 export const ALL_REVISION_QUERY_KEYS = [
   "connection-table",
   "connection-scopes",
+  "manufacturing-wire-table",
   "nets",
   "pins",
   "net-detail",

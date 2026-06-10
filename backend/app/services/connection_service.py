@@ -13,6 +13,13 @@ from app.core.display import (
 from app.core.revision_guard import ensure_mutable_revision
 from app.domains.topology.net_naming import is_auto_named_signal
 from app.domains.topology.pin_shorts import load_short_index
+from app.domains.topology.wire_defaults import (
+    default_gauge_for_pin_pair,
+    effective_wire_color,
+    format_gauge_label,
+    pin_template_gauges_for_revision,
+    resolve_pair_gauge,
+)
 from app.infra.db.enums import SignalKind
 from app.infra.db.models.catalog import ConnectorTemplate
 from app.infra.db.models.instances import (
@@ -128,6 +135,9 @@ class ConnectionService:
                         PcbTemplateConnectorSlot.slot_key,
                         PcbTemplateConnectorSlot.nickname,
                     )
+                    .join(PcbTemplate, PcbTemplateConnectorSlot.pcb_template_id == PcbTemplate.id)
+                    .join(PcbInstance, PcbInstance.pcb_template_id == PcbTemplate.id)
+                    .where(PcbInstance.revision_id == revision_id)
                 )
             ).all()
         }
@@ -135,6 +145,15 @@ class ConnectionService:
             (
                 await self.db.execute(
                     select(EnclosureTemplatePanelSlot.id, EnclosureTemplatePanelSlot.slot_key)
+                    .join(
+                        EnclosureTemplate,
+                        EnclosureTemplatePanelSlot.enclosure_template_id == EnclosureTemplate.id,
+                    )
+                    .join(
+                        EnclosureInstance,
+                        EnclosureInstance.enclosure_template_id == EnclosureTemplate.id,
+                    )
+                    .where(EnclosureInstance.revision_id == revision_id)
                 )
             ).all()
         )
@@ -305,6 +324,18 @@ class ConnectionService:
 
         net_by_pin = await self._net_by_pin(revision_id, [p.id for p in pin_rows])
 
+        signal_defaults = {
+            sid: color
+            for sid, color in (
+                await self.db.execute(
+                    select(Signal.id, Signal.default_wire_color).where(
+                        Signal.revision_id == revision_id
+                    )
+                )
+            ).all()
+        }
+        pin_template_gauges = await pin_template_gauges_for_revision(self.db, revision_id)
+
         # Edges keyed by pin so we can list destinations per pin.
         edges = (
             await self.db.execute(
@@ -319,12 +350,25 @@ class ConnectionService:
         # Shorts per connector for partner lookup.
         short_partners = await self._short_partners(revision_id, scope_ids, ctx)
 
+        def _net_default_for_edge(edge: ConnectionEdge, this_pin_id: UUID) -> str | None:
+            net_id = edge.signal_id
+            if net_id is None:
+                pin_net = net_by_pin.get(this_pin_id)
+                net_id = pin_net[0] if pin_net else None
+            return signal_defaults.get(net_id) if net_id else None
+
         def dest_for(edge: ConnectionEdge, this_pin_id: UUID) -> ConnectionDestination | None:
             other_id = edge.pin_b_id if edge.pin_a_id == this_pin_id else edge.pin_a_id
             other = pin_by_id.get(other_id)
             if other is None:
                 return None
             octx = ctx.get(other.connector_instance_id)
+            template_gauge = resolve_pair_gauge(
+                pin_template_gauges.get(edge.pin_a_id),
+                pin_template_gauges.get(edge.pin_b_id),
+            )
+            display_gauge = edge.gauge_awg if edge.gauge_awg is not None else template_gauge
+            net_default = _net_default_for_edge(edge, this_pin_id)
             return ConnectionDestination(
                 edge_id=edge.id,
                 other_pin_id=other.id,
@@ -333,9 +377,15 @@ class ConnectionService:
                 other_connector_instance_id=other.connector_instance_id,
                 other_connector_label=octx.label if octx else "?",
                 other_container_label=octx.container_label if octx else None,
+                other_node_label=octx.node_label if octx else None,
+                other_enclosure_label=octx.enclosure_label if octx else None,
+                other_connector_kind=octx.connector_kind if octx else None,
                 other_path_label=self._path_label(octx, other),
                 wire_color=edge.wire_color,
+                effective_wire_color=effective_wire_color(edge.wire_color, net_default),
+                net_default_wire_color=net_default,
                 gauge_awg=edge.gauge_awg,
+                gauge_label=format_gauge_label(display_gauge),
             )
 
         query = (search or "").strip().lower()
@@ -507,6 +557,11 @@ class ConnectionService:
                 edge.gauge_awg = payload.gauge_awg
             await self.db.flush()
         else:
+            gauge_awg = payload.gauge_awg
+            if gauge_awg is None:
+                gauge_awg = await default_gauge_for_pin_pair(
+                    self.db, payload.pin_a_id, payload.pin_b_id
+                )
             created = await self._topology.create_edge(
                 vehicle_id,
                 revision_id,
@@ -514,7 +569,7 @@ class ConnectionService:
                     pin_a_id=payload.pin_a_id,
                     pin_b_id=payload.pin_b_id,
                     wire_color=payload.wire_color,
-                    gauge_awg=payload.gauge_awg,
+                    gauge_awg=gauge_awg,
                 ),
                 sync=False,
             )

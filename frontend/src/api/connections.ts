@@ -8,9 +8,15 @@ export interface ConnectionDestination {
   other_connector_instance_id: string;
   other_connector_label: string;
   other_container_label: string | null;
+  other_node_label?: string | null;
+  other_enclosure_label?: string | null;
+  other_connector_kind?: string | null;
   other_path_label: string;
   wire_color: string | null;
+  effective_wire_color: string | null;
+  net_default_wire_color: string | null;
   gauge_awg: string | null;
+  gauge_label: string;
 }
 
 export interface PinConnectionRow {

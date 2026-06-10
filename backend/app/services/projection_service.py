@@ -357,7 +357,7 @@ class ProjectionService:
                 pins = await self._pins_for_connector(revision_id, conn.id)
                 all_pin_ids.extend([pin.id for pin in pins])
         net_by_pin = await self._pin_net_names(revision_id, all_pin_ids)
-        slot_lookup = await self._slot_lookup()
+        slot_lookup = await self._slot_lookup(revision_id)
 
         for item in item_specs:
             item_id = item["item_id"]
@@ -601,7 +601,7 @@ class ProjectionService:
             for gid, sids in groups.items()
         ]
 
-    async def _slot_lookup(self) -> dict[UUID, tuple[str, str | None]]:
+    async def _slot_lookup(self, revision_id: UUID) -> dict[UUID, tuple[str, str | None]]:
         """Map template-slot id -> (slot_key, slot_nickname)."""
         lookup: dict[UUID, tuple[str, str | None]] = {}
         for slot_id, slot_key, nickname in (
@@ -611,12 +611,24 @@ class ProjectionService:
                     PcbTemplateConnectorSlot.slot_key,
                     PcbTemplateConnectorSlot.nickname,
                 )
+                .join(PcbTemplate, PcbTemplateConnectorSlot.pcb_template_id == PcbTemplate.id)
+                .join(PcbInstance, PcbInstance.pcb_template_id == PcbTemplate.id)
+                .where(PcbInstance.revision_id == revision_id)
             )
         ).all():
             lookup[slot_id] = (slot_key, nickname)
         for slot_id, slot_key in (
             await self.db.execute(
                 select(EnclosureTemplatePanelSlot.id, EnclosureTemplatePanelSlot.slot_key)
+                .join(
+                    EnclosureTemplate,
+                    EnclosureTemplatePanelSlot.enclosure_template_id == EnclosureTemplate.id,
+                )
+                .join(
+                    EnclosureInstance,
+                    EnclosureInstance.enclosure_template_id == EnclosureTemplate.id,
+                )
+                .where(EnclosureInstance.revision_id == revision_id)
             )
         ).all():
             lookup[slot_id] = (slot_key, None)

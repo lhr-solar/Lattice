@@ -58,6 +58,28 @@ class ManufacturingRecord(Base):
     metadata_: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, server_default="{}")
 
 
+class EdgeManufacturingAudit(Base):
+    __tablename__ = "edge_manufacturing_audits"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    connection_edge_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("connection_edges.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    revision_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("revisions.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    field: Mapped[str] = mapped_column(String(64), nullable=False)
+    previous_value: Mapped[dict | None] = mapped_column(JSONB)
+    new_value: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    changed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    changed_at: Mapped[datetime] = mapped_column(nullable=False)
+
+
 class ContinuityCheck(Base):
     __tablename__ = "continuity_checks"
 

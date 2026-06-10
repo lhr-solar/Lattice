@@ -24,6 +24,7 @@ class NetSummary(BaseModel):
     signal_kind: SignalKind
     is_auto_named: bool
     pin_count: int
+    default_wire_color: str | None = None
 
 
 class NetDetail(NetSummary):
@@ -34,11 +35,13 @@ class NetDetail(NetSummary):
 class NetCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     signal_kind: SignalKind = SignalKind.CUSTOM
+    default_wire_color: str | None = Field(default=None, max_length=64)
 
 
 class NetUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     signal_kind: SignalKind | None = None
+    default_wire_color: str | None = Field(default=None, max_length=64)
     expected_edit_sequence: int | None = None
 
 

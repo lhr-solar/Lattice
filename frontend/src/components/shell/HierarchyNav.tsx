@@ -130,21 +130,112 @@ function iconFor(kind: string) {
   }
 }
 
+function VehiclesList({
+  vehicles,
+  vehicleId,
+  isLoading,
+  onSelect,
+  compact = false,
+}: {
+  vehicles: { id: string; name: string; current_revision_id: string | null }[];
+  vehicleId: string | null;
+  isLoading: boolean;
+  onSelect: (vehicleId: string, revisionId: string) => void;
+  compact?: boolean;
+}) {
+  return (
+    <ul className={clsx("overflow-y-auto border-b border-tesla-border", compact ? "max-h-28 p-1.5" : "max-h-36 p-2")}>
+      {isLoading && <li className="px-2 py-1 text-sm text-tesla-muted">Loading…</li>}
+      {vehicles.map((v) => (
+        <li key={v.id}>
+          <button
+            type="button"
+            onClick={() => {
+              if (v.current_revision_id) onSelect(v.id, v.current_revision_id);
+            }}
+            className={clsx(
+              "w-full rounded-md text-left transition",
+              compact ? "px-1.5 py-1 text-xs" : "px-2 py-2 text-sm",
+              vehicleId === v.id
+                ? "bg-tesla-accent/15 text-tesla-text"
+                : "text-tesla-muted hover:bg-tesla-border/50 hover:text-tesla-text",
+            )}
+            title={v.name}
+          >
+            <span className="block truncate">{v.name}</span>
+          </button>
+        </li>
+      ))}
+      {!isLoading && vehicles.length === 0 && (
+        <li className="px-2 py-1 text-sm text-tesla-muted">No vehicles</li>
+      )}
+    </ul>
+  );
+}
+
+function UtilitiesButtons({
+  disabled,
+  compact = false,
+  vertical = false,
+}: {
+  disabled: boolean;
+  compact?: boolean;
+  vertical?: boolean;
+}) {
+  const setShowLibraryManager = useAppStore((s) => s.setShowLibraryManager);
+  const setShowNetManager = useAppStore((s) => s.setShowNetManager);
+  const setShowPinNameLibrary = useAppStore((s) => s.setShowPinNameLibrary);
+  const setLibraryTab = useAppStore((s) => s.setLibraryTab);
+
+  const items = [
+    { label: compact ? "Nodes" : "Node Library", tab: "node" as const, action: () => { setLibraryTab("node"); setShowLibraryManager(true); } },
+    { label: compact ? "Encls" : "Enclosure Library", tab: "enclosure" as const, action: () => { setLibraryTab("enclosure"); setShowLibraryManager(true); } },
+    { label: compact ? "Nets" : "Net Manager", action: () => setShowNetManager(true) },
+    { label: compact ? "Pins" : "Pin Name Library", action: () => setShowPinNameLibrary(true) },
+  ];
+
+  const btnCls = compact
+    ? "rounded border border-tesla-border px-1 py-1 text-center text-[10px] leading-tight text-tesla-muted transition hover:border-tesla-accent hover:text-tesla-text disabled:opacity-40"
+    : "rounded border border-tesla-border px-2 py-1 text-center text-xs leading-tight text-tesla-muted transition hover:border-tesla-accent hover:text-tesla-text disabled:opacity-40";
+
+  return (
+    <div className={clsx("border-b border-tesla-border", compact ? "p-1.5" : "p-2")}>
+      {!compact && (
+        <p className="mb-2 px-2 text-xs uppercase tracking-wider text-tesla-muted">Utilities</p>
+      )}
+      <div className={clsx(vertical ? "flex flex-col gap-1" : "grid grid-cols-2 gap-1")}>
+        {items.map((item) => (
+          <button
+            key={item.label}
+            type="button"
+            disabled={disabled}
+            className={btnCls}
+            onClick={item.action}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function HierarchyNav() {
   const queryClient = useQueryClient();
+  const mode = useAppStore((s) => s.mode);
+  const manufacturingNavOpen = useAppStore((s) => s.manufacturingNavOpen);
+  const setManufacturingNavOpen = useAppStore((s) => s.setManufacturingNavOpen);
   const vehicleId = useAppStore((s) => s.selectedVehicleId);
   const revisionId = useAppStore((s) => s.selectedRevisionId);
   const selectedNodeId = useAppStore((s) => s.selectedNodeId);
   const selectVehicle = useAppStore((s) => s.selectVehicle);
   const setFocus = useAppStore((s) => s.setFocus);
   const setProjectionLevel = useAppStore((s) => s.setProjectionLevel);
-  const setShowLibraryManager = useAppStore((s) => s.setShowLibraryManager);
-  const setShowNetManager = useAppStore((s) => s.setShowNetManager);
-  const setShowPinNameLibrary = useAppStore((s) => s.setShowPinNameLibrary);
-  const setLibraryTab = useAppStore((s) => s.setLibraryTab);
   const searchQuery = useAppStore((s) => s.searchQuery).toLowerCase();
   const [deleteTopologyTarget, setDeleteTopologyTarget] = useState<HierarchyNode | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const isManufacturing = mode === "manufacturing";
 
   const { data: vehicles = [], isLoading } = useQuery({
     queryKey: ["vehicles"],
@@ -154,7 +245,7 @@ export function HierarchyNav() {
   const { data: hierarchy } = useQuery({
     queryKey: ["hierarchy", vehicleId, revisionId],
     queryFn: () => fetchHierarchy(vehicleId!, revisionId!),
-    enabled: Boolean(vehicleId && revisionId),
+    enabled: Boolean(vehicleId && revisionId && !isManufacturing),
   });
 
   const deleteTopologyMutation = useMutation({
@@ -203,100 +294,94 @@ export function HierarchyNav() {
     setFocus(id, kind);
   }
 
-  const filteredRoot = hierarchy?.root
-    ? filterTree(hierarchy.root, searchQuery)
-    : null;
+  function handleVehicleSelect(vid: string, rid: string) {
+    selectVehicle(vid, rid);
+    setFocus(null);
+    setProjectionLevel("vehicle");
+  }
+
+  const filteredRoot = hierarchy?.root ? filterTree(hierarchy.root, searchQuery) : null;
+
+  if (isManufacturing) {
+    return (
+      <>
+        {!manufacturingNavOpen && (
+          <button
+            type="button"
+            title="Open navigation"
+            aria-label="Open navigation"
+            onClick={() => setManufacturingNavOpen(true)}
+            className="absolute left-0 top-1/2 z-30 flex h-14 w-5 -translate-y-1/2 items-center justify-center rounded-r-md border border-l-0 border-tesla-border bg-tesla-surface/95 text-tesla-muted shadow-md backdrop-blur transition hover:w-6 hover:border-tesla-accent hover:bg-tesla-surface hover:text-tesla-text"
+          >
+            <span className="text-sm leading-none">›</span>
+          </button>
+        )}
+
+        {manufacturingNavOpen && (
+          <>
+            <button
+              type="button"
+              aria-label="Close navigation"
+              className="nav-float-backdrop absolute inset-0 z-30 bg-black/40"
+              onClick={() => setManufacturingNavOpen(false)}
+            />
+            <nav className="nav-float-enter absolute bottom-0 left-0 top-0 z-40 flex w-48 flex-col border-r border-tesla-border bg-tesla-surface shadow-2xl">
+              <div className="flex items-center justify-between border-b border-tesla-border px-2 py-2">
+                <span className="text-[10px] font-medium uppercase tracking-wider text-tesla-muted">
+                  Navigation
+                </span>
+                <button
+                  type="button"
+                  title="Collapse"
+                  onClick={() => setManufacturingNavOpen(false)}
+                  className="rounded px-1.5 py-0.5 text-sm text-tesla-muted transition hover:bg-tesla-border/50 hover:text-tesla-text"
+                >
+                  «
+                </button>
+              </div>
+              <div className="border-b border-tesla-border px-2 py-1.5">
+                <span className="text-[10px] font-medium uppercase tracking-wider text-tesla-muted">
+                  Vehicles
+                </span>
+              </div>
+              <VehiclesList
+                vehicles={vehicles}
+                vehicleId={vehicleId}
+                isLoading={isLoading}
+                onSelect={handleVehicleSelect}
+                compact
+              />
+              <UtilitiesButtons disabled={!vehicleId} compact vertical />
+            </nav>
+          </>
+        )}
+      </>
+    );
+  }
 
   return (
     <>
-      <nav className="panel-fade-in flex w-64 flex-col border-r border-tesla-border bg-tesla-surface">
+      <nav
+        className={clsx(
+          "flex w-64 shrink-0 flex-col overflow-hidden border-r border-tesla-border bg-tesla-surface",
+        )}
+      >
         <div className="border-b border-tesla-border p-3">
           <span className="text-xs font-medium uppercase tracking-wider text-tesla-muted">
             Vehicles
           </span>
-          {deleteError && (
-            <p className="mt-2 text-xs text-amber-200">{deleteError}</p>
-          )}
+          {deleteError && <p className="mt-2 text-xs text-amber-200">{deleteError}</p>}
         </div>
-        <ul className="max-h-36 overflow-y-auto border-b border-tesla-border p-2">
-          {isLoading && <li className="px-2 py-1 text-sm text-tesla-muted">Loading…</li>}
-          {vehicles.map((v) => (
-            <li key={v.id}>
-              <button
-                type="button"
-                onClick={() => {
-                  if (v.current_revision_id) {
-                    selectVehicle(v.id, v.current_revision_id);
-                    setFocus(null);
-                    setProjectionLevel("vehicle");
-                  }
-                }}
-                className={clsx(
-                  "w-full rounded-md px-2 py-2 text-left text-sm transition",
-                  vehicleId === v.id
-                    ? "bg-tesla-accent/15 text-tesla-text"
-                    : "text-tesla-muted hover:bg-tesla-border/50 hover:text-tesla-text",
-                )}
-                title={v.name}
-              >
-                <span className="block truncate">{v.name}</span>
-              </button>
-            </li>
-          ))}
-          {!isLoading && vehicles.length === 0 && (
-            <li className="px-2 py-1 text-sm text-tesla-muted">No vehicles</li>
-          )}
-        </ul>
-        <div className="border-b border-tesla-border p-2">
-          <p className="mb-2 px-2 text-xs uppercase tracking-wider text-tesla-muted">Utilities</p>
-          <div className="grid grid-cols-2 gap-1">
-            <button
-              type="button"
-              disabled={!vehicleId}
-              className="rounded border border-tesla-border px-2 py-1 text-center text-xs leading-tight text-tesla-muted transition hover:border-tesla-accent hover:text-tesla-text disabled:opacity-40"
-              onClick={() => {
-                setLibraryTab("node");
-                setShowLibraryManager(true);
-              }}
-            >
-              Node Library
-            </button>
-            <button
-              type="button"
-              disabled={!vehicleId}
-              className="rounded border border-tesla-border px-2 py-1 text-center text-xs leading-tight text-tesla-muted transition hover:border-tesla-accent hover:text-tesla-text disabled:opacity-40"
-              onClick={() => {
-                setLibraryTab("enclosure");
-                setShowLibraryManager(true);
-              }}
-            >
-              Enclosure Library
-            </button>
-            <button
-              type="button"
-              disabled={!vehicleId}
-              className="rounded border border-tesla-border px-2 py-1 text-center text-xs leading-tight text-tesla-muted transition hover:border-tesla-accent hover:text-tesla-text disabled:opacity-40"
-              onClick={() => setShowNetManager(true)}
-            >
-              Net Manager
-            </button>
-            <button
-              type="button"
-              disabled={!vehicleId}
-              className="rounded border border-tesla-border px-2 py-1 text-center text-xs leading-tight text-tesla-muted transition hover:border-tesla-accent hover:text-tesla-text disabled:opacity-40"
-              onClick={() => setShowPinNameLibrary(true)}
-            >
-              Pin Name Library
-            </button>
-          </div>
-        </div>
+        <VehiclesList
+          vehicles={vehicles}
+          vehicleId={vehicleId}
+          isLoading={isLoading}
+          onSelect={handleVehicleSelect}
+        />
+        <UtilitiesButtons disabled={!vehicleId} />
         <div className="flex-1 overflow-y-auto p-2">
-          <p className="mb-2 px-2 text-xs uppercase tracking-wider text-tesla-muted">
-            Topology
-          </p>
-          {!vehicleId && (
-            <p className="px-2 text-sm text-tesla-muted">Select a vehicle</p>
-          )}
+          <p className="mb-2 px-2 text-xs uppercase tracking-wider text-tesla-muted">Topology</p>
+          {!vehicleId && <p className="px-2 text-sm text-tesla-muted">Select a vehicle</p>}
           {filteredRoot && (
             <ul>
               <TreeNode

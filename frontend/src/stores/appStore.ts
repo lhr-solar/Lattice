@@ -22,7 +22,9 @@ interface AppState {
   showHelpModal: boolean;
   libraryTab: LibraryTab;
   searchQuery: string;
+  manufacturingNavOpen: boolean;
   setMode: (mode: AppMode) => void;
+  setManufacturingNavOpen: (open: boolean) => void;
   selectVehicle: (vehicleId: string | null, revisionId: string | null) => void;
   setProjectionLevel: (level: ProjectionLevel) => void;
   setFocus: (focusId: string | null, kind?: string | null) => void;
@@ -59,7 +61,10 @@ export const useAppStore = create<AppState>((set) => ({
   showHelpModal: false,
   libraryTab: "connector",
   searchQuery: "",
-  setMode: (mode) => set({ mode }),
+  manufacturingNavOpen: false,
+  setMode: (mode) =>
+    set(mode === "manufacturing" ? { mode, manufacturingNavOpen: false } : { mode }),
+  setManufacturingNavOpen: (manufacturingNavOpen) => set({ manufacturingNavOpen }),
   selectVehicle: (vehicleId, revisionId) =>
     set({
       selectedVehicleId: vehicleId,

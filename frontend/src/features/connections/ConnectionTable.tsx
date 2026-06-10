@@ -7,9 +7,11 @@ import {
   disconnectEdge,
   fetchConnectionScopes,
   fetchConnectionTable,
+  type ConnectionDestination,
   type ConnectPinsResult,
   type PinConnectionRow,
 } from "@/api/connections";
+import { updateEdge } from "@/api/topology";
 import { fetchNets, fetchPins, type NetPinInfo } from "@/api/nets";
 import { updateNet } from "@/api/nets";
 import { updateConnectorPin } from "@/api/instances";
@@ -21,7 +23,9 @@ import {
 } from "@/api/shorts";
 import { useAppStore } from "@/stores/appStore";
 import { ConnectorInstanceLabel } from "@/components/library/ConnectorInstanceLabel";
-
+import { WireColorPresetButton, WireColorSwatch } from "@/components/wiring/WireColorSwatch";
+import { WIRE_COLOR_PRESETS } from "@/lib/wireColors";
+import { useAutoDismiss } from "@/hooks/useAutoDismiss";
 import { invalidateRevisionDomains } from "@/lib/revisionInvalidation";
 
 function invalidateAll(qc: QueryClient) {
@@ -157,11 +161,7 @@ export function ConnectionTable() {
     null,
   );
 
-  useEffect(() => {
-    if (!flash) return;
-    const t = setTimeout(() => setFlash(null), 6000);
-    return () => clearTimeout(t);
-  }, [flash]);
+  useAutoDismiss(flash, () => setFlash(null));
 
   const scopeParams = useMemo(() => {
     if (scope.kind === "vehicle") return { vehicle_level: true };
@@ -759,6 +759,147 @@ function NetCell({
   );
 }
 
+
+function WireDestinationChip({
+  dest,
+  vehicleId,
+  revisionId,
+  onChanged,
+  onRemove,
+}: {
+  dest: ConnectionDestination;
+  vehicleId: string;
+  revisionId: string;
+  onChanged: () => void;
+  onRemove: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [gaugeText, setGaugeText] = useState("");
+  const [colorText, setColorText] = useState("");
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (open) {
+      setGaugeText(dest.gauge_awg ?? "");
+      setColorText(dest.wire_color ?? "");
+    }
+  }, [open, dest.gauge_awg, dest.wire_color]);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDown(e: MouseEvent) {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  const save = useMutation({
+    mutationFn: () => {
+      const body: { gauge_awg?: number | null; wire_color?: string | null } = {};
+      const gaugeTrim = gaugeText.trim();
+      const newGauge = gaugeTrim ? Number(gaugeTrim) : null;
+      const currentGauge = dest.gauge_awg ? Number(dest.gauge_awg) : null;
+      if (newGauge !== currentGauge) body.gauge_awg = newGauge;
+      const newColor = colorText.trim() || null;
+      if (newColor !== dest.wire_color) body.wire_color = newColor;
+      if (Object.keys(body).length === 0) return Promise.resolve(null);
+      return updateEdge(vehicleId, revisionId, dest.edge_id, body);
+    },
+    onSuccess: () => {
+      setOpen(false);
+      onChanged();
+    },
+  });
+
+  const hasColorOverride = dest.wire_color !== null;
+  const displayColor = dest.effective_wire_color;
+  const pathLabel =
+    dest.other_path_label || `${dest.other_connector_label} / #${dest.other_pin_number}`;
+
+  return (
+    <div ref={ref} className="relative inline-flex max-w-full items-center gap-0.5">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex max-w-full items-center gap-1 rounded border border-tesla-border bg-tesla-bg px-2 py-0.5 text-xs transition hover:border-tesla-accent"
+        title={`${pathLabel} · ${dest.gauge_label}${displayColor ? ` · ${displayColor}` : ""}`}
+      >
+        <span className="truncate">{pathLabel}</span>
+        <span className="shrink-0 text-tesla-muted">· {dest.gauge_label}</span>
+        {displayColor && (
+          <span className="shrink-0">
+            <WireColorSwatch
+              label={displayColor}
+              className={clsx(!hasColorOverride && "opacity-80")}
+            />
+            {!hasColorOverride && (
+              <span className="ml-0.5 text-[10px] italic text-tesla-muted">(net)</span>
+            )}
+          </span>
+        )}
+      </button>
+      <button
+        type="button"
+        className="shrink-0 rounded px-0.5 text-tesla-muted hover:text-tesla-accent"
+        onClick={onRemove}
+      >
+        ×
+      </button>
+
+      {open && (
+        <div className="absolute left-0 top-full z-40 mt-1 w-64 rounded-md border border-tesla-border bg-tesla-surface p-3 shadow-xl">
+          <p className="mb-2 truncate text-xs font-medium">{pathLabel}</p>
+          <label className="mb-0.5 block text-[11px] uppercase tracking-wide text-tesla-muted">
+            Gauge (AWG)
+          </label>
+          <input
+            value={gaugeText}
+            onChange={(e) => setGaugeText(e.target.value)}
+            placeholder={dest.gauge_label}
+            className="mb-1 w-full rounded border border-tesla-border bg-tesla-bg px-2 py-1 text-sm outline-none focus:border-tesla-accent"
+          />
+          <p className="mb-2 text-[10px] text-tesla-muted">
+            Empty = no gauge on this wire. Display falls back to connector template when unset.
+          </p>
+          <label className="mb-0.5 block text-[11px] uppercase tracking-wide text-tesla-muted">
+            Wire color
+          </label>
+          <input
+            value={colorText}
+            onChange={(e) => setColorText(e.target.value)}
+            placeholder={dest.net_default_wire_color ?? "No net default"}
+            className="mb-1 w-full rounded border border-tesla-border bg-tesla-bg px-2 py-1 text-sm outline-none focus:border-tesla-accent"
+          />
+          <div className="mb-2 flex flex-wrap gap-1">
+            {WIRE_COLOR_PRESETS.map((c) => (
+              <WireColorPresetButton key={c} code={c} onClick={() => setColorText(c)} />
+            ))}
+          </div>
+          {dest.net_default_wire_color && (
+            <button
+              type="button"
+              onClick={() => setColorText("")}
+              className="mb-2 flex items-center gap-1.5 text-[11px] text-tesla-muted hover:text-tesla-text"
+            >
+              Use net default
+              <WireColorSwatch label={dest.net_default_wire_color} />
+            </button>
+          )}
+          <button
+            type="button"
+            disabled={save.isPending}
+            onClick={() => save.mutate()}
+            className="w-full rounded border border-tesla-border px-2 py-1 text-xs transition hover:border-tesla-accent disabled:opacity-40"
+          >
+            {save.isPending ? "Saving…" : "Save wire"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DestinationsCell({
   row,
   allPins,
@@ -845,23 +986,14 @@ function DestinationsCell({
   return (
     <div ref={ref} className="relative flex flex-wrap items-center gap-1.5">
       {row.destinations.map((d) => (
-        <span
+        <WireDestinationChip
           key={d.edge_id}
-          className="inline-flex max-w-full items-center gap-1 rounded border border-tesla-border bg-tesla-bg px-2 py-0.5 text-xs"
-          title={d.other_path_label || `${d.other_connector_label} #${d.other_pin_number} ${d.other_pin_name}`}
-        >
-          <span className="truncate">
-            {d.other_path_label || `${d.other_connector_label} / #${d.other_pin_number}`}
-          </span>
-          {d.wire_color && <span className="shrink-0 text-tesla-muted">· {d.wire_color}</span>}
-          <button
-            type="button"
-            className="shrink-0 text-tesla-muted hover:text-tesla-accent"
-            onClick={() => remove.mutate(d.edge_id)}
-          >
-            ×
-          </button>
-        </span>
+          dest={d}
+          vehicleId={vehicleId}
+          revisionId={revisionId}
+          onChanged={onChanged}
+          onRemove={() => remove.mutate(d.edge_id)}
+        />
       ))}
 
       <button
