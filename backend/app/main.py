@@ -7,6 +7,7 @@ from app.api.v1.router import api_router
 from app.core.config import settings
 from app.infra.db.session import async_session_factory
 from app.services.user_service import UserService
+from app.static_spa import mount_spa, resolve_static_dir
 
 
 @asynccontextmanager
@@ -38,3 +39,9 @@ app.include_router(api_router, prefix="/api/v1")
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+if settings.serve_static_ui:
+    static_dir = resolve_static_dir(settings.static_ui_dir)
+    if static_dir is not None:
+        mount_spa(app, static_dir)

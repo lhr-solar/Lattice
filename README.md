@@ -34,6 +34,54 @@ make db-migrate
 
 If `make install` failed earlier with `python: command not found`, pull latest Makefile and run `make install` again.
 
+## Production (single server)
+
+The API serves the built React UI from `frontend/dist` when that folder exists. One process handles both REST/WebSocket API and static assets.
+
+```bash
+# Configure backend (copy and edit if needed)
+cp backend/.env.example backend/.env
+
+# Database must be running and migrated
+make up
+make db-migrate
+
+# Build UI + start API (no hot reload)
+make prod
+```
+
+Open **http://localhost:8000** for the app. API docs remain at **http://localhost:8000/docs**.
+
+Useful environment variables in `backend/.env`:
+
+| Variable | Purpose |
+| -------- | ------- |
+| `DATABASE_URL` | PostgreSQL connection string |
+| `CORS_ORIGINS` | Allowed browser origins (comma-separated); include your public URL if UI and API are on different hosts |
+| `SERVE_STATIC_UI` | Set `false` to disable static UI mounting (API-only mode) |
+| `STATIC_UI_DIR` | Optional override path to a Vite `dist` folder |
+
+Build only the frontend:
+
+```bash
+make fe-build
+```
+
+Run the API against an existing build (development-style reload optional):
+
+```bash
+make fe-build
+make api
+```
+
+## GitHub Pages (frontend only)
+
+Workflow **Deploy frontend to GitHub Pages** (`.github/workflows/deploy-gh-pages.yml`) builds the UI from the checked-out branch and pushes `frontend/dist` to the `gh-pages` branch. Trigger it manually from the repository **Actions** tab.
+
+After the first deploy, enable **Settings → Pages → Deploy from branch → `gh-pages` / root**.
+
+The build uses `VITE_BASE_PATH=/<repo-name>/` for project pages (`https://<org>.github.io/<repo>/`). It still calls `/api/v1` on the same host, so GitHub Pages hosting alone will not reach a backend unless you proxy API traffic separately or point `VITE_API_BASE_URL` at a live API URL in the workflow.
+
 ## API layout
 
 

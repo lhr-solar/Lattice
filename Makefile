@@ -1,6 +1,6 @@
 PYTHON ?= python3
 
-.PHONY: up down install db-migrate db-revision api fe setup
+.PHONY: up down install db-migrate db-revision api fe fe-build prod setup
 
 # Full first-time setup: env files, postgres, deps, migrations
 setup:
@@ -37,3 +37,9 @@ api:
 
 fe:
 	cd frontend && npm run dev --host
+
+fe-build:
+	cd frontend && npm ci && npm run build
+
+prod: fe-build
+	cd backend && . .venv/bin/activate && PYTHONPATH=. uvicorn app.main:app --host 0.0.0.0 --port 8000

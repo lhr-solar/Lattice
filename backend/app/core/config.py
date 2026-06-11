@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     session_secret: str = "dev-secret-change-in-production"
     api_host: str = "0.0.0.0"
     api_port: int = 8000
+    serve_static_ui: bool = True
+    static_ui_dir: str | None = None
 
     @property
     def cors_origin_list(self) -> list[str]:
