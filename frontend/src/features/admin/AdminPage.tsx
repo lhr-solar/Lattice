@@ -28,6 +28,7 @@ import { ConfirmModal, Modal, PromptModal } from "@/components/ui/Modal";
 import { GearIcon } from "@/components/ui/GearIcon";
 import { HelpButton } from "@/components/shell/HelpButton";
 import { OpenArrowIcon } from "@/components/ui/OpenArrowIcon";
+import { PasswordInput, ReadOnlyPasswordReveal } from "@/components/ui/PasswordInput";
 import { PasswordModeField } from "@/components/ui/PasswordModeField";
 import { usePresenceStore } from "@/stores/presenceStore";
 import { useSessionStore } from "@/stores/sessionStore";
@@ -420,11 +421,14 @@ export function AdminPage({ onBack }: AdminPageProps) {
         <section className="rounded-lg border border-tesla-border bg-tesla-surface p-5">
           <div className="mb-4 flex flex-wrap items-center gap-2 rounded border border-tesla-border bg-tesla-bg px-3 py-2">
             <span className="text-sm text-tesla-muted">Default password for new users:</span>
-            <span className="text-sm text-tesla-text">
-              {defaultPasswordData?.configured
-                ? "Configured (stored server-side)"
-                : "Using system admin password"}
-            </span>
+            {defaultPasswordData?.password ? (
+              <ReadOnlyPasswordReveal password={defaultPasswordData.password} />
+            ) : (
+              <span className="text-sm text-tesla-muted">Loading…</span>
+            )}
+            {!defaultPasswordData?.configured && (
+              <span className="text-xs text-tesla-muted">(system admin password)</span>
+            )}
             <button
               type="button"
               onClick={() => {
@@ -623,43 +627,34 @@ export function AdminPage({ onBack }: AdminPageProps) {
             {vehicles.map((vehicle) => (
               <li key={vehicle.id} className="flex items-center gap-2 px-3 py-2 text-sm">
                 <span className="min-w-0 flex-1 truncate text-tesla-text">{vehicle.name}</span>
-                {vehicle.current_revision_id && vehicle.current_revision_number != null ? (
-                  <div className="flex min-w-0 max-w-[14rem] items-center gap-1.5">
-                    <span
-                      className="h-2 w-2 shrink-0 rounded-full bg-tesla-accent"
-                      title="Current revision"
-                      aria-hidden
-                    />
-                    <span className="min-w-0 truncate text-xs text-tesla-muted">
-                      R{vehicle.current_revision_number}
-                      {vehicle.current_revision_label
-                        ? ` | ${vehicle.current_revision_label}`
-                        : ""}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setRevisionHistoryTarget({ id: vehicle.id, name: vehicle.name })
-                      }
-                      className="flex shrink-0 items-center rounded-md border border-tesla-border px-1.5 py-1 text-tesla-muted transition hover:border-tesla-accent hover:text-tesla-text"
-                      aria-label={`Open revision history for ${vehicle.name}`}
-                      title="Open revision history"
-                    >
-                      <OpenArrowIcon />
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setRevisionHistoryTarget({ id: vehicle.id, name: vehicle.name })
-                    }
-                    className="flex shrink-0 items-center gap-1.5 rounded-md border border-tesla-border px-2 py-1 text-xs text-tesla-muted transition hover:border-tesla-accent hover:text-tesla-text"
-                  >
-                    Revisions
-                    <OpenArrowIcon />
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setRevisionHistoryTarget({ id: vehicle.id, name: vehicle.name })
+                  }
+                  className="flex min-w-0 max-w-[14rem] shrink-0 items-center gap-1.5 rounded-md border border-tesla-border px-2 py-1 text-xs text-tesla-muted transition hover:border-tesla-accent hover:text-tesla-text"
+                  aria-label={`Open revision history for ${vehicle.name}`}
+                  title="Open revision history"
+                >
+                  {vehicle.current_revision_id && vehicle.current_revision_number != null ? (
+                    <>
+                      <span
+                        className="h-2 w-2 shrink-0 rounded-full bg-tesla-accent"
+                        title="Current revision"
+                        aria-hidden
+                      />
+                      <span className="min-w-0 truncate">
+                        R{vehicle.current_revision_number}
+                        {vehicle.current_revision_label
+                          ? ` | ${vehicle.current_revision_label}`
+                          : ""}
+                      </span>
+                    </>
+                  ) : (
+                    <span>Revisions</span>
+                  )}
+                  <OpenArrowIcon className="h-3 w-3 shrink-0" />
+                </button>
                 <button
                   type="button"
                   onClick={() => {

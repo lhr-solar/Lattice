@@ -65,6 +65,31 @@ export function EyeVisibilityIcon({ hidden, className }: { hidden: boolean; clas
   );
 }
 
+export function ReadOnlyPasswordReveal({
+  password,
+  className,
+}: {
+  password: string;
+  className?: string;
+}) {
+  const [visible, setVisible] = useState(false);
+  const masked = password.length > 0 ? "•".repeat(password.length) : "—";
+
+  return (
+    <span className={clsx("inline-flex items-center gap-1.5", className)}>
+      <span className="font-mono text-sm text-tesla-text">{visible ? password : masked}</span>
+      <button
+        type="button"
+        onClick={() => setVisible((v) => !v)}
+        className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-tesla-muted transition hover:text-tesla-text"
+        aria-label={visible ? "Hide password" : "Show password"}
+      >
+        <EyeVisibilityIcon hidden={visible} />
+      </button>
+    </span>
+  );
+}
+
 export function PasswordInput({
   value,
   onChange,
