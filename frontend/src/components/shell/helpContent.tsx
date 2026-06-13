@@ -101,7 +101,49 @@ export const ADMIN_HELP_SECTIONS: HelpSection[] = [
           "{{+ New vehicle}} creates a blank vehicle with a default name; use {{Rename}} to match your program.",
           "{{Rename}} updates the display name shown in the hierarchy and manufacturing views.",
           "{{Delete}} removes the vehicle, all revisions, and every instance tied to it. This cannot be undone.",
+          "The current revision (blue dot, R#, and label) is shown on each row; use {{Revisions}} or the arrow to open revision history.",
         ],
+      },
+    ],
+  },
+  {
+    id: "admin-revisions",
+    title: "Revision history & reverting",
+    adminOnly: true,
+    content: [
+      {
+        type: "p",
+        text: "Open revision history from the {{Revisions}} button or the arrow next to the current revision on any vehicle row.",
+      },
+      {
+        type: "h4",
+        text: "Revision timeline",
+      },
+      {
+        type: "ul",
+        items: [
+          "Revisions are listed newest first; scroll down to load older entries.",
+          "Search by label, author, revision number, or revision ID.",
+          "Each entry shows R#, status (Draft or Published), label, author, created and published times, parent lineage, and full revision ID.",
+          "The working draft is marked {{Current}}.",
+        ],
+      },
+      {
+        type: "h4",
+        text: "Reverting",
+      },
+      {
+        type: "ul",
+        items: [
+          "{{Revert to this}} on any non-current revision creates a new draft copied from that snapshot.",
+          "The vehicle head switches to the new draft automatically; older revisions remain in the timeline.",
+          "Revert descriptions are generated automatically from the source revision and timestamp.",
+          "Designers with the vehicle open sync forward to the new head when vehicles data refreshes.",
+        ],
+      },
+      {
+        type: "p",
+        text: "Publishing (in the design workspace) is separate from revert: publish locks the current draft and starts a new draft for continued work. Revert branches from any past revision without removing history.",
       },
     ],
   },
@@ -113,6 +155,22 @@ export const ADMIN_HELP_SECTIONS: HelpSection[] = [
       {
         type: "p",
         text: "Destructive clears are per vehicle. Confirm carefully — there is no undo.",
+      },
+      {
+        type: "h4",
+        text: "{{Clear all revisions}}",
+      },
+      {
+        type: "p",
+        text: "Deletes older revisions but keeps the current draft design. The surviving draft is renumbered to R1 Draft. Library templates are kept.",
+      },
+      {
+        type: "h4",
+        text: "{{Clear topology}}",
+      },
+      {
+        type: "p",
+        text: "On the current draft only: removes placed enclosures, nodes, connectors, and all wires. Vehicle-scoped library templates are kept.",
       },
       {
         type: "h4",

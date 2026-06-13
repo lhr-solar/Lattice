@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { fetchMe } from "@/api/auth";
 import { AppShell } from "@/components/shell/AppShell";
+import { HelpModal } from "@/components/shell/HelpModal";
 import { AdminPage } from "@/features/admin/AdminPage";
 import { LoginGate } from "@/features/auth/LoginGate";
 import { usePresence } from "@/hooks/usePresence";
@@ -53,7 +54,12 @@ export default function App() {
   }
 
   if (screen === "admin") {
-    return <AdminPage onBack={() => setScreen("app")} />;
+    return (
+      <>
+        <HelpModal />
+        <AdminPage onBack={() => setScreen("app")} />
+      </>
+    );
   }
 
   return <AppShell onOpenAdmin={() => setScreen("admin")} />;

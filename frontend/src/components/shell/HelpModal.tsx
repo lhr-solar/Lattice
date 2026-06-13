@@ -3,9 +3,9 @@ import clsx from "clsx";
 import { latticeMarkLogo } from "@/assets/logos";
 import { ModalOverlay } from "@/components/ui/Modal";
 import {
-  ADMIN_HELP_SECTIONS,
   buildHelpSections,
   type HelpBlock,
+  type HelpSection,
 } from "@/components/shell/helpContent";
 import { useAppStore } from "@/stores/appStore";
 import { useSessionStore } from "@/stores/sessionStore";
@@ -91,6 +91,24 @@ function HelpBlockView({ block }: { block: HelpBlock }) {
   }
 }
 
+function sectionSearchText(section: HelpSection): string {
+  const parts: string[] = [section.title];
+  for (const block of section.content) {
+    if (block.type === "p" || block.type === "h4") {
+      parts.push(block.text);
+    } else {
+      parts.push(...block.items);
+    }
+  }
+  return parts.join(" ").replace(/\{\{|\}\}/g, " ").toLowerCase();
+}
+
+function filterSections(sections: HelpSection[], query: string): HelpSection[] {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) return sections;
+  return sections.filter((section) => sectionSearchText(section).includes(normalized));
+}
+
 export function HelpModal() {
   const showHelpModal = useAppStore((s) => s.showHelpModal);
   const setShowHelpModal = useAppStore((s) => s.setShowHelpModal);
@@ -98,14 +116,35 @@ export function HelpModal() {
 
   const sections = useMemo(() => buildHelpSections(isAdmin), [isAdmin]);
   const [activeId, setActiveId] = useState(sections[0]?.id ?? "");
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const filteredSections = useMemo(
+    () => filterSections(sections, searchQuery),
+    [sections, searchQuery],
+  );
 
   useEffect(() => {
-    if (!showHelpModal) return;
+    if (!showHelpModal) {
+      setSearchQuery("");
+      return;
+    }
     const valid = sections.some((s) => s.id === activeId);
     if (!valid) setActiveId(sections[0]?.id ?? "");
   }, [showHelpModal, sections, activeId]);
 
-  const activeSection = sections.find((s) => s.id === activeId) ?? sections[0];
+  useEffect(() => {
+    if (!showHelpModal || filteredSections.length === 0) return;
+    if (!filteredSections.some((s) => s.id === activeId)) {
+      setActiveId(filteredSections[0].id);
+    }
+  }, [showHelpModal, filteredSections, activeId]);
+
+  const activeSection =
+    filteredSections.find((s) => s.id === activeId) ??
+    sections.find((s) => s.id === activeId) ??
+    sections[0];
+  const firstWorkspaceInView = filteredSections.find((s) => !s.adminOnly);
+  const showAdminGroup = isAdmin && filteredSections.some((s) => s.adminOnly);
 
   if (!showHelpModal) return null;
 
@@ -115,7 +154,7 @@ export function HelpModal() {
       onClose={() => setShowHelpModal(false)}
       layer="manager"
       ariaLabel="Lattice Help"
-      panelClassName="max-w-5xl"
+      panelClassName="max-w-5xl w-full"
     >
       <header className="relative flex items-center gap-2 border-b border-tesla-border px-5 py-3 pr-12">
         <img
@@ -135,44 +174,60 @@ export function HelpModal() {
         </button>
       </header>
 
-      <div className="flex min-h-[28rem] max-h-[min(36rem,70vh)]">
+      <div className="flex h-[min(36rem,70vh)]">
         <nav
-          className="w-52 shrink-0 overflow-y-auto border-r border-tesla-border bg-tesla-bg/40 px-2 py-3"
+          className="flex h-full w-52 shrink-0 flex-col border-r border-tesla-border bg-tesla-bg/40"
           aria-label="Help topics"
         >
-          {isAdmin && (
-            <p className="mb-2 px-2 text-[10px] font-medium uppercase tracking-wider text-tesla-muted">
-              Admin
-            </p>
-          )}
-          {sections.map((section, index) => {
-            const isFirstUserSection =
-              isAdmin && index === ADMIN_HELP_SECTIONS.length && !section.adminOnly;
-            return (
-              <div key={section.id}>
-                {isFirstUserSection && (
-                  <p className="mb-2 mt-3 px-2 text-[10px] font-medium uppercase tracking-wider text-tesla-muted">
-                    Workspace
-                  </p>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setActiveId(section.id)}
-                  className={clsx(
-                    "mb-0.5 w-full rounded-md px-2 py-1.5 text-left text-xs leading-snug transition",
-                    activeId === section.id
-                      ? "bg-tesla-accent/15 text-tesla-text"
-                      : "text-tesla-muted hover:bg-tesla-border/50 hover:text-tesla-text",
-                  )}
-                >
-                  {section.title}
-                </button>
-              </div>
-            );
-          })}
+          <div className="border-b border-tesla-border px-2 py-2">
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search help…"
+              className="w-full rounded-md border border-tesla-border bg-tesla-bg px-2 py-1.5 text-xs text-tesla-text outline-none transition focus:border-tesla-accent"
+              aria-label="Search help"
+            />
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
+            {showAdminGroup && (
+              <p className="mb-2 px-2 text-[10px] font-medium uppercase tracking-wider text-tesla-accent">
+                Admin
+              </p>
+            )}
+            {filteredSections.length === 0 ? (
+              <p className="px-2 text-xs text-tesla-muted">No topics match your search.</p>
+            ) : (
+              filteredSections.map((section) => {
+                const isFirstUserSection =
+                  isAdmin && !section.adminOnly && section.id === firstWorkspaceInView?.id;
+                return (
+                  <div key={section.id}>
+                    {isFirstUserSection && (
+                      <p className="mb-2 mt-3 px-2 text-[10px] font-medium uppercase tracking-wider text-tesla-accent">
+                        Workspace
+                      </p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setActiveId(section.id)}
+                      className={clsx(
+                        "mb-0.5 w-full rounded-md px-2 py-1.5 text-left text-xs leading-snug transition",
+                        activeId === section.id
+                          ? "bg-tesla-accent/15 text-tesla-text"
+                          : "text-tesla-muted hover:bg-tesla-border/50 hover:text-tesla-text",
+                      )}
+                    >
+                      {section.title}
+                    </button>
+                  </div>
+                );
+              })
+            )}
+          </div>
         </nav>
 
-        <div className="min-w-0 flex-1 overflow-y-auto px-5 py-4">
+        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-5 py-4">
           {activeSection && (
             <div className="space-y-3">
               <h3 className="text-lg font-medium text-tesla-text">{activeSection.title}</h3>

@@ -26,6 +26,7 @@ import { logout } from "@/api/auth";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { ConfirmModal, Modal, PromptModal } from "@/components/ui/Modal";
 import { GearIcon } from "@/components/ui/GearIcon";
+import { HelpButton } from "@/components/shell/HelpButton";
 import { OpenArrowIcon } from "@/components/ui/OpenArrowIcon";
 import { PasswordModeField } from "@/components/ui/PasswordModeField";
 import { usePresenceStore } from "@/stores/presenceStore";
@@ -366,6 +367,7 @@ export function AdminPage({ onBack }: AdminPageProps) {
             <GearIcon size="md" className="text-orange-300" />
             Admin Settings
           </span>
+          <HelpButton />
         </header>
         <div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto text-tesla-muted">
           Admin access required.
@@ -388,6 +390,7 @@ export function AdminPage({ onBack }: AdminPageProps) {
           <GearIcon size="md" className="text-orange-300" />
           Admin Settings
         </span>
+        <HelpButton />
         <div className="ml-auto flex items-center gap-3 text-sm text-tesla-muted">
           <span>{username}</span>
           <button
