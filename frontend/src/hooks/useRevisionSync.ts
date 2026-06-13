@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { fetchRevisions } from "@/api/revisions";
 import type { PinShort } from "@/api/shorts";
 import type { DesignEdgeDto, DesignGraphProjectionDto } from "@/api/types";
@@ -89,6 +89,18 @@ function makeShortProjectionEdge(
   };
 }
 
+/** Wire edges are patched optimistically, but pin net labels live on projection nodes. */
+const WIRING_SIDE_EFFECT_DOMAINS = [
+  "design-projection",
+  "nets",
+  "pins",
+  "connection-table",
+] as const;
+
+function invalidateWiringSideEffects(queryClient: QueryClient): void {
+  invalidateRevisionDomains(queryClient, [...WIRING_SIDE_EFFECT_DOMAINS]);
+}
+
 export function useRevisionSync(): void {
   const queryClient = useQueryClient();
   const vehicleId = useAppStore((s) => s.selectedVehicleId);
@@ -105,11 +117,15 @@ export function useRevisionSync(): void {
   const reset = useRevisionSyncStore((s) => s.reset);
   const username = useSessionStore((s) => s.username);
 
+  const username = useSessionStore((s) => s.username);
+
   const dirtyRef = useRef(dirtyFormCount);
   const sequenceRef = useRef(editSequence);
+  const usernameRef = useRef(username);
   const patchCoverageBySequenceRef = useRef<Map<number, Set<string>>>(new Map());
   dirtyRef.current = dirtyFormCount;
   sequenceRef.current = editSequence;
+  usernameRef.current = username;
 
   const { data: revisionsData } = useQuery({
     queryKey: ["revisions", vehicleId],
@@ -158,6 +174,7 @@ export function useRevisionSync(): void {
             return { ...current, edge_count: current.edge_count + 1 };
           },
         );
+        invalidateWiringSideEffects(queryClient);
         return;
       }
 
@@ -180,6 +197,7 @@ export function useRevisionSync(): void {
             return { ...current, edge_count: Math.max(0, current.edge_count - 1) };
           },
         );
+        invalidateWiringSideEffects(queryClient);
         return;
       }
 
@@ -259,7 +277,7 @@ export function useRevisionSync(): void {
 
         setEditSequence(event.edit_sequence);
         const isOwnEdit = Boolean(
-          event.changed_by && username && event.changed_by === username,
+          event.changed_by && usernameRef.current && event.changed_by === usernameRef.current,
         );
         if (dirtyRef.current > 0 && !isOwnEdit) {
           markStale(event.changed_by);
@@ -280,14 +298,8 @@ export function useRevisionSync(): void {
       setEditSequence(event.edit_sequence);
 
       const isOwnEdit = Boolean(
-        event.changed_by && username && event.changed_by === username,
+        event.changed_by && usernameRef.current && event.changed_by === usernameRef.current,
       );
-
-      if (dirtyRef.current > 0) {
-        if (isOwnEdit) return;
-        markStale(event.changed_by);
-        return;
-      }
 
       const coverage = patchCoverageBySequenceRef.current.get(event.edit_sequence);
       if (coverage) {
@@ -296,6 +308,13 @@ export function useRevisionSync(): void {
         if (remainingDomains.length > 0) {
           invalidateRevisionDomains(queryClient, remainingDomains);
         }
+        if (dirtyRef.current > 0 && isOwnEdit) return;
+        return;
+      }
+
+      if (dirtyRef.current > 0) {
+        if (isOwnEdit) return;
+        markStale(event.changed_by);
         return;
       }
 

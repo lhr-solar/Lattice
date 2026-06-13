@@ -150,7 +150,6 @@ export function TopologyCanvas() {
   const setPairingPinA = useAppStore((s) => s.setPairingPinA);
   const clearPairing = useAppStore((s) => s.clearPairing);
   const editSequence = useRevisionSyncStore((s) => s.editSequence);
-  const syncStatus = useRevisionSyncStore((s) => s.syncStatus);
   const queryClient = useQueryClient();
   const [wireError, setWireError] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
@@ -168,7 +167,6 @@ export function TopologyCanvas() {
       "shorts",
     ]);
   }
-  const shouldFallbackInvalidate = syncStatus !== "connected";
 
   const quickPairMutation = useMutation({
     mutationFn: ({ pinAId, pinBId }: { pinAId: string; pinBId: string }) =>
@@ -181,9 +179,7 @@ export function TopologyCanvas() {
     onSuccess: () => {
       clearPairing();
       setWireError(null);
-      if (shouldFallbackInvalidate) {
-        invalidateWiring();
-      }
+      invalidateWiring();
     },
     onError: (error) => setWireError(handleMutationError(error, "Failed to create wire.")),
   });
@@ -195,18 +191,12 @@ export function TopologyCanvas() {
     },
     onSuccess: () => {
       setWireError(null);
-      if (shouldFallbackInvalidate) {
-        invalidateWiring();
-      }
+      invalidateWiring();
     },
     onError: (error) => {
       if (error instanceof ApiError && error.status === 404) {
         // Another user already deleted this edge. Sync UI and suppress the error.
         setWireError(null);
-        if (shouldFallbackInvalidate) {
-          invalidateWiring();
-        }
-        // This is a definitive state correction, so we always invalidate to re-sync.
         invalidateWiring();
         return;
       }
@@ -237,16 +227,12 @@ export function TopologyCanvas() {
     },
     onSuccess: () => {
       setWireError(null);
-      if (shouldFallbackInvalidate) {
-        invalidateWiring();
-      }
+      invalidateWiring();
     },
     onError: (error) => {
       if (error instanceof ApiError && error.status === 404) {
         setWireError(null);
-        if (shouldFallbackInvalidate) {
-          invalidateWiring();
-        }
+        invalidateWiring();
         return;
       }
       setWireError(handleMutationError(error, "Failed to remove short."));
