@@ -4,6 +4,7 @@ import clsx from "clsx";
 import { fetchNets, fetchPins, pairPins, type NetPinInfo } from "@/api/nets";
 import { useAutoDismiss } from "@/hooks/useAutoDismiss";
 import { useAppStore } from "@/stores/appStore";
+import { useRevisionSyncStore } from "@/stores/revisionSyncStore";
 
 export function PinPairingPanel() {
   const queryClient = useQueryClient();
@@ -13,6 +14,7 @@ export function PinPairingPanel() {
   const pairingPinAId = useAppStore((s) => s.pairingPinAId);
   const setPairingPinA = useAppStore((s) => s.setPairingPinA);
   const clearPairing = useAppStore((s) => s.clearPairing);
+  const editSequence = useRevisionSyncStore((s) => s.editSequence);
   const focusId = useAppStore((s) => s.focusId);
   const selectedNodeKind = useAppStore((s) => s.selectedNodeKind);
 
@@ -55,6 +57,7 @@ export function PinPairingPanel() {
         net_name: netMode === "new" ? newNetName.trim() : undefined,
         wire_color: wireColor || undefined,
         create_edge: true,
+        expected_edit_sequence: editSequence,
       }),
     onSuccess: () => {
       clearPairing();

@@ -24,11 +24,11 @@ export function updateUserPassword(userId: string, password: string) {
 }
 
 export function fetchDefaultPassword() {
-  return apiFetch<{ password: string }>("/admin/settings/default-password");
+  return apiFetch<{ configured: boolean }>("/admin/settings/default-password");
 }
 
 export function updateDefaultPassword(password: string) {
-  return apiFetch<{ password: string }>("/admin/settings/default-password", {
+  return apiFetch<{ configured: boolean }>("/admin/settings/default-password", {
     method: "PATCH",
     body: JSON.stringify({ password }),
   });

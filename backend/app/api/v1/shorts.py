@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
@@ -52,12 +52,17 @@ async def delete_pin_short(
     revision_id: UUID,
     connector_instance_id: UUID,
     short_id: UUID,
+    expected_edit_sequence: int | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ) -> None:
     _ = connector_instance_id
     await ShortService(db).delete_instance_short(
-        vehicle_id, revision_id, short_id, changed_by=user.username
+        vehicle_id,
+        revision_id,
+        short_id,
+        expected_edit_sequence=expected_edit_sequence,
+        changed_by=user.username,
     )
 
 

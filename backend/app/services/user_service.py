@@ -35,9 +35,12 @@ class UserService:
             return stored
         return settings.admin_password
 
-    async def set_default_password(self, password: str) -> str:
+    async def is_default_password_configured(self) -> bool:
+        return await self._get_setting(DEFAULT_USER_PASSWORD_KEY) is not None
+
+    async def set_default_password(self, password: str) -> None:
         await self._set_setting(DEFAULT_USER_PASSWORD_KEY, password)
-        return password
+        return None
 
     async def ensure_admin_user(self) -> None:
         username = settings.admin_username.strip()

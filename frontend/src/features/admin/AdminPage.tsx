@@ -23,7 +23,6 @@ import { logout } from "@/api/auth";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { ConfirmModal, Modal, PromptModal } from "@/components/ui/Modal";
 import { PasswordModeField } from "@/components/ui/PasswordModeField";
-import { EyeVisibilityIcon } from "@/components/ui/PasswordInput";
 import { usePresenceStore } from "@/stores/presenceStore";
 import { useSessionStore } from "@/stores/sessionStore";
 
@@ -45,7 +44,6 @@ export function AdminPage({ onBack }: AdminPageProps) {
   const [bulkUsernames, setBulkUsernames] = useState("");
   const [bulkPassword, setBulkPassword] = useState("");
   const [bulkUseDefaultPassword, setBulkUseDefaultPassword] = useState(true);
-  const [showDefaultPassword, setShowDefaultPassword] = useState(false);
   const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
   const [bulkPasswordOpen, setBulkPasswordOpen] = useState(false);
   const [bulkPasswordValue, setBulkPasswordValue] = useState("");
@@ -279,6 +277,10 @@ export function AdminPage({ onBack }: AdminPageProps) {
       queryClient.invalidateQueries({ queryKey: ["admin-users"] });
       setDeleteUserTarget(null);
     },
+    onError: (err) => {
+      setUserSuccess(null);
+      setUserError(err instanceof ApiError ? err.message : "Failed to delete user");
+    },
   });
 
   const createVehicleMutation = useMutation({
@@ -383,27 +385,15 @@ export function AdminPage({ onBack }: AdminPageProps) {
         <section className="rounded-lg border border-tesla-border bg-tesla-surface p-5">
           <div className="mb-4 flex flex-wrap items-center gap-2 rounded border border-tesla-border bg-tesla-bg px-3 py-2">
             <span className="text-sm text-tesla-muted">Default password for new users:</span>
-            {showDefaultPassword ? (
-              <span className="font-mono text-sm text-tesla-text">
-                {defaultPasswordData?.password ?? "…"}
-              </span>
-            ) : (
-              <span className="font-mono text-sm tracking-widest text-tesla-muted">••••••</span>
-            )}
-            <button
-              type="button"
-              onClick={() => setShowDefaultPassword((v) => !v)}
-              className="rounded p-1 text-tesla-muted transition hover:bg-tesla-border hover:text-tesla-text"
-              aria-label={showDefaultPassword ? "Hide default password" : "Show default password"}
-            >
-              <span className="block h-4 w-4">
-                <EyeVisibilityIcon hidden={showDefaultPassword} />
-              </span>
-            </button>
+            <span className="text-sm text-tesla-text">
+              {defaultPasswordData?.configured
+                ? "Configured (stored server-side)"
+                : "Using system admin password"}
+            </span>
             <button
               type="button"
               onClick={() => {
-                setDefaultPasswordEditValue(defaultPasswordData?.password ?? "");
+                setDefaultPasswordEditValue("");
                 setDefaultPasswordEditOpen(true);
               }}
               className="rounded px-2 py-1 text-xs text-tesla-muted transition hover:bg-tesla-border hover:text-tesla-text"
@@ -456,7 +446,7 @@ export function AdminPage({ onBack }: AdminPageProps) {
                 onModeChange={setSingleUseDefaultPassword}
                 password={singlePassword}
                 onPasswordChange={setSinglePassword}
-                defaultPassword={defaultPasswordData?.password ?? ""}
+                defaultConfigured={Boolean(defaultPasswordData?.configured)}
                 inputClassName="bg-tesla-surface"
               />
               <div className="flex flex-col gap-1.5">
@@ -718,7 +708,7 @@ export function AdminPage({ onBack }: AdminPageProps) {
             onModeChange={setBulkUseDefaultPassword}
             password={bulkPassword}
             onPasswordChange={setBulkPassword}
-            defaultPassword={defaultPasswordData?.password ?? ""}
+            defaultConfigured={Boolean(defaultPasswordData?.configured)}
             label="Password for all users"
           />
         </div>

@@ -12,7 +12,7 @@ interface PasswordModeFieldProps {
   onModeChange: (useDefault: boolean) => void;
   password: string;
   onPasswordChange: (password: string) => void;
-  defaultPassword: string;
+  defaultConfigured: boolean;
   label?: string;
   inputClassName?: string;
   fieldWidthClass?: string;
@@ -23,7 +23,7 @@ export function PasswordModeField({
   onModeChange,
   password,
   onPasswordChange,
-  defaultPassword,
+  defaultConfigured,
   label = "Password",
   inputClassName,
   fieldWidthClass = "w-44",
@@ -32,7 +32,7 @@ export function PasswordModeField({
     const nextUseDefault = mode === "default";
     onModeChange(nextUseDefault);
     if (nextUseDefault) {
-      onPasswordChange(defaultPassword);
+      onPasswordChange("");
     } else {
       onPasswordChange("");
     }
@@ -42,9 +42,15 @@ export function PasswordModeField({
     <div className={clsx("flex flex-col gap-1.5", fieldWidthClass)}>
       {label ? <span className="text-xs text-tesla-muted">{label}</span> : null}
       <PasswordInput
-        value={useDefault ? defaultPassword : password}
+        value={useDefault ? "" : password}
         onChange={onPasswordChange}
-        placeholder="Min 6 characters"
+        placeholder={
+          useDefault
+            ? defaultConfigured
+              ? "Uses saved default password"
+              : "Uses system admin password"
+            : "Min 6 characters"
+        }
         size="sm"
         disabled={useDefault}
         inputClassName={clsx("h-8", inputClassName)}

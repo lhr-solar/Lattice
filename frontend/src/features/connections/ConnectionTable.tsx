@@ -1,5 +1,5 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import {
   assignNetByName,
@@ -29,6 +29,7 @@ import { WIRE_COLOR_PRESETS } from "@/lib/wireColors";
 import { useAutoDismiss } from "@/hooks/useAutoDismiss";
 import { invalidateRevisionDomains } from "@/lib/revisionInvalidation";
 import { TopologyDestinationPicker } from "@/features/connections/TopologyDestinationPicker";
+import { useRevisionSyncStore } from "@/stores/revisionSyncStore";
 
 function invalidateAll(qc: QueryClient) {
   invalidateRevisionDomains(qc, [
@@ -150,6 +151,7 @@ function buildSections(rows: PinConnectionRow[], scopeKind: string): TableSectio
 }
 
 export function ConnectionTable() {
+  const PAGE_SIZE = 250;
   const qc = useQueryClient();
   const vehicleId = useAppStore((s) => s.selectedVehicleId);
   const revisionId = useAppStore((s) => s.selectedRevisionId);
@@ -160,6 +162,8 @@ export function ConnectionTable() {
 
   const [search, setSearch] = useState("");
   const deferredSearch = useDeferredValue(search);
+  const tableScrollRef = useRef<HTMLDivElement | null>(null);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const [flash, setFlash] = useState<{ kind: ConnectPinsResult["net_action"]; text: string } | null>(
     null,
   );
@@ -180,12 +184,53 @@ export function ConnectionTable() {
     enabled: Boolean(show && vehicleId && revisionId),
   });
 
-  const { data: rows = [], isLoading } = useQuery({
-    queryKey: ["connection-table", vehicleId, revisionId, scopeParams, deferredSearch],
-    queryFn: () =>
-      fetchConnectionTable(vehicleId!, revisionId!, { ...scopeParams, search: deferredSearch || undefined }),
+  const {
+    data: tablePages,
+    isLoading: isTableLoading,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = useInfiniteQuery({
+    queryKey: ["connection-table", vehicleId, revisionId, scopeParams, deferredSearch, PAGE_SIZE],
+    queryFn: ({ pageParam = 0 }) =>
+      fetchConnectionTable(vehicleId!, revisionId!, {
+        ...scopeParams,
+        search: deferredSearch || undefined,
+        limit: PAGE_SIZE,
+        offset: pageParam as number,
+      }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, pages) => {
+      const loaded = pages.reduce((sum, page) => sum + page.rows.length, 0);
+      return loaded < lastPage.total ? loaded : undefined;
+    },
     enabled: Boolean(show && vehicleId && revisionId),
   });
+  const tableData = tablePages?.pages[0];
+  const rows = useMemo(
+    () => (tablePages?.pages ?? []).flatMap((page) => page.rows),
+    [tablePages],
+  );
+
+  useEffect(() => {
+    if (!show || !hasNextPage || isFetchingNextPage) return;
+    const root = tableScrollRef.current;
+    const target = loadMoreRef.current;
+    if (!root || !target) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting && hasNextPage && !isFetchingNextPage) {
+            void fetchNextPage();
+          }
+        }
+      },
+      { root, rootMargin: "250px 0px", threshold: 0 },
+    );
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage, show]);
 
   // Global pin list powers the destination picker (cross-connector targets).
   const { data: allPins = [] } = useQuery({
@@ -219,6 +264,12 @@ export function ConnectionTable() {
             <p className="text-xs text-tesla-muted">
               Set each pin&apos;s destination — wires auto-mirror on the other pin and pick up its net.
             </p>
+            {tableData && tableData.total > rows.length && (
+              <p className="text-xs text-amber-200/90">
+                Showing {rows.length} of {tableData.total} rows (limit {tableData.limit}, offset{" "}
+                {tableData.offset}).
+              </p>
+            )}
           </div>
           <button
             type="button"
@@ -260,9 +311,9 @@ export function ConnectionTable() {
               )}
             </div>
 
-            <div className="min-h-0 flex-1 overflow-auto">
-              {isLoading && <p className="p-4 text-sm text-tesla-muted">Loading…</p>}
-              {!isLoading && rows.length === 0 && (
+            <div ref={tableScrollRef} className="min-h-0 flex-1 overflow-auto">
+              {isTableLoading && <p className="p-4 text-sm text-tesla-muted">Loading…</p>}
+              {!isTableLoading && rows.length === 0 && (
                 <p className="p-4 text-sm text-tesla-muted">
                   No pins in this scope. Build instances in Design first, or pick another scope.
                 </p>
@@ -301,6 +352,26 @@ export function ConnectionTable() {
                   ))}
                 </div>
               ))}
+              {!isTableLoading && rows.length > 0 && (
+                <div ref={loadMoreRef} className="flex flex-col items-center gap-2 px-4 py-3 text-center text-xs text-tesla-muted">
+                  <span>
+                    {isFetchingNextPage
+                      ? "Loading more…"
+                      : hasNextPage
+                        ? "Scroll to load more"
+                        : "End of results"}
+                  </span>
+                  {hasNextPage && !isFetchingNextPage && (
+                    <button
+                      type="button"
+                      onClick={() => void fetchNextPage()}
+                      className="rounded border border-tesla-border px-2.5 py-1 text-[11px] text-tesla-text transition hover:border-tesla-accent hover:text-white"
+                    >
+                      Load more
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -936,6 +1007,7 @@ function DestinationsCell({
   onFlash: (f: { kind: ConnectPinsResult["net_action"]; text: string }) => void;
   onChanged: () => void;
 }) {
+  const editSequence = useRevisionSyncStore((s) => s.editSequence);
   const [adding, setAdding] = useState(false);
   const [connId, setConnId] = useState("");
   const [conflict, setConflict] = useState<{
@@ -965,6 +1037,7 @@ function DestinationsCell({
         pin_a_id: row.pin_id,
         pin_b_id: v.pinBId,
         merge_target_net_id: v.mergeTargetNetId,
+        expected_edit_sequence: editSequence,
       }),
     onSuccess: (res, v) => {
       onFlash({ kind: res.net_action, text: res.message });
@@ -987,7 +1060,7 @@ function DestinationsCell({
     },
   });
   const remove = useMutation({
-    mutationFn: (edgeId: string) => disconnectEdge(vehicleId, revisionId, edgeId),
+    mutationFn: (edgeId: string) => disconnectEdge(vehicleId, revisionId, edgeId, editSequence),
     onSuccess: onChanged,
   });
 
@@ -1078,6 +1151,7 @@ function ShortsEditor({
   onChanged: () => void;
 }) {
   const qc = useQueryClient();
+  const editSequence = useRevisionSyncStore((s) => s.editSequence);
   const [pinA, setPinA] = useState("");
   const [pinB, setPinB] = useState("");
 
@@ -1093,7 +1167,7 @@ function ShortsEditor({
   };
 
   const add = useMutation({
-    mutationFn: () => createPinShort(vehicleId, revisionId, connectorId, pinA, pinB),
+    mutationFn: () => createPinShort(vehicleId, revisionId, connectorId, pinA, pinB, editSequence),
     onSuccess: () => {
       setPinA("");
       setPinB("");
@@ -1102,7 +1176,7 @@ function ShortsEditor({
     },
   });
   const del = useMutation({
-    mutationFn: (id: string) => deletePinShort(vehicleId, revisionId, connectorId, id),
+    mutationFn: (id: string) => deletePinShort(vehicleId, revisionId, connectorId, id, editSequence),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["shorts"] });
       onChanged();

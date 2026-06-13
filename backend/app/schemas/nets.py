@@ -57,6 +57,7 @@ class PinPairRequest(BaseModel):
     pin_b_id: UUID
     net_id: UUID | None = None
     net_name: str | None = Field(default=None, min_length=1, max_length=255)
+    expected_edit_sequence: int | None = None
     signal_kind: SignalKind = SignalKind.CUSTOM
     create_edge: bool = True
     wire_color: str | None = None

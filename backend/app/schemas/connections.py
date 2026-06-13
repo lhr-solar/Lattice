@@ -55,6 +55,9 @@ class PinConnectionRow(BaseModel):
 
 class ConnectionTableResponse(BaseModel):
     rows: list[PinConnectionRow]
+    total: int
+    limit: int
+    offset: int
 
 
 class ConnectionScopeItem(BaseModel):
@@ -75,6 +78,7 @@ class ConnectPinsRequest(BaseModel):
     pin_b_id: UUID
     wire_color: str | None = None
     gauge_awg: Decimal | None = None
+    expected_edit_sequence: int | None = None
     # When both pins are on different user-named nets, the caller resolves the
     # conflict by picking which net survives. Must be one of the two nets.
     merge_target_net_id: UUID | None = None

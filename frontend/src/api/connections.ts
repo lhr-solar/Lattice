@@ -62,6 +62,13 @@ export interface ConnectPinsResult {
   conflict_net_b_name: string | null;
 }
 
+export interface ConnectionTableResult {
+  rows: PinConnectionRow[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 const base = (vehicleId: string, revisionId: string) =>
   `/vehicles/${vehicleId}/revisions/${revisionId}/connections`;
 
@@ -80,6 +87,8 @@ export function fetchConnectionTable(
     enclosure_instance_id?: string;
     vehicle_level?: boolean;
     search?: string;
+    limit?: number;
+    offset?: number;
   },
 ) {
   const q = new URLSearchParams();
@@ -88,10 +97,12 @@ export function fetchConnectionTable(
   if (params?.enclosure_instance_id) q.set("enclosure_instance_id", params.enclosure_instance_id);
   if (params?.vehicle_level) q.set("vehicle_level", "true");
   if (params?.search) q.set("search", params.search);
+  if (params?.limit !== undefined) q.set("limit", String(params.limit));
+  if (params?.offset !== undefined) q.set("offset", String(params.offset));
   const qs = q.toString();
-  return apiFetch<{ rows: PinConnectionRow[] }>(
+  return apiFetch<ConnectionTableResult>(
     `${base(vehicleId, revisionId)}/table${qs ? `?${qs}` : ""}`,
-  ).then((r) => r.rows);
+  );
 }
 
 export function connectPins(
@@ -103,6 +114,7 @@ export function connectPins(
     wire_color?: string;
     gauge_awg?: number;
     merge_target_net_id?: string;
+    expected_edit_sequence?: number;
   },
 ) {
   return apiFetch<ConnectPinsResult>(`${base(vehicleId, revisionId)}/connect`, {
@@ -111,8 +123,20 @@ export function connectPins(
   });
 }
 
-export function disconnectEdge(vehicleId: string, revisionId: string, edgeId: string) {
-  return apiFetch<void>(`${base(vehicleId, revisionId)}/edges/${edgeId}`, { method: "DELETE" });
+export function disconnectEdge(
+  vehicleId: string,
+  revisionId: string,
+  edgeId: string,
+  expectedEditSequence?: number,
+) {
+  const q = new URLSearchParams();
+  if (expectedEditSequence !== undefined) {
+    q.set("expected_edit_sequence", String(expectedEditSequence));
+  }
+  const qs = q.toString();
+  return apiFetch<void>(`${base(vehicleId, revisionId)}/edges/${edgeId}${qs ? `?${qs}` : ""}`, {
+    method: "DELETE",
+  });
 }
 
 export function assignNetByName(

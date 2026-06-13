@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from uuid import UUID
 
 from fastapi import HTTPException
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import String, cast, exists, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.display import (
@@ -286,6 +286,70 @@ class ConnectionService:
             }
         return None  # all
 
+    @staticmethod
+    def _build_scoped_pin_stmt(
+        revision_id: UUID,
+        *,
+        scope_ids: set[UUID] | None,
+        search: str | None,
+    ):
+        pin_stmt = select(Pin).where(Pin.revision_id == revision_id)
+        if scope_ids is not None:
+            if not scope_ids:
+                return None
+            pin_stmt = pin_stmt.where(Pin.connector_instance_id.in_(scope_ids))
+
+        query = (search or "").strip()
+        if query:
+            pattern = f"%{query}%"
+            has_primary_signal_match = exists(
+                select(PinSignalAssignment.id)
+                .join(Signal, PinSignalAssignment.signal_id == Signal.id)
+                .where(
+                    PinSignalAssignment.revision_id == revision_id,
+                    PinSignalAssignment.pin_id == Pin.id,
+                    PinSignalAssignment.assignment_role == "primary",
+                    Signal.name.ilike(pattern),
+                )
+            )
+            pin_stmt = pin_stmt.where(
+                or_(
+                    Pin.name.ilike(pattern),
+                    cast(Pin.pin_number, String).ilike(pattern),
+                    has_primary_signal_match,
+                )
+            )
+        return pin_stmt
+
+    async def count_table_rows(
+        self,
+        revision_id: UUID,
+        *,
+        connector_instance_id: UUID | None = None,
+        pcb_instance_id: UUID | None = None,
+        enclosure_instance_id: UUID | None = None,
+        vehicle_level: bool = False,
+        search: str | None = None,
+    ) -> int:
+        ctx = await self._connector_context(revision_id)
+        scope_ids = self._scope_connector_ids(
+            ctx,
+            connector_instance_id=connector_instance_id,
+            pcb_instance_id=pcb_instance_id,
+            enclosure_instance_id=enclosure_instance_id,
+            vehicle_level=vehicle_level,
+        )
+        pin_stmt = self._build_scoped_pin_stmt(
+            revision_id,
+            scope_ids=scope_ids,
+            search=search,
+        )
+        if pin_stmt is None:
+            return 0
+        count_stmt = select(func.count()).select_from(pin_stmt.order_by(None).subquery())
+        total = (await self.db.execute(count_stmt)).scalar_one()
+        return int(total)
+
     # ------------------------------------------------------------------- table
 
     async def build_table(
@@ -297,6 +361,8 @@ class ConnectionService:
         enclosure_instance_id: UUID | None = None,
         vehicle_level: bool = False,
         search: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
     ) -> list[PinConnectionRow]:
         ctx = await self._connector_context(revision_id)
         scope_ids = self._scope_connector_ids(
@@ -307,16 +373,24 @@ class ConnectionService:
             vehicle_level=vehicle_level,
         )
 
-        # Full pin map for the revision so destinations can be labelled even when
-        # the other end is outside the current scope.
-        pin_rows = (
-            await self.db.execute(
-                select(Pin).where(Pin.revision_id == revision_id).order_by(Pin.pin_number)
-            )
-        ).scalars().all()
-        pin_by_id: dict[UUID, Pin] = {p.id: p for p in pin_rows}
+        pin_stmt = self._build_scoped_pin_stmt(
+            revision_id,
+            scope_ids=scope_ids,
+            search=search,
+        )
+        if pin_stmt is None:
+            return []
+        pin_stmt = pin_stmt.order_by(Pin.connector_instance_id, Pin.pin_number, Pin.id)
+        if offset > 0:
+            pin_stmt = pin_stmt.offset(offset)
+        if limit is not None:
+            pin_stmt = pin_stmt.limit(limit)
 
-        net_by_pin = await self._net_by_pin(revision_id, [p.id for p in pin_rows])
+        scoped_pin_rows = (await self.db.execute(pin_stmt)).scalars().all()
+        if not scoped_pin_rows:
+            return []
+
+        scoped_pin_ids = [pin.id for pin in scoped_pin_rows]
 
         signal_defaults = {
             sid: color
@@ -330,12 +404,33 @@ class ConnectionService:
         }
         pin_template_gauges = await pin_template_gauges_for_revision(self.db, revision_id)
 
-        # Edges keyed by pin so we can list destinations per pin.
+        # Only load edges touching pins in the current result set.
         edges = (
             await self.db.execute(
-                select(ConnectionEdge).where(ConnectionEdge.revision_id == revision_id)
+                select(ConnectionEdge).where(
+                    ConnectionEdge.revision_id == revision_id,
+                    or_(
+                        ConnectionEdge.pin_a_id.in_(scoped_pin_ids),
+                        ConnectionEdge.pin_b_id.in_(scoped_pin_ids),
+                    ),
+                )
             )
         ).scalars().all()
+
+        related_pin_ids: set[UUID] = set(scoped_pin_ids)
+        for edge in edges:
+            related_pin_ids.add(edge.pin_a_id)
+            related_pin_ids.add(edge.pin_b_id)
+
+        pin_rows = (
+            await self.db.execute(
+                select(Pin).where(Pin.id.in_(related_pin_ids)).order_by(Pin.pin_number)
+            )
+        ).scalars().all()
+        pin_by_id: dict[UUID, Pin] = {p.id: p for p in pin_rows}
+
+        net_by_pin = await self._net_by_pin(revision_id, list(related_pin_ids))
+
         edges_by_pin: dict[UUID, list[ConnectionEdge]] = {}
         for e in edges:
             edges_by_pin.setdefault(e.pin_a_id, []).append(e)
@@ -382,28 +477,10 @@ class ConnectionService:
                 gauge_label=format_gauge_label(display_gauge),
             )
 
-        query = (search or "").strip().lower()
         rows: list[PinConnectionRow] = []
-        for pin in pin_rows:
-            if scope_ids is not None and pin.connector_instance_id not in scope_ids:
-                continue
+        for pin in scoped_pin_rows:
             cctx = ctx.get(pin.connector_instance_id)
             net = net_by_pin.get(pin.id)
-            if query:
-                hay = " ".join(
-                    filter(
-                        None,
-                        [
-                            pin.name,
-                            str(pin.pin_number),
-                            cctx.label if cctx else "",
-                            cctx.container_label if cctx else "",
-                            net[1] if net else "",
-                        ],
-                    )
-                ).lower()
-                if query not in hay:
-                    continue
             destinations = [
                 d
                 for d in (dest_for(e, pin.id) for e in edges_by_pin.get(pin.id, []))
@@ -434,13 +511,6 @@ class ConnectionService:
                 )
             )
 
-        rows.sort(
-            key=lambda r: (
-                r.container_label or "",
-                r.connector_label,
-                r.pin_number,
-            )
-        )
         return rows
 
     async def list_scopes(self, revision_id: UUID) -> list[ConnectionScopeItem]:
@@ -522,12 +592,24 @@ class ConnectionService:
         changed_by: str | None = None,
     ) -> ConnectPinsResult:
         await ensure_mutable_revision(self.db, revision_id, vehicle_id)
+        await RevisionSyncService(self.db).check_expected_sequence(
+            revision_id, payload.expected_edit_sequence, vehicle_id
+        )
         if payload.pin_a_id == payload.pin_b_id:
             raise HTTPException(status_code=400, detail="Cannot connect a pin to itself")
-        for pid in (payload.pin_a_id, payload.pin_b_id):
-            pin = await self.db.get(Pin, pid)
-            if not pin or pin.revision_id != revision_id:
-                raise HTTPException(status_code=404, detail=f"Pin {pid} not found")
+
+        pin_ids = sorted((payload.pin_a_id, payload.pin_b_id), key=str)
+        # Pessimistically lock the pins to prevent concurrent wiring race conditions
+        pins = (
+            await self.db.execute(
+                select(Pin)
+                .where(Pin.id.in_(pin_ids))
+                .with_for_update()
+            )
+        ).scalars().all()
+
+        if len(pins) != 2 or any(p.revision_id != revision_id for p in pins):
+            raise HTTPException(status_code=404, detail="One or both pins not found")
 
         existing = (
             await self.db.execute(
@@ -545,6 +627,7 @@ class ConnectionService:
 
         if existing:
             edge = existing
+            created_edge = False
             if payload.wire_color is not None:
                 edge.wire_color = payload.wire_color
             if payload.gauge_awg is not None:
@@ -568,6 +651,7 @@ class ConnectionService:
                 sync=False,
             )
             edge = await self.db.get(ConnectionEdge, created.id)
+            created_edge = True
 
         net_a = await self._primary_net(revision_id, payload.pin_a_id)
         net_b = await self._primary_net(revision_id, payload.pin_b_id)
@@ -624,7 +708,28 @@ class ConnectionService:
             conflict_net_b_id=conflict[1].id if conflict else None,
             conflict_net_b_name=conflict[1].name if conflict else None,
         )
-        await self._sync(vehicle_id, revision_id, changed_by=changed_by)
+        sync = RevisionSyncService(self.db)
+        edit_sequence = await sync.bump_and_notify(
+            vehicle_id=vehicle_id,
+            revision_id=revision_id,
+            domains=DOMAINS_WIRING,
+            changed_by=changed_by,
+        )
+        if created_edge:
+            await sync.queue_mutation_patch(
+                vehicle_id=vehicle_id,
+                revision_id=revision_id,
+                edit_sequence=edit_sequence,
+                domains=DOMAINS_WIRING,
+                covered_domains=["design-projection", "topology-summary"],
+                changed_by=changed_by,
+                patch={
+                    "kind": "edge_created",
+                    "edge_id": str(edge.id),
+                    "pin_a_id": str(edge.pin_a_id),
+                    "pin_b_id": str(edge.pin_b_id),
+                },
+            )
         return result
 
     @staticmethod
@@ -704,13 +809,42 @@ class ConnectionService:
         revision_id: UUID,
         edge_id: UUID,
         *,
+        expected_edit_sequence: int | None = None,
         changed_by: str | None = None,
     ) -> None:
+        await RevisionSyncService(self.db).check_expected_sequence(
+            revision_id, expected_edit_sequence, vehicle_id
+        )
+        edge = await self.db.get(ConnectionEdge, edge_id)
+        if not edge or edge.revision_id != revision_id:
+            raise HTTPException(status_code=404, detail="Edge not found")
+        deleted_pin_a_id = edge.pin_a_id
+        deleted_pin_b_id = edge.pin_b_id
         await self._topology.delete_edge(vehicle_id, revision_id, edge_id, sync=False)
         await self._net.prune_stale_auto_nets(
             vehicle_id, revision_id, sync=False, changed_by=changed_by
         )
-        await self._sync(vehicle_id, revision_id, changed_by=changed_by)
+        sync = RevisionSyncService(self.db)
+        edit_sequence = await sync.bump_and_notify(
+            vehicle_id=vehicle_id,
+            revision_id=revision_id,
+            domains=DOMAINS_WIRING,
+            changed_by=changed_by,
+        )
+        await sync.queue_mutation_patch(
+            vehicle_id=vehicle_id,
+            revision_id=revision_id,
+            edit_sequence=edit_sequence,
+            domains=DOMAINS_WIRING,
+            covered_domains=["design-projection", "topology-summary"],
+            changed_by=changed_by,
+            patch={
+                "kind": "edge_deleted",
+                "edge_id": str(edge_id),
+                "pin_a_id": str(deleted_pin_a_id),
+                "pin_b_id": str(deleted_pin_b_id),
+            },
+        )
 
     async def assign_net_by_name(
         self,

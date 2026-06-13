@@ -1,14 +1,17 @@
 from uuid import UUID
+from uuid import uuid4
 
 from fastapi import HTTPException
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.time import utc_now
 from app.infra.db.models.vehicle import Revision
 from app.realtime.ws_hub import ws_hub
 
 PENDING_REVISION_BROADCASTS = "pending_revision_broadcasts"
 PENDING_REVISION_PUBLISHED = "pending_revision_published"
+PENDING_MUTATION_PATCHES = "pending_mutation_patches"
 
 
 def _queue_revision_changed(
@@ -50,6 +53,8 @@ def _queue_revision_published(
 
 
 async def flush_pending_broadcasts(session: AsyncSession) -> None:
+    for msg in session.info.pop(PENDING_MUTATION_PATCHES, []):
+        await ws_hub.broadcast_mutation_patch(**msg)
     for msg in session.info.pop(PENDING_REVISION_BROADCASTS, []):
         await ws_hub.broadcast_revision_changed(**msg)
     for msg in session.info.pop(PENDING_REVISION_PUBLISHED, []):
@@ -180,4 +185,29 @@ class RevisionSyncService:
             old_revision_id=old_revision_id,
             new_revision_id=new_revision_id,
             changed_by=changed_by,
+        )
+
+    async def queue_mutation_patch(
+        self,
+        *,
+        vehicle_id: UUID,
+        revision_id: UUID,
+        edit_sequence: int,
+        domains: list[str],
+        covered_domains: list[str],
+        changed_by: str | None,
+        patch: dict,
+    ) -> None:
+        self.db.info.setdefault(PENDING_MUTATION_PATCHES, []).append(
+            {
+                "vehicle_id": vehicle_id,
+                "revision_id": revision_id,
+                "edit_sequence": edit_sequence,
+                "domains": domains,
+                "covered_domains": covered_domains,
+                "changed_by": changed_by,
+                "event_id": str(uuid4()),
+                "occurred_at": utc_now().isoformat(),
+                "patch": patch,
+            }
         )

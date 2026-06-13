@@ -22,6 +22,7 @@ import { useAutoDismiss } from "@/hooks/useAutoDismiss";
 import { handleMutationError } from "@/lib/mutationErrors";
 import { invalidateRevisionDomains } from "@/lib/revisionInvalidation";
 import { useAppStore } from "@/stores/appStore";
+import { useRevisionSyncStore } from "@/stores/revisionSyncStore";
 import { CONTAINER_KINDS, nodeTypes } from "./nodes";
 import { edgeTypes } from "./edges/DeletableEdge";
 import {
@@ -148,9 +149,12 @@ export function TopologyCanvas() {
   const pairingPinAId = useAppStore((s) => s.pairingPinAId);
   const setPairingPinA = useAppStore((s) => s.setPairingPinA);
   const clearPairing = useAppStore((s) => s.clearPairing);
+  const editSequence = useRevisionSyncStore((s) => s.editSequence);
+  const syncStatus = useRevisionSyncStore((s) => s.syncStatus);
   const queryClient = useQueryClient();
   const [wireError, setWireError] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
+  const [pendingDeleteEdgeIds, setPendingDeleteEdgeIds] = useState<Set<string>>(new Set());
   const clearWireError = useCallback(() => setWireError(null), []);
   useAutoDismiss(wireError, clearWireError);
 
@@ -164,6 +168,7 @@ export function TopologyCanvas() {
       "shorts",
     ]);
   }
+  const shouldFallbackInvalidate = syncStatus !== "connected";
 
   const quickPairMutation = useMutation({
     mutationFn: ({ pinAId, pinBId }: { pinAId: string; pinBId: string }) =>
@@ -171,47 +176,102 @@ export function TopologyCanvas() {
         pin_a_id: pinAId,
         pin_b_id: pinBId,
         create_edge: true,
+        expected_edit_sequence: editSequence,
       }),
     onSuccess: () => {
       clearPairing();
       setWireError(null);
-      invalidateWiring();
+      if (shouldFallbackInvalidate) {
+        invalidateWiring();
+      }
     },
     onError: (error) => setWireError(handleMutationError(error, "Failed to create wire.")),
   });
 
   const deleteWireMutation = useMutation({
-    mutationFn: (edgeId: string) => disconnectEdge(vehicleId!, revisionId!, edgeId),
+    mutationFn: (edgeId: string) => disconnectEdge(vehicleId!, revisionId!, edgeId, editSequence),
+    onMutate: (edgeId) => {
+      setPendingDeleteEdgeIds((prev) => new Set(prev).add(edgeId));
+    },
     onSuccess: () => {
       setWireError(null);
-      invalidateWiring();
+      if (shouldFallbackInvalidate) {
+        invalidateWiring();
+      }
     },
-    onError: (error) => setWireError(handleMutationError(error, "Failed to remove wire.")),
+    onError: (error) => {
+      if (error instanceof ApiError && error.status === 404) {
+        // Another user already deleted this edge. Sync UI and suppress the error.
+        setWireError(null);
+        if (shouldFallbackInvalidate) {
+          invalidateWiring();
+        }
+        return;
+      }
+      setWireError(handleMutationError(error, "Failed to remove wire."));
+    },
+    onSettled: (_data, _error, edgeId) => {
+      setPendingDeleteEdgeIds((prev) => {
+        const next = new Set(prev);
+        next.delete(edgeId);
+        return next;
+      });
+    },
   });
 
   const deleteShortMutation = useMutation({
-    mutationFn: ({ connectorId, shortId }: { connectorId: string; shortId: string }) =>
-      deletePinShort(vehicleId!, revisionId!, connectorId, shortId),
+    mutationFn: ({
+      edgeId: _edgeId,
+      connectorId,
+      shortId,
+    }: {
+      edgeId: string;
+      connectorId: string;
+      shortId: string;
+    }) =>
+      deletePinShort(vehicleId!, revisionId!, connectorId, shortId, editSequence),
+    onMutate: ({ edgeId }) => {
+      setPendingDeleteEdgeIds((prev) => new Set(prev).add(edgeId));
+    },
     onSuccess: () => {
       setWireError(null);
-      invalidateWiring();
+      if (shouldFallbackInvalidate) {
+        invalidateWiring();
+      }
     },
-    onError: (error) => setWireError(handleMutationError(error, "Failed to remove short.")),
+    onError: (error) => {
+      if (error instanceof ApiError && error.status === 404) {
+        setWireError(null);
+        if (shouldFallbackInvalidate) {
+          invalidateWiring();
+        }
+        return;
+      }
+      setWireError(handleMutationError(error, "Failed to remove short."));
+    },
+    onSettled: (_data, _error, vars) => {
+      setPendingDeleteEdgeIds((prev) => {
+        const next = new Set(prev);
+        next.delete(vars.edgeId);
+        return next;
+      });
+    },
   });
 
   const deleteEdge = useCallback(
-    (edge: Edge) => {
+    (edge: Pick<Edge, "id" | "data">) => {
+      if (pendingDeleteEdgeIds.has(edge.id)) return;
       setSelectedEdgeId(null);
       const isShort = edge.data?.short === true || edge.id.startsWith("short:");
+      const connectorId = String(edge.data?.connectorInstanceId ?? "");
+      const shortId = String(edge.data?.shortId ?? edge.id.replace("short:", ""));
       if (isShort) {
-        const connectorId = String(edge.data?.connectorInstanceId ?? "");
-        const shortId = String(edge.data?.shortId ?? edge.id.replace("short:", ""));
-        if (connectorId) deleteShortMutation.mutate({ connectorId, shortId });
+        if (connectorId) deleteShortMutation.mutate({ edgeId: edge.id, connectorId, shortId });
         return;
       }
       deleteWireMutation.mutate(edge.id);
     },
-    [deleteShortMutation, deleteWireMutation],
+    [deleteShortMutation, deleteWireMutation, pendingDeleteEdgeIds],
   );
 
   const selectEdge = useCallback((edgeId: string) => {
@@ -260,7 +320,8 @@ export function TopologyCanvas() {
           data: {
             ...e.data,
             onSelect: () => selectEdge(e.id),
-            onDelete: () => deleteEdge({ id: e.id, data: e.data } as Edge),
+            onDelete: () => deleteEdge({ id: e.id, data: e.data }),
+            isDeleting: pendingDeleteEdgeIds.has(e.id),
           },
           style: {
             stroke: isShort ? "#f59e0b" : "#6b6b6b",
@@ -273,7 +334,7 @@ export function TopologyCanvas() {
           interactionWidth: 8,
         };
       }),
-    [data, deleteEdge, selectEdge, selectedEdgeId],
+    [data, deleteEdge, pendingDeleteEdgeIds, selectEdge, selectedEdgeId],
   );
 
   function tryPair(pinAId: string, pinBId: string) {

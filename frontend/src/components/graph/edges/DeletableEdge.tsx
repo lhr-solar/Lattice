@@ -39,9 +39,10 @@ export function DeletableEdge({
     targetY,
     targetPosition,
   });
-  const edgeData = data as { onDelete?: () => void; onSelect?: () => void } | undefined;
+  const edgeData = data as { onDelete?: () => void; onSelect?: () => void; isDeleting?: boolean } | undefined;
   const onDelete = edgeData?.onDelete;
   const onSelect = edgeData?.onSelect;
+  const isDeleting = edgeData?.isDeleting === true;
   const fallback = { x: labelX, y: labelY };
   const ui = anchor ?? fallback;
   const deleteAbove = flowToScreenPosition(ui).y > 40;
@@ -106,17 +107,22 @@ export function DeletableEdge({
             {onDelete && (
               <button
                 type="button"
-                title="Remove wire"
+                title={isDeleting ? "Removing wire..." : "Remove wire"}
                 onClick={(e) => {
                   e.stopPropagation();
+                  if (isDeleting) return;
                   onDelete();
                 }}
+                disabled={isDeleting}
                 className={clsx(
-                  "absolute left-1/2 flex h-5 w-5 -translate-x-1/2 cursor-pointer items-center justify-center rounded-full border border-red-500/80 bg-tesla-bg text-[11px] leading-none text-red-400 shadow-md transition hover:border-red-500 hover:bg-red-500 hover:text-white",
+                  "absolute left-1/2 flex h-5 w-5 -translate-x-1/2 items-center justify-center rounded-full border border-red-500/80 bg-tesla-bg text-[11px] leading-none text-red-400 shadow-md transition",
+                  isDeleting
+                    ? "cursor-wait opacity-60"
+                    : "cursor-pointer hover:border-red-500 hover:bg-red-500 hover:text-white",
                   deleteAbove ? "-top-1 -translate-y-full" : "-bottom-1 translate-y-full",
                 )}
               >
-                ×
+                {isDeleting ? "…" : "×"}
               </button>
             )}
           </div>

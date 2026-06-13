@@ -88,3 +88,10 @@
   pointer-events: stroke;
   cursor: pointer;
 }
+
+/* Keep label chrome readable where wires pass through — without suppressing wire endpoints. */
+.topology-label {
+  position: relative;
+  z-index: 1;
+  isolation: isolate;
+}

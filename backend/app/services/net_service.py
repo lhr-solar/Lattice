@@ -305,13 +305,23 @@ class NetService:
         changed_by: str | None = None,
     ) -> PinPairResponse:
         await ensure_mutable_revision(self.db, revision_id, vehicle_id)
+        await RevisionSyncService(self.db).check_expected_sequence(
+            revision_id, payload.expected_edit_sequence, vehicle_id
+        )
         if payload.pin_a_id == payload.pin_b_id:
             raise HTTPException(status_code=400, detail="Cannot pair a pin with itself")
 
-        for pin_id in (payload.pin_a_id, payload.pin_b_id):
+        pin_ids = sorted((payload.pin_a_id, payload.pin_b_id), key=str)
+        for pin_id in pin_ids:
             pin = await self.db.get(Pin, pin_id)
             if not pin or pin.revision_id != revision_id:
                 raise HTTPException(status_code=404, detail=f"Pin {pin_id} not found")
+
+        locked_pins = (
+            await self.db.execute(select(Pin).where(Pin.id.in_(pin_ids)).with_for_update())
+        ).scalars().all()
+        if len(locked_pins) != 2 or any(pin.revision_id != revision_id for pin in locked_pins):
+            raise HTTPException(status_code=404, detail="One or both pins not found")
 
         if payload.create_edge and await self._topology.find_edge_between_pins(
             revision_id, payload.pin_a_id, payload.pin_b_id
@@ -409,7 +419,28 @@ class NetService:
             edge=edge_response,
             assignments_created=assignments_created,
         )
-        await self._sync(vehicle_id, revision_id, changed_by=changed_by)
+        sync = RevisionSyncService(self.db)
+        edit_sequence = await sync.bump_and_notify(
+            vehicle_id=vehicle_id,
+            revision_id=revision_id,
+            domains=DOMAINS_NETS,
+            changed_by=changed_by,
+        )
+        if edge_response is not None:
+            await sync.queue_mutation_patch(
+                vehicle_id=vehicle_id,
+                revision_id=revision_id,
+                edit_sequence=edit_sequence,
+                domains=DOMAINS_NETS,
+                covered_domains=["design-projection", "topology-summary"],
+                changed_by=changed_by,
+                patch={
+                    "kind": "edge_created",
+                    "edge_id": str(edge_response.id),
+                    "pin_a_id": str(edge_response.pin_a_id),
+                    "pin_b_id": str(edge_response.pin_b_id),
+                },
+            )
         return response
 
     async def list_pins(

@@ -22,12 +22,17 @@ export function createPinShort(
   connectorInstanceId: string,
   pinAId: string,
   pinBId: string,
+  expectedEditSequence?: number,
 ) {
   return apiFetch<PinShort>(
     `/vehicles/${vehicleId}/revisions/${revisionId}/instances/connectors/${connectorInstanceId}/shorts`,
     {
       method: "POST",
-      body: JSON.stringify({ pin_a_id: pinAId, pin_b_id: pinBId }),
+      body: JSON.stringify({
+        pin_a_id: pinAId,
+        pin_b_id: pinBId,
+        expected_edit_sequence: expectedEditSequence,
+      }),
     },
   );
 }
@@ -37,9 +42,15 @@ export function deletePinShort(
   revisionId: string,
   connectorInstanceId: string,
   shortId: string,
+  expectedEditSequence?: number,
 ) {
+  const q = new URLSearchParams();
+  if (expectedEditSequence !== undefined) {
+    q.set("expected_edit_sequence", String(expectedEditSequence));
+  }
+  const qs = q.toString();
   return apiFetch<void>(
-    `/vehicles/${vehicleId}/revisions/${revisionId}/instances/connectors/${connectorInstanceId}/shorts/${shortId}`,
+    `/vehicles/${vehicleId}/revisions/${revisionId}/instances/connectors/${connectorInstanceId}/shorts/${shortId}${qs ? `?${qs}` : ""}`,
     { method: "DELETE" },
   );
 }

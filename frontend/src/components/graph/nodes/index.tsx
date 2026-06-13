@@ -48,6 +48,7 @@ export function ContainerNode({ data }: NodeProps) {
       }}
     >
       <div
+        className="topology-label"
         style={{
           boxSizing: "border-box",
           height: titleHeight,
@@ -59,6 +60,7 @@ export function ContainerNode({ data }: NodeProps) {
           overflow: "hidden",
           pointerEvents: "all",
           cursor: "grab",
+          background: CONTAINER_BG,
         }}
       >
         <ConnectorInstanceLabel
@@ -96,6 +98,7 @@ export function ConnectorGroupNode({ data }: NodeProps) {
       }}
     >
       <div
+        className="topology-label"
         style={{
           boxSizing: "border-box",
           height: GROUP_HEADER_H,
@@ -108,6 +111,7 @@ export function ConnectorGroupNode({ data }: NodeProps) {
           fontWeight: 600,
           whiteSpace: "nowrap",
           overflow: "hidden",
+          background: GROUP_BG,
         }}
       >
         {slotKey && (
@@ -153,6 +157,7 @@ export function PinPortNode({ data }: NodeProps) {
   const showName = pinName && pinName !== String(pinNumber);
   return (
     <div
+      className="topology-label"
       style={{
         position: "relative",
         width: "100%",

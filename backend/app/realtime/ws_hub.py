@@ -132,6 +132,35 @@ class WsHub:
         )
         await self._broadcast_to_revision(vehicle_id, old_revision_id, payload)
 
+    async def broadcast_mutation_patch(
+        self,
+        *,
+        vehicle_id: UUID,
+        revision_id: UUID,
+        edit_sequence: int,
+        domains: list[str],
+        covered_domains: list[str],
+        changed_by: str | None,
+        event_id: str,
+        occurred_at: str,
+        patch: dict,
+    ) -> None:
+        payload = json.dumps(
+            {
+                "type": "mutation_patch",
+                "vehicle_id": str(vehicle_id),
+                "revision_id": str(revision_id),
+                "edit_sequence": edit_sequence,
+                "domains": domains,
+                "covered_domains": covered_domains,
+                "changed_by": changed_by,
+                "event_id": event_id,
+                "occurred_at": occurred_at,
+                "patch": patch,
+            }
+        )
+        await self._broadcast_to_revision(vehicle_id, revision_id, payload)
+
     async def _broadcast_to_revision(self, vehicle_id: UUID, revision_id: UUID, payload: str) -> None:
         dead: list[WebSocket] = []
         for sub in list(self._subscriptions):

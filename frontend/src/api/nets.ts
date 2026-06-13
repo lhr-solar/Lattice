@@ -109,6 +109,7 @@ export function pairPins(
     create_edge?: boolean;
     wire_color?: string;
     replace_existing_primary?: boolean;
+    expected_edit_sequence?: number;
   },
 ) {
   return apiFetch<{ net: NetDetail; edge: unknown | null; assignments_created: number }>(

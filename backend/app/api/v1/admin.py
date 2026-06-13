@@ -113,8 +113,8 @@ async def get_default_password(
     db: AsyncSession = Depends(get_db),
     _admin: UserContext = Depends(get_admin_user),
 ) -> DefaultPasswordResponse:
-    password = await UserService(db).get_default_password()
-    return DefaultPasswordResponse(password=password)
+    configured = await UserService(db).is_default_password_configured()
+    return DefaultPasswordResponse(configured=configured)
 
 
 @router.patch("/settings/default-password", response_model=DefaultPasswordResponse)
@@ -123,8 +123,8 @@ async def update_default_password(
     db: AsyncSession = Depends(get_db),
     _admin: UserContext = Depends(get_admin_user),
 ) -> DefaultPasswordResponse:
-    password = await UserService(db).set_default_password(payload.password)
-    return DefaultPasswordResponse(password=password)
+    await UserService(db).set_default_password(payload.password)
+    return DefaultPasswordResponse(configured=True)
 
 
 @router.post("/vehicles", response_model=VehicleResponse, status_code=201)

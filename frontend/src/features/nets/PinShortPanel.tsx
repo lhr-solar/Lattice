@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createPinShort, deletePinShort, fetchPinShorts } from "@/api/shorts";
 import { fetchPins } from "@/api/nets";
 import { useAppStore } from "@/stores/appStore";
+import { useRevisionSyncStore } from "@/stores/revisionSyncStore";
 
 export function PinShortPanel() {
   const queryClient = useQueryClient();
@@ -11,6 +12,7 @@ export function PinShortPanel() {
   const focusId = useAppStore((s) => s.focusId);
   const selectedNodeKind = useAppStore((s) => s.selectedNodeKind);
   const wireMode = useAppStore((s) => s.wireMode);
+  const editSequence = useRevisionSyncStore((s) => s.editSequence);
 
   const connectorId =
     selectedNodeKind === "connector" ||
@@ -36,7 +38,7 @@ export function PinShortPanel() {
 
   const shortMutation = useMutation({
     mutationFn: (pinBId: string) =>
-      createPinShort(vehicleId!, revisionId!, connectorId!, shortPinA!, pinBId),
+      createPinShort(vehicleId!, revisionId!, connectorId!, shortPinA!, pinBId, editSequence),
     onSuccess: () => {
       setShortPinA(null);
       queryClient.invalidateQueries({ queryKey: ["shorts"] });
@@ -48,7 +50,7 @@ export function PinShortPanel() {
 
   const deleteMutation = useMutation({
     mutationFn: (shortId: string) =>
-      deletePinShort(vehicleId!, revisionId!, connectorId!, shortId),
+      deletePinShort(vehicleId!, revisionId!, connectorId!, shortId, editSequence),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["shorts"] });
       queryClient.invalidateQueries({ queryKey: ["design-projection"] });

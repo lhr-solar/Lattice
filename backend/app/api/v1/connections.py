@@ -36,10 +36,13 @@ async def connection_table(
     enclosure_instance_id: UUID | None = Query(default=None),
     vehicle_level: bool = Query(default=False),
     search: str | None = Query(default=None),
+    limit: int = Query(default=500, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
 ) -> ConnectionTableResponse:
     _ = vehicle_id
-    rows = await ConnectionService(db).build_table(
+    service = ConnectionService(db)
+    total = await service.count_table_rows(
         revision_id,
         connector_instance_id=connector_instance_id,
         pcb_instance_id=pcb_instance_id,
@@ -47,7 +50,17 @@ async def connection_table(
         vehicle_level=vehicle_level,
         search=search,
     )
-    return ConnectionTableResponse(rows=rows)
+    rows = await service.build_table(
+        revision_id,
+        connector_instance_id=connector_instance_id,
+        pcb_instance_id=pcb_instance_id,
+        enclosure_instance_id=enclosure_instance_id,
+        vehicle_level=vehicle_level,
+        search=search,
+        limit=limit,
+        offset=offset,
+    )
+    return ConnectionTableResponse(rows=rows, total=total, limit=limit, offset=offset)
 
 
 @router.post("/connect", response_model=ConnectPinsResult)
@@ -68,11 +81,16 @@ async def disconnect(
     vehicle_id: UUID,
     revision_id: UUID,
     edge_id: UUID,
+    expected_edit_sequence: int | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
     user: UserContext = Depends(get_current_user),
 ) -> Response:
     await ConnectionService(db).disconnect(
-        vehicle_id, revision_id, edge_id, changed_by=user.username
+        vehicle_id,
+        revision_id,
+        edge_id,
+        expected_edit_sequence=expected_edit_sequence,
+        changed_by=user.username,
     )
     return Response(status_code=204)
 

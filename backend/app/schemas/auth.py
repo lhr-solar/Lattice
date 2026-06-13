@@ -28,7 +28,7 @@ class UserPasswordUpdate(BaseModel):
 
 
 class DefaultPasswordResponse(BaseModel):
-    password: str
+    configured: bool
 
 
 class DefaultPasswordUpdate(BaseModel):
