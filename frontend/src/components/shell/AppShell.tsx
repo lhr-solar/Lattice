@@ -10,6 +10,7 @@ import { PinTemplatesModal } from "@/features/pins/PinTemplatesModal";
 import { ConnectionTable } from "@/features/connections/ConnectionTable";
 import { LibraryBuilders } from "@/features/library/LibraryBuilders";
 import { useAutoSelectVehicle } from "@/hooks/useAutoSelectVehicle";
+import { useSyncVehicleRevision } from "@/hooks/useSyncVehicleRevision";
 import { useRevisionSync } from "@/hooks/useRevisionSync";
 import { useAppStore } from "@/stores/appStore";
 
@@ -20,6 +21,7 @@ interface AppShellProps {
 export function AppShell({ onOpenAdmin }: AppShellProps) {
   const mode = useAppStore((s) => s.mode);
   useAutoSelectVehicle();
+  useSyncVehicleRevision();
   useRevisionSync();
 
   return (

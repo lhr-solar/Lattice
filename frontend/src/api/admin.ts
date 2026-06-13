@@ -91,6 +91,10 @@ export function clearVehicleWires(vehicleId: string) {
   return apiFetch<void>(`/admin/vehicles/${vehicleId}/clear-wires`, { method: "POST" });
 }
 
+export function clearVehicleTopology(vehicleId: string) {
+  return apiFetch<void>(`/admin/vehicles/${vehicleId}/clear-topology`, { method: "POST" });
+}
+
 export function clearVehicleRevisions(vehicleId: string) {
   return apiFetch<void>(`/admin/vehicles/${vehicleId}/clear-revisions`, { method: "POST" });
 }

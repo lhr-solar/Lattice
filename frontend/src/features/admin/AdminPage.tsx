@@ -4,6 +4,7 @@ import clsx from "clsx";
 import {
   clearVehicleData,
   clearVehicleRevisions,
+  clearVehicleTopology,
   clearVehicleWires,
   createUser,
   createUsersBulk,
@@ -35,7 +36,7 @@ interface AdminPageProps {
   onBack: () => void;
 }
 
-type VehicleClearAction = "all" | "wires" | "revisions";
+type VehicleClearAction = "all" | "wires" | "topology" | "revisions";
 
 export function AdminPage({ onBack }: AdminPageProps) {
   const queryClient = useQueryClient();
@@ -330,6 +331,7 @@ export function AdminPage({ onBack }: AdminPageProps) {
       action: VehicleClearAction;
     }) => {
       if (action === "wires") return clearVehicleWires(vehicleId);
+      if (action === "topology") return clearVehicleTopology(vehicleId);
       if (action === "revisions") return clearVehicleRevisions(vehicleId);
       return clearVehicleData(vehicleId);
     },
@@ -683,8 +685,8 @@ export function AdminPage({ onBack }: AdminPageProps) {
         <section className="rounded-lg border border-tesla-border bg-tesla-surface p-5">
           <h2 className="mb-1 text-lg font-medium text-tesla-text">Database management</h2>
           <p className="mb-4 text-sm text-tesla-muted">
-            Clear wire topology for a vehicle while keeping instances and libraries, or wipe
-            everything including revisions.
+            Clear topology, wires, revision history, or all vehicle data. Library templates are
+            kept unless you clear all data.
           </p>
           <ul className="divide-y divide-tesla-border rounded border border-tesla-border">
             {vehicles.map((vehicle) => (
@@ -709,6 +711,22 @@ export function AdminPage({ onBack }: AdminPageProps) {
                     )}
                   >
                     Clear all revisions
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setClearVehicleTarget({
+                        id: vehicle.id,
+                        name: vehicle.name,
+                        action: "topology",
+                      })
+                    }
+                    className={clsx(
+                      "rounded border border-sky-500/50 px-2 py-0.5 text-xs text-sky-200",
+                      "hover:bg-sky-500/10",
+                    )}
+                  >
+                    Clear topology
                   </button>
                   <button
                     type="button"
@@ -934,17 +952,21 @@ export function AdminPage({ onBack }: AdminPageProps) {
         title={
           clearVehicleTarget?.action === "wires"
             ? "Clear vehicle wires"
-            : clearVehicleTarget?.action === "revisions"
-              ? "Clear all revisions"
-              : "Clear vehicle data"
+            : clearVehicleTarget?.action === "topology"
+              ? "Clear topology"
+              : clearVehicleTarget?.action === "revisions"
+                ? "Clear all revisions"
+                : "Clear vehicle data"
         }
         message={
           clearVehicleTarget
             ? clearVehicleTarget.action === "wires"
               ? `Delete all wires, signals, splices, and harness data for vehicle "${clearVehicleTarget.name}"? Placed instances and library templates will be kept. This cannot be undone.`
-              : clearVehicleTarget.action === "revisions"
-                ? `Delete all revisions and design data for vehicle "${clearVehicleTarget.name}"? Library templates are kept. A new initial draft revision will be created. This cannot be undone.`
-                : `Delete all design data and library items tied to vehicle "${clearVehicleTarget.name}"? This resets revisions and cannot be undone.`
+              : clearVehicleTarget.action === "topology"
+                ? `Delete all wires and placed instances (enclosures, nodes, connectors) from the current draft for vehicle "${clearVehicleTarget.name}"? Library templates are kept. This cannot be undone.`
+                : clearVehicleTarget.action === "revisions"
+                  ? `Delete all older revisions for vehicle "${clearVehicleTarget.name}"? The current draft design is kept and renumbered to R1 Draft. Library templates are kept. This cannot be undone.`
+                  : `Delete all design data and library items tied to vehicle "${clearVehicleTarget.name}"? This resets revisions and cannot be undone.`
             : ""
         }
         confirmLabel={
@@ -952,9 +974,11 @@ export function AdminPage({ onBack }: AdminPageProps) {
             ? "Clearing…"
             : clearVehicleTarget?.action === "wires"
               ? "Clear wires"
-              : clearVehicleTarget?.action === "revisions"
-                ? "Clear revisions"
-                : "Clear vehicle"
+              : clearVehicleTarget?.action === "topology"
+                ? "Clear topology"
+                : clearVehicleTarget?.action === "revisions"
+                  ? "Clear revisions"
+                  : "Clear vehicle"
         }
         destructive
         disabled={clearVehicleMutation.isPending}

@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from fastapi import HTTPException
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.time import utc_now
@@ -139,30 +139,83 @@ class VehicleService:
             await self._delete_revision_wire_data(revision_ids)
         await self.db.flush()
 
+    async def clear_vehicle_topology(self, vehicle_id: UUID) -> None:
+        vehicle = await self.db.get(Vehicle, vehicle_id)
+        if not vehicle:
+            raise HTTPException(status_code=404, detail="Vehicle not found")
+
+        head = await self.db.get(VehicleHead, vehicle_id)
+        if not head or not head.current_revision_id:
+            raise HTTPException(status_code=404, detail="No current revision for vehicle")
+
+        revision_id = head.current_revision_id
+        await self._delete_revision_wire_data([revision_id])
+        await self._delete_revision_instances([revision_id])
+        await self.db.flush()
+
     async def clear_vehicle_revisions(self, vehicle_id: UUID, *, created_by: str | None = None) -> None:
         vehicle = await self.db.get(Vehicle, vehicle_id)
         if not vehicle:
             raise HTTPException(status_code=404, detail="Vehicle not found")
 
-        revision_ids = await self._revision_ids_for_vehicle(vehicle_id)
-        if revision_ids:
-            await self._delete_revision_scoped_data(revision_ids)
+        head = await self.db.get(VehicleHead, vehicle_id)
+        current_revision_id = head.current_revision_id if head else None
+        all_revision_ids = await self._revision_ids_for_vehicle(vehicle_id)
 
-        await self.db.execute(delete(VehicleHead).where(VehicleHead.vehicle_id == vehicle_id))
-        await self.db.execute(delete(Revision).where(Revision.vehicle_id == vehicle_id))
+        if not all_revision_ids:
+            revision = Revision(
+                vehicle_id=vehicle.id,
+                revision_number=1,
+                status=RevisionStatus.DRAFT,
+                label="Draft",
+                is_immutable=False,
+                created_by=created_by,
+                created_at=utc_now(),
+            )
+            self.db.add(revision)
+            await self.db.flush()
+            if head:
+                head.current_revision_id = revision.id
+            else:
+                self.db.add(VehicleHead(vehicle_id=vehicle.id, current_revision_id=revision.id))
+            await self.db.flush()
+            return
 
-        revision = Revision(
-            vehicle_id=vehicle.id,
-            revision_number=1,
-            status=RevisionStatus.DRAFT,
-            label="Initial draft",
-            is_immutable=False,
-            created_by=created_by,
-            created_at=utc_now(),
-        )
-        self.db.add(revision)
+        if not current_revision_id or current_revision_id not in all_revision_ids:
+            await self.db.execute(delete(VehicleHead).where(VehicleHead.vehicle_id == vehicle_id))
+            if all_revision_ids:
+                await self._delete_revisions(all_revision_ids)
+            revision = Revision(
+                vehicle_id=vehicle.id,
+                revision_number=1,
+                status=RevisionStatus.DRAFT,
+                label="Draft",
+                is_immutable=False,
+                created_by=created_by,
+                created_at=utc_now(),
+            )
+            self.db.add(revision)
+            await self.db.flush()
+            self.db.add(VehicleHead(vehicle_id=vehicle.id, current_revision_id=revision.id))
+            await self.db.flush()
+            return
+
+        current = await self.db.get(Revision, current_revision_id)
+        if not current:
+            raise HTTPException(status_code=404, detail="Current revision not found")
+
+        current.parent_revision_id = None
         await self.db.flush()
-        self.db.add(VehicleHead(vehicle_id=vehicle.id, current_revision_id=revision.id))
+
+        old_revision_ids = [rid for rid in all_revision_ids if rid != current_revision_id]
+        if old_revision_ids:
+            await self._delete_revisions(old_revision_ids)
+
+        current.revision_number = 1
+        current.label = "Draft"
+        current.is_immutable = False
+        current.snapshot_taken_at = None
+        current.status = RevisionStatus.DRAFT
         await self.db.flush()
 
     async def clear_vehicle_data(self, vehicle_id: UUID, *, created_by: str | None = None) -> None:
@@ -171,12 +224,10 @@ class VehicleService:
             raise HTTPException(status_code=404, detail="Vehicle not found")
 
         revision_ids = await self._revision_ids_for_vehicle(vehicle_id)
-        if revision_ids:
-            await self._delete_revision_scoped_data(revision_ids)
-
         await self.db.execute(delete(VehicleHead).where(VehicleHead.vehicle_id == vehicle_id))
+        if revision_ids:
+            await self._delete_revisions(revision_ids)
         await self._delete_vehicle_libraries(vehicle_id)
-        await self.db.execute(delete(Revision).where(Revision.vehicle_id == vehicle_id))
 
         revision = Revision(
             vehicle_id=vehicle.id,
@@ -197,13 +248,10 @@ class VehicleService:
         if not vehicle:
             raise HTTPException(status_code=404, detail="Vehicle not found")
         revision_ids = await self._revision_ids_for_vehicle(vehicle_id)
-
-        if revision_ids:
-            await self._delete_revision_scoped_data(revision_ids)
-
         await self.db.execute(delete(VehicleHead).where(VehicleHead.vehicle_id == vehicle_id))
+        if revision_ids:
+            await self._delete_revisions(revision_ids)
         await self._delete_vehicle_libraries(vehicle_id)
-        await self.db.execute(delete(Revision).where(Revision.vehicle_id == vehicle_id))
         await self.db.execute(delete(Vehicle).where(Vehicle.id == vehicle_id))
         await self.db.flush()
 
@@ -213,6 +261,28 @@ class VehicleService:
                 await self.db.execute(select(Revision.id).where(Revision.vehicle_id == vehicle_id))
             ).scalars()
         )
+
+    async def _break_revision_parent_links(self, revision_ids: list[UUID]) -> None:
+        if not revision_ids:
+            return
+        await self.db.execute(
+            update(Revision)
+            .where(Revision.id.in_(revision_ids))
+            .values(parent_revision_id=None)
+        )
+        await self.db.execute(
+            update(Revision)
+            .where(Revision.parent_revision_id.in_(revision_ids))
+            .values(parent_revision_id=None)
+        )
+        await self.db.flush()
+
+    async def _delete_revisions(self, revision_ids: list[UUID]) -> None:
+        if not revision_ids:
+            return
+        await self._break_revision_parent_links(revision_ids)
+        await self._delete_revision_scoped_data(revision_ids)
+        await self.db.execute(delete(Revision).where(Revision.id.in_(revision_ids)))
 
     async def _delete_revision_scoped_data(self, revision_ids: list[UUID]) -> None:
         await self._delete_revision_wire_data(revision_ids)

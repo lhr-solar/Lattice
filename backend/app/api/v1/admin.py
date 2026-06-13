@@ -171,6 +171,16 @@ async def clear_vehicle_wires(
     return None
 
 
+@router.post("/vehicles/{vehicle_id}/clear-topology", status_code=204)
+async def clear_vehicle_topology(
+    vehicle_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _admin: UserContext = Depends(get_admin_user),
+) -> None:
+    await VehicleService(db).clear_vehicle_topology(vehicle_id)
+    return None
+
+
 @router.post("/vehicles/{vehicle_id}/clear-all", status_code=204)
 async def clear_vehicle_data(
     vehicle_id: UUID,

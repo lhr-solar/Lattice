@@ -129,12 +129,7 @@ class RevisionService:
                 },
             )
 
-        max_number = (
-            await self.db.execute(
-                select(func.max(Revision.revision_number)).where(Revision.vehicle_id == vehicle_id)
-            )
-        ).scalar_one()
-        next_number = int(max_number or 0) + 1
+        next_number = await self._next_revision_number(vehicle_id)
         now = utc_now()
         source_time = source.snapshot_taken_at or source.created_at
         source_time_label = source_time.strftime("%Y-%m-%d %H:%M UTC")
@@ -233,9 +228,11 @@ class RevisionService:
             )
         )
 
+        next_number = await self._next_revision_number(vehicle_id)
+
         new_revision = Revision(
             vehicle_id=vehicle_id,
-            revision_number=revision.revision_number + 1,
+            revision_number=next_number,
             status=RevisionStatus.DRAFT,
             label=f"Draft from R{revision.revision_number}",
             parent_revision_id=revision_id,
@@ -295,6 +292,14 @@ class RevisionService:
             "edges": await dump(ConnectionEdge),
             "assignments": await dump(PinSignalAssignment),
         }
+
+    async def _next_revision_number(self, vehicle_id: UUID) -> int:
+        max_number = (
+            await self.db.execute(
+                select(func.max(Revision.revision_number)).where(Revision.vehicle_id == vehicle_id)
+            )
+        ).scalar_one()
+        return int(max_number or 0) + 1
 
     async def _clone_revision_data(self, from_revision_id: UUID, to_revision_id: UUID, vehicle_id: UUID) -> None:
         signal_map: dict[UUID, UUID] = {}

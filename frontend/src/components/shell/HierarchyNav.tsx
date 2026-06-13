@@ -151,7 +151,13 @@ function VehiclesList({
   onSelect,
   compact = false,
 }: {
-  vehicles: { id: string; name: string; current_revision_id: string | null }[];
+  vehicles: {
+    id: string;
+    name: string;
+    current_revision_id: string | null;
+    current_revision_number?: number | null;
+    current_revision_label?: string | null;
+  }[];
   vehicleId: string | null;
   isLoading: boolean;
   onSelect: (vehicleId: string, revisionId: string) => void;
@@ -160,27 +166,46 @@ function VehiclesList({
   return (
     <ul className={clsx("overflow-y-auto border-b border-tesla-border", compact ? "max-h-28 p-1.5" : "max-h-36 p-2")}>
       {isLoading && <li className="px-2 py-1 text-sm text-tesla-muted">Loading…</li>}
-      {vehicles.map((v) => (
-        <li key={v.id}>
-          <button
-            type="button"
-            disabled={!v.current_revision_id}
-            onClick={() => {
-              if (v.current_revision_id) onSelect(v.id, v.current_revision_id);
-            }}
-            className={clsx(
-              "w-full rounded-md text-left transition disabled:cursor-not-allowed disabled:opacity-40",
-              compact ? "px-1.5 py-1 text-xs" : "px-2 py-2 text-sm",
-              vehicleId === v.id
-                ? "bg-tesla-accent/15 text-tesla-text"
-                : "text-tesla-muted hover:bg-tesla-border/50 hover:text-tesla-text",
-            )}
-            title={v.name}
-          >
-            <span className="block truncate">{v.name}</span>
-          </button>
-        </li>
-      ))}
+      {vehicles.map((v) => {
+        const revisionBadge =
+          v.current_revision_number != null ? `R${v.current_revision_number}` : null;
+        const revisionTooltip =
+          revisionBadge && v.current_revision_label?.trim()
+            ? `${revisionBadge} | ${v.current_revision_label.trim()}`
+            : revisionBadge;
+
+        return (
+          <li key={v.id}>
+            <button
+              type="button"
+              disabled={!v.current_revision_id}
+              onClick={() => {
+                if (v.current_revision_id) onSelect(v.id, v.current_revision_id);
+              }}
+              className={clsx(
+                "flex w-full items-center gap-2 rounded-md text-left transition disabled:cursor-not-allowed disabled:opacity-40",
+                compact ? "px-1.5 py-1 text-xs" : "px-2 py-2 text-sm",
+                vehicleId === v.id
+                  ? "bg-tesla-accent/15 text-tesla-text"
+                  : "text-tesla-muted hover:bg-tesla-border/50 hover:text-tesla-text",
+              )}
+              title={revisionTooltip ? `${v.name} — ${revisionTooltip}` : v.name}
+            >
+              <span className="min-w-0 flex-1 truncate">{v.name}</span>
+              {v.current_revision_id && revisionBadge ? (
+                <span className="flex shrink-0 items-center gap-1.5">
+                  <span
+                    className="h-2 w-2 shrink-0 rounded-full bg-tesla-accent"
+                    title="Current revision"
+                    aria-hidden
+                  />
+                  <span className="text-xs text-tesla-muted">{revisionBadge}</span>
+                </span>
+              ) : null}
+            </button>
+          </li>
+        );
+      })}
       {!isLoading && vehicles.length === 0 && (
         <li className="px-2 py-1 text-sm text-tesla-muted">No vehicles</li>
       )}

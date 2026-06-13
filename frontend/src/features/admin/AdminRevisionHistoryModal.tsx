@@ -183,6 +183,7 @@ export function AdminRevisionHistoryModal({
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["admin-revision-timeline", vehicleId] });
       queryClient.invalidateQueries({ queryKey: ["vehicles"] });
+      queryClient.invalidateQueries({ queryKey: ["revisions", vehicleId] });
       setRevertTarget(null);
       setError(null);
       setSuccess(
