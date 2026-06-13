@@ -464,6 +464,6 @@ class ConnectorReconcileService:
         await self.db.execute(
             delete(Signal).where(
                 Signal.revision_id == revision_id,
-                Signal.id.not_in(assigned),
+                Signal.id.notin_(assigned),
             )
         )

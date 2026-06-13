@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
 import type { HierarchyNode } from "@/api/hierarchy";
 import type { NetPinInfo } from "@/api/nets";
@@ -183,13 +183,15 @@ export function TopologyDestinationPicker({
     return filterHierarchyForDestinationPicker(hierarchyRoot, available);
   }, [allPins, excludeConnectorId, hierarchyRoot]);
 
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [initializedKey, setInitializedKey] = useState<string | null>(null);
 
-  const activeExpandedIds = useMemo(() => {
-    if (!filteredRoot) return expandedIds;
-    if (expandedIds.size > 0) return expandedIds;
-    return collectExpandableIds(filteredRoot);
-  }, [expandedIds, filteredRoot]);
+  useEffect(() => {
+    if (filteredRoot && filteredRoot.id !== initializedKey) {
+      setExpandedIds(collectExpandableIds(filteredRoot));
+      setInitializedKey(filteredRoot.id);
+    }
+  }, [filteredRoot, initializedKey]);
 
   const pinsByConnector = useMemo(() => {
     const map = new Map<string, NetPinInfo[]>();
@@ -209,8 +211,7 @@ export function TopologyDestinationPicker({
 
   function toggleExpand(id: string) {
     setExpandedIds((prev) => {
-      const base = prev.size > 0 ? prev : collectExpandableIds(filteredRoot!);
-      const next = new Set(base);
+      const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
@@ -236,7 +237,7 @@ export function TopologyDestinationPicker({
             <TreeNodeRow
               node={filteredRoot}
               depth={0}
-              expandedIds={activeExpandedIds}
+              expandedIds={expandedIds}
               onToggleExpand={toggleExpand}
               selectedConnectorId={selectedConnectorId}
               onSelectConnector={onSelectConnector}

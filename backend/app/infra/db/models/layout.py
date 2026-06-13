@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, Double, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Double, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -39,4 +39,4 @@ class SavedView(Base):
     view_key: Mapped[str] = mapped_column(String(255), nullable=False)
     filters: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
     layout_snapshot: Mapped[dict | None] = mapped_column(JSONB)
-    created_at: Mapped[datetime] = mapped_column(nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

@@ -1,12 +1,12 @@
 import {
   BaseEdge,
   EdgeLabelRenderer,
-  getBezierPath,
   useReactFlow,
   type EdgeProps,
 } from "@xyflow/react";
 import { useEffect, useState } from "react";
 import clsx from "clsx";
+import { getWirePath } from "./wirePath";
 
 type Point = { x: number; y: number };
 
@@ -31,7 +31,7 @@ export function DeletableEdge({
   const [anchor, setAnchor] = useState<Point | null>(null);
   const [hovered, setHovered] = useState(false);
   const { screenToFlowPosition, flowToScreenPosition } = useReactFlow();
-  const [edgePath, labelX, labelY] = getBezierPath({
+  const [edgePath, labelX, labelY] = getWirePath({
     sourceX,
     sourceY,
     sourcePosition,

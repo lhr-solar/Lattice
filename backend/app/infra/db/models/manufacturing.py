@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, ForeignKey, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -50,9 +50,9 @@ class ManufacturingRecord(Base):
         UUID(as_uuid=True), ForeignKey("harness_groups.id"), nullable=False
     )
     built_by: Mapped[str | None] = mapped_column(String(255))
-    built_at: Mapped[datetime | None] = mapped_column()
+    built_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     continuity_checked_by: Mapped[str | None] = mapped_column(String(255))
-    continuity_checked_at: Mapped[datetime | None] = mapped_column()
+    continuity_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(String(64), nullable=False, default="open")
     notes: Mapped[str | None] = mapped_column(Text)
     metadata_: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, server_default="{}")
@@ -77,7 +77,7 @@ class EdgeManufacturingAudit(Base):
     changed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
-    changed_at: Mapped[datetime] = mapped_column(nullable=False)
+    changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class ContinuityCheck(Base):
@@ -88,6 +88,6 @@ class ContinuityCheck(Base):
         UUID(as_uuid=True), ForeignKey("manufacturing_records.id", ondelete="CASCADE"), nullable=False
     )
     performed_by: Mapped[str] = mapped_column(String(255), nullable=False)
-    performed_at: Mapped[datetime] = mapped_column(nullable=False)
+    performed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     passed: Mapped[bool] = mapped_column(Boolean, nullable=False)
     details: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")

@@ -11,6 +11,7 @@ from app.infra.db.enums import ConnectorGender
 from app.infra.db.models.catalog import ConnectorTemplate, ConnectorTemplatePin
 from app.infra.db.models.shorts import ConnectorInstancePinShort
 from app.infra.db.models.instances import ConnectorInstance, Pin
+from app.infra.db.models.manufacturing import HarnessGroupEdge
 from app.infra.db.models.topology import ConnectionEdge, PinSignalAssignment, Signal, SpliceConnection
 from app.infra.db.models.vehicle import Revision
 from app.schemas.connector_templates import (
@@ -284,6 +285,7 @@ async def _delete_instance_pins(db: AsyncSession, pin_ids: list[UUID]) -> None:
     edge_ids = select(ConnectionEdge.id).where(
         or_(ConnectionEdge.pin_a_id.in_(pin_ids), ConnectionEdge.pin_b_id.in_(pin_ids))
     )
+    await db.execute(delete(HarnessGroupEdge).where(HarnessGroupEdge.connection_edge_id.in_(edge_ids)))
     await db.execute(delete(ConnectionEdge).where(ConnectionEdge.id.in_(edge_ids)))
     await db.execute(
         delete(ConnectorInstancePinShort).where(
@@ -310,6 +312,6 @@ async def _prune_orphan_signals(db: AsyncSession, revision_id: UUID) -> None:
     await db.execute(
         delete(Signal).where(
             Signal.revision_id == revision_id,
-            Signal.id.not_in(assigned),
+            Signal.id.notin_(assigned),
         )
     )

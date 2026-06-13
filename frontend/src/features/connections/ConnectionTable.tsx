@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import {
@@ -159,6 +159,7 @@ export function ConnectionTable() {
   const setScope = useAppStore((s) => s.setConnectionScope);
 
   const [search, setSearch] = useState("");
+  const deferredSearch = useDeferredValue(search);
   const [flash, setFlash] = useState<{ kind: ConnectPinsResult["net_action"]; text: string } | null>(
     null,
   );
@@ -180,9 +181,9 @@ export function ConnectionTable() {
   });
 
   const { data: rows = [], isLoading } = useQuery({
-    queryKey: ["connection-table", vehicleId, revisionId, scopeParams, search],
+    queryKey: ["connection-table", vehicleId, revisionId, scopeParams, deferredSearch],
     queryFn: () =>
-      fetchConnectionTable(vehicleId!, revisionId!, { ...scopeParams, search: search || undefined }),
+      fetchConnectionTable(vehicleId!, revisionId!, { ...scopeParams, search: deferredSearch || undefined }),
     enabled: Boolean(show && vehicleId && revisionId),
   });
 

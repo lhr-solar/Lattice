@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
 from app.core.auth_context import UserContext, get_current_user
-from app.core.security import verify_password
+from app.core.security import DUMMY_PASSWORD_HASH, verify_password
 from app.core.time import utc_now
 from app.infra.db.models.revision import UserSession
 from app.infra.db.models.user import User
@@ -38,7 +38,11 @@ async def login(
     username = payload.username.strip()
     result = await db.execute(select(User).where(User.username == username))
     user = result.scalar_one_or_none()
-    if not user or not verify_password(payload.password, user.password_hash):
+    password_ok = verify_password(
+        payload.password,
+        user.password_hash if user else DUMMY_PASSWORD_HASH,
+    )
+    if not user or not password_ok:
         raise HTTPException(status_code=401, detail="Invalid username or password")
     now = utc_now()
     session = UserSession(user_id=user.id, created_at=now, last_seen_at=now)

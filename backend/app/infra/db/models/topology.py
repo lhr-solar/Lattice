@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import CheckConstraint, ForeignKey, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -77,18 +77,18 @@ class ConnectionEdge(Base):
     manufactured_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
-    manufactured_at: Mapped[datetime | None] = mapped_column()
+    manufactured_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     manufactured_at_edit_sequence: Mapped[int | None] = mapped_column()
     continuity_checked: Mapped[bool] = mapped_column(default=False)
     continuity_checked_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
-    continuity_checked_at: Mapped[datetime | None] = mapped_column()
+    continuity_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     continuity_checked_at_edit_sequence: Mapped[int | None] = mapped_column()
     enclosure_a_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     enclosure_b_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     harness_scope: Mapped[HarnessScope | None] = mapped_column()
-    created_at: Mapped[datetime] = mapped_column(nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class SpliceNode(Base):

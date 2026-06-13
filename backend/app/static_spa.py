@@ -17,7 +17,8 @@ def resolve_static_dir(explicit: str | None = None) -> Path | None:
 def mount_spa(app: FastAPI, static_dir: Path) -> None:
     """Serve a Vite production build with SPA fallback (after API routes are registered)."""
 
-    assets_dir = static_dir / "assets"
+    resolved_static_dir = static_dir.resolve()
+    assets_dir = resolved_static_dir / "assets"
     if assets_dir.is_dir():
         app.mount("/assets", StaticFiles(directory=assets_dir), name="static-assets")
 
@@ -27,11 +28,15 @@ def mount_spa(app: FastAPI, static_dir: Path) -> None:
             raise HTTPException(status_code=404, detail="Not found")
 
         if full_path:
-            candidate = static_dir / full_path
-            if candidate.is_file():
-                return FileResponse(candidate)
+            try:
+                candidate = (resolved_static_dir / full_path).resolve()
+                candidate.relative_to(resolved_static_dir)
+                if candidate.is_file():
+                    return FileResponse(candidate)
+            except ValueError:
+                pass
 
-        index = static_dir / "index.html"
+        index = resolved_static_dir / "index.html"
         if index.is_file():
             return FileResponse(index)
 
