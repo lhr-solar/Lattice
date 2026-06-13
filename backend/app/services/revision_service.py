@@ -4,7 +4,7 @@ from datetime import datetime
 from uuid import UUID
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.revision_guard import get_revision_or_404
@@ -151,9 +151,12 @@ class RevisionService:
             await self.db.flush()
             signal_map[sig.id] = new_sig.id
 
-        for enc in (
-            await self.db.execute(select(EnclosureInstance).where(EnclosureInstance.revision_id == from_revision_id))
-        ).scalars():
+        source_enclosures = (
+            await self.db.execute(
+                select(EnclosureInstance).where(EnclosureInstance.revision_id == from_revision_id)
+            )
+        ).scalars().all()
+        for enc in source_enclosures:
             new_enc = EnclosureInstance(
                 revision_id=to_revision_id,
                 vehicle_id=vehicle_id,
@@ -166,6 +169,15 @@ class RevisionService:
             self.db.add(new_enc)
             await self.db.flush()
             enc_map[enc.id] = new_enc.id
+        for enc in source_enclosures:
+            if enc.parent_enclosure_instance_id:
+                await self.db.execute(
+                    update(EnclosureInstance)
+                    .where(EnclosureInstance.id == enc_map[enc.id])
+                    .values(
+                        parent_enclosure_instance_id=enc_map.get(enc.parent_enclosure_instance_id)
+                    )
+                )
 
         for pcb in (
             await self.db.execute(select(PcbInstance).where(PcbInstance.revision_id == from_revision_id))

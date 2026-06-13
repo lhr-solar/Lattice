@@ -1,5 +1,6 @@
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { ConnectorInstanceLabel } from "@/components/library/ConnectorInstanceLabel";
+import { containerTitleHeight, GROUP_HEADER_H } from "../graphLayout";
 
 const CONTAINER_BG = "#141414";
 const CONTAINER_BORDER = "#2a2a2a";
@@ -18,6 +19,21 @@ export function ContainerNode({ data }: NodeProps) {
   const label = asString(data?.label);
   const templateLabel =
     typeof data?.templateLabel === "string" ? data.templateLabel : null;
+  const hideTitle = data?.hideTitle === true;
+  const titleHeight = containerTitleHeight(data as Record<string, unknown> | undefined);
+  if (hideTitle) {
+    return (
+      <div
+        style={{
+          width: "100%",
+          height: "100%",
+          background: "transparent",
+          boxSizing: "border-box",
+          pointerEvents: "none",
+        }}
+      />
+    );
+  }
   return (
     <div
       style={{
@@ -28,15 +44,21 @@ export function ContainerNode({ data }: NodeProps) {
         borderRadius: 8,
         color: "#e8e8e8",
         boxSizing: "border-box",
+        pointerEvents: "none",
       }}
     >
       <div
         style={{
+          boxSizing: "border-box",
+          height: titleHeight,
+          minHeight: titleHeight,
           padding: "7px 12px",
           fontSize: 12,
           fontWeight: 600,
           borderBottom: `1px solid ${CONTAINER_BORDER}`,
           overflow: "hidden",
+          pointerEvents: "all",
+          cursor: "grab",
         }}
       >
         <ConnectorInstanceLabel
@@ -58,7 +80,8 @@ export function ConnectorGroupNode({ data }: NodeProps) {
   const dotted = data?.groupBorder === "dotted" || data?.isPigtail === true;
   const isPanelMount = data?.isPanelMount === true;
   const isPigtail = data?.isPigtail === true;
-  const tag = isPigtail ? "pigtail" : isPanelMount ? "panel" : null;
+  const isInline = data?.isInline === true;
+  const tag = isPigtail ? "pigtail" : isPanelMount ? "panel" : isInline ? "inline" : null;
   return (
     <div
       style={{
@@ -69,10 +92,14 @@ export function ConnectorGroupNode({ data }: NodeProps) {
         borderRadius: 6,
         color: "#e8e8e8",
         boxSizing: "border-box",
+        pointerEvents: "none",
       }}
     >
       <div
         style={{
+          boxSizing: "border-box",
+          height: GROUP_HEADER_H,
+          minHeight: GROUP_HEADER_H,
           display: "flex",
           alignItems: "center",
           gap: 6,
@@ -140,6 +167,7 @@ export function PinPortNode({ data }: NodeProps) {
         borderRadius: 4,
         color: "#e8e8e8",
         boxSizing: "border-box",
+        pointerEvents: "all",
       }}
     >
       <span style={{ fontFamily: "monospace", color: MUTED, flexShrink: 0 }}>{String(pinNumber)}</span>

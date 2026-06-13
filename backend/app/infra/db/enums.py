@@ -58,3 +58,8 @@ class ConnectorGender(str, enum.Enum):
     FEMALE = "female"
     HERMAPHRODITIC = "hermaphroditic"
     UNKNOWN = "unknown"
+
+
+class ConnectorCategory(str, enum.Enum):
+    WIRE_TO_WIRE = "wire_to_wire"
+    WIRE_TO_BOARD = "wire_to_board"

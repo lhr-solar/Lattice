@@ -13,7 +13,11 @@ export function PinShortPanel() {
   const wireMode = useAppStore((s) => s.wireMode);
 
   const connectorId =
-    selectedNodeKind === "connector" || selectedNodeKind === "panelMount" ? focusId : null;
+    selectedNodeKind === "connector" ||
+    selectedNodeKind === "inlineConnector" ||
+    selectedNodeKind === "panelMount"
+      ? focusId
+      : null;
 
   const [shortPinA, setShortPinA] = useState<string | null>(null);
 

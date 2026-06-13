@@ -4,6 +4,7 @@ export interface EnclosureInstance {
   id: string;
   display_name: string;
   enclosure_template_id: string;
+  parent_enclosure_instance_id?: string | null;
   connector_instance_ids: string[];
 }
 
@@ -45,7 +46,12 @@ export function fetchEnclosures(vehicleId: string, revisionId: string) {
 export function createEnclosure(
   vehicleId: string,
   revisionId: string,
-  body: { enclosure_template_id: string; nickname?: string; use_template_name?: boolean },
+  body: {
+    enclosure_template_id: string;
+    parent_enclosure_instance_id?: string | null;
+    nickname?: string;
+    use_template_name?: boolean;
+  },
 ) {
   return apiFetch<EnclosureInstance>(
     `/vehicles/${vehicleId}/revisions/${revisionId}/instances/enclosures`,
@@ -108,6 +114,18 @@ export function updatePcbInstance(
 ) {
   return apiFetch<PcbInstance>(
     `/vehicles/${vehicleId}/revisions/${revisionId}/instances/pcbs/${pcbInstanceId}`,
+    { method: "PATCH", body: JSON.stringify(body) },
+  );
+}
+
+export function updateConnectorInstance(
+  vehicleId: string,
+  revisionId: string,
+  connectorInstanceId: string,
+  body: { nickname?: string | null; expected_edit_sequence?: number },
+) {
+  return apiFetch<ConnectorInstance>(
+    `/vehicles/${vehicleId}/revisions/${revisionId}/instances/connectors/${connectorInstanceId}`,
     { method: "PATCH", body: JSON.stringify(body) },
   );
 }

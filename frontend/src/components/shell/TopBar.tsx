@@ -88,7 +88,7 @@ export function TopBar({ onOpenAdmin }: TopBarProps) {
         <button
           type="button"
           onClick={() => setShowSignOutConfirm(true)}
-          className="rounded px-2 py-1 transition hover:bg-tesla-border hover:text-tesla-text"
+          className="rounded px-2 py-1 text-red-400 transition hover:bg-red-600 hover:text-white"
         >
           Sign out
         </button>

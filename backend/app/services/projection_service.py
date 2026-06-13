@@ -1,8 +1,9 @@
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.infra.db.enums import ConnectorCategory
 from app.infra.db.models.catalog import ConnectorTemplate
 from app.infra.db.models.instances import (
     ConnectorInstance,
@@ -24,6 +25,7 @@ from app.core.display import (
     resolve_connector_with_slot,
     resolve_display_name,
 )
+from app.domains.connectors.export import connector_kind_for_instance, is_inline_connector_template, is_pigtail_instance
 from app.schemas.projections import (
     BusGroupDto,
     DesignEdgeDto,
@@ -63,7 +65,10 @@ class ProjectionService:
             await self.db.execute(
                 select(EnclosureInstance, EnclosureTemplate)
                 .join(EnclosureTemplate, EnclosureInstance.enclosure_template_id == EnclosureTemplate.id)
-                .where(EnclosureInstance.revision_id == revision_id)
+                .where(
+                    EnclosureInstance.revision_id == revision_id,
+                    EnclosureInstance.parent_enclosure_instance_id.is_(None),
+                )
             )
         ).all()
         top_node_rows = (
@@ -105,6 +110,13 @@ class ProjectionService:
                     "connectors": await self._connectors_for_node(revision_id, node_inst.id),
                 }
             )
+        await self._append_inline_connectors_to_item_specs(
+            item_specs,
+            revision_id,
+            layouts,
+            enclosure_instance_id=None,
+            y_offset=620,
+        )
         return await self._build_grouped_pin_projection(
             revision_id=revision_id,
             level="vehicle",
@@ -144,12 +156,49 @@ class ProjectionService:
 
         item_specs: list[dict] = []
         panel_connectors = await self._panel_connectors_for_enclosure(revision_id, enclosure_id)
+        panel_y = 80
+        # Rough vertical estimate so downstream default layouts do not overlap.
+        panel_height_estimate = 120 + len(panel_connectors) * 96
+        child_y = max(220, panel_y + panel_height_estimate + 48)
+        child_enclosure_rows = (
+            await self.db.execute(
+                select(EnclosureInstance, EnclosureTemplate)
+                .join(EnclosureTemplate, EnclosureInstance.enclosure_template_id == EnclosureTemplate.id)
+                .where(
+                    EnclosureInstance.revision_id == revision_id,
+                    EnclosureInstance.parent_enclosure_instance_id == enclosure_id,
+                )
+            )
+        ).all()
+        child_specs: list[tuple[EnclosureInstance, EnclosureTemplate, list[tuple[ConnectorInstance, ConnectorTemplate]]]] = []
+        for child_enc, child_tmpl in child_enclosure_rows:
+            child_connectors = await self._enclosure_surface_connectors(revision_id, child_enc.id)
+            child_specs.append((child_enc, child_tmpl, child_connectors))
+        max_child_connectors = max((len(connectors) for _, _, connectors in child_specs), default=0)
+        child_height_estimate = 120 + max_child_connectors * 96
+        node_y = max(360, child_y + child_height_estimate + 48)
+        for idx, (child_enc, child_tmpl, child_connectors) in enumerate(child_specs):
+            child_label, child_template = resolve_connector_labels(
+                template_name=child_tmpl.name,
+                nickname=child_enc.nickname,
+                use_template_name=child_enc.use_template_name,
+            )
+            item_specs.append(
+                {
+                    "item_id": f"enclosure:{child_enc.id}",
+                    "item_kind": "vehicleItem",
+                    "item_label": child_label,
+                    "item_template_label": child_template,
+                    "item_position": layouts.get(f"enclosure:{child_enc.id}") or (90 + idx * 520, child_y),
+                    "connectors": child_connectors,
+                }
+            )
         item_specs.append(
             {
                 "item_id": f"enclosure-panel:{enclosure_id}",
                 "item_kind": "enclosurePanelItem",
                 "item_label": "Panel / Pigtail",
-                "item_position": layouts.get(f"enclosure-panel:{enclosure_id}") or (90, 80),
+                "item_position": layouts.get(f"enclosure-panel:{enclosure_id}") or (90, panel_y),
                 "connectors": panel_connectors,
             }
         )
@@ -173,10 +222,17 @@ class ProjectionService:
                     "item_kind": "nodeItem",
                     "item_label": node_label,
                     "item_template_label": node_template,
-                    "item_position": layouts.get(node_key) or (90 + idx * 520, 360),
+                    "item_position": layouts.get(node_key) or (90 + idx * 520, node_y),
                     "connectors": node_connectors,
                 }
             )
+        await self._append_inline_connectors_to_item_specs(
+            item_specs,
+            revision_id,
+            layouts,
+            enclosure_instance_id=enclosure_id,
+            y_offset=node_y + 180,
+        )
         return await self._build_grouped_pin_projection(
             revision_id=revision_id,
             level="enclosure",
@@ -197,6 +253,48 @@ class ProjectionService:
         if not connector_id:
             return DesignGraphProjectionDto(
                 revision_id=revision_id, level="connector", view_key=view_key, nodes=[], edges=[]
+            )
+
+        conn = await self.db.get(ConnectorInstance, connector_id)
+        if not conn or conn.revision_id != revision_id:
+            return DesignGraphProjectionDto(
+                revision_id=revision_id,
+                level="connector",
+                view_key=view_key,
+                nodes=[],
+                edges=[],
+                meta={"error": "connector not found"},
+            )
+        tmpl = await self.db.get(ConnectorTemplate, conn.connector_template_id)
+        if (
+            tmpl
+            and is_inline_connector_template(tmpl)
+            and conn.pcb_instance_id is None
+            and not conn.is_panel_mount
+        ):
+            label, template_label = resolve_connector_labels(
+                template_name=tmpl.name,
+                nickname=conn.nickname,
+                use_template_name=conn.use_template_name,
+            )
+            return await self._build_grouped_pin_projection(
+                revision_id=revision_id,
+                level="connector",
+                view_key=view_key,
+                item_specs=[
+                    {
+                        "item_id": f"inline:{conn.id}",
+                        "item_kind": "nodeItem",
+                        "item_label": label,
+                        "item_template_label": template_label,
+                        "item_position": layouts.get(f"inline:{conn.id}") or (120, 120),
+                        "connectors": [(conn, tmpl)],
+                        "hide_title": True,
+                    }
+                ],
+                harness_scope=None,
+                enclosure_id_for_internal=None,
+                meta={"connectorId": str(connector_id)},
             )
 
         pins = (
@@ -361,6 +459,8 @@ class ProjectionService:
             item_id = item["item_id"]
             ix, iy = item["item_position"]
             container_data: dict = {"container": True}
+            if item.get("hide_title"):
+                container_data["hideTitle"] = True
             if item.get("item_template_label"):
                 container_data["templateLabel"] = item["item_template_label"]
             nodes.append(
@@ -395,9 +495,12 @@ class ProjectionService:
                             "connectorInstanceId": str(conn.id),
                             "templateLabel": template_label,
                             "slotKey": slot_chip,
-                            "isPigtail": bool(conn.source_pcb_instance_id),
+                            "isPigtail": is_pigtail_instance(conn, tmpl),
                             "isPanelMount": conn.is_panel_mount,
-                            "groupBorder": "dotted" if conn.source_pcb_instance_id else "solid",
+                            "isInline": bool(
+                                is_inline_connector_template(tmpl) and conn.pcb_instance_id is None
+                            ),
+                            "groupBorder": "dotted" if is_pigtail_instance(conn, tmpl) else "solid",
                         },
                     )
                 )
@@ -464,9 +567,124 @@ class ProjectionService:
             meta=meta | {"nodeCount": len(nodes), "edgeCount": len(edges)},
         )
 
-    async def _vehicle_level_connectors_for_enclosure(
+    async def _inline_connectors_for_scope(
+        self,
+        revision_id: UUID,
+        *,
+        enclosure_instance_id: UUID | None,
+    ) -> list[tuple[ConnectorInstance, ConnectorTemplate]]:
+        q = (
+            select(ConnectorInstance, ConnectorTemplate)
+            .join(ConnectorTemplate, ConnectorInstance.connector_template_id == ConnectorTemplate.id)
+            .where(
+                ConnectorInstance.revision_id == revision_id,
+                ConnectorInstance.pcb_instance_id.is_(None),
+                ConnectorInstance.is_panel_mount.is_(False),
+                ConnectorTemplate.connector_category == ConnectorCategory.WIRE_TO_WIRE,
+                ConnectorTemplate.is_inline_template.is_(True),
+            )
+            .order_by(ConnectorInstance.created_at)
+        )
+        if enclosure_instance_id is None:
+            q = q.where(ConnectorInstance.enclosure_instance_id.is_(None))
+        else:
+            q = q.where(ConnectorInstance.enclosure_instance_id == enclosure_instance_id)
+        return list((await self.db.execute(q)).all())
+
+    async def _append_inline_connectors_to_item_specs(
+        self,
+        item_specs: list[dict],
+        revision_id: UUID,
+        layouts: dict[str, tuple[float, float]],
+        *,
+        enclosure_instance_id: UUID | None,
+        y_offset: int,
+    ) -> None:
+        inlines = await self._inline_connectors_for_scope(
+            revision_id, enclosure_instance_id=enclosure_instance_id
+        )
+        if not inlines:
+            return
+
+        if enclosure_instance_id is None:
+            node_items = [
+                item
+                for item in item_specs
+                if item["item_kind"] == "vehicleItem" and item["item_id"].startswith("node:")
+            ]
+            if node_items:
+                node_items[0]["connectors"].extend(inlines)
+                return
+            for idx, (conn, tmpl) in enumerate(inlines):
+                label, template_label = resolve_connector_labels(
+                    template_name=tmpl.name,
+                    nickname=conn.nickname,
+                    use_template_name=conn.use_template_name,
+                )
+                item_id = f"inline:{conn.id}"
+                item_specs.append(
+                    {
+                        "item_id": item_id,
+                        "item_kind": "nodeItem",
+                        "item_label": label,
+                        "item_template_label": template_label,
+                        "item_position": layouts.get(item_id) or (90 + idx * 320, y_offset),
+                        "connectors": [(conn, tmpl)],
+                        "hide_title": True,
+                    }
+                )
+            return
+
+        node_items = [
+            item
+            for item in item_specs
+            if item["item_kind"] == "nodeItem" and item["item_id"].startswith("node:")
+        ]
+        if node_items:
+            node_items[0]["connectors"].extend(inlines)
+            return
+        panel_id = f"enclosure-panel:{enclosure_instance_id}"
+        panel_items = [item for item in item_specs if item["item_id"] == panel_id]
+        if panel_items:
+            panel_items[0]["connectors"].extend(inlines)
+
+    async def _template_panel_slot_ids(self, enclosure_template_id: UUID) -> set[UUID]:
+        return set(
+            (
+                await self.db.execute(
+                    select(EnclosureTemplatePanelSlot.id).where(
+                        EnclosureTemplatePanelSlot.enclosure_template_id == enclosure_template_id
+                    )
+                )
+            ).scalars().all()
+        )
+
+    async def _descendant_enclosure_ids(self, enclosure_id: UUID) -> set[UUID]:
+        descendants: set[UUID] = set()
+        frontier = [enclosure_id]
+        while frontier:
+            rows = (
+                await self.db.execute(
+                    select(EnclosureInstance.id).where(
+                        EnclosureInstance.parent_enclosure_instance_id.in_(frontier)
+                    )
+                )
+            ).scalars().all()
+            next_frontier = [row for row in rows if row not in descendants]
+            descendants.update(next_frontier)
+            frontier = next_frontier
+        return descendants
+
+    async def _connectors_for_enclosure_instance(
         self, revision_id: UUID, enclosure_id: UUID
     ) -> list[tuple[ConnectorInstance, ConnectorTemplate]]:
+        enc = await self.db.get(EnclosureInstance, enclosure_id)
+        if not enc:
+            return []
+
+        own_template_slot_ids = await self._template_panel_slot_ids(enc.enclosure_template_id)
+        direct_pcb_ids = set(await self._pcb_ids_for_enclosure(enclosure_id))
+
         rows = (
             await self.db.execute(
                 select(ConnectorInstance, ConnectorTemplate)
@@ -477,15 +695,73 @@ class ProjectionService:
                 )
             )
         ).all()
-        return [
-            (conn, tmpl)
-            for conn, tmpl in rows
-            if conn.pcb_instance_id is None or conn.source_pcb_instance_id is not None
-        ]
+
+        result: list[tuple[ConnectorInstance, ConnectorTemplate]] = []
+        for conn, tmpl in rows:
+            if (
+                is_inline_connector_template(tmpl)
+                and conn.pcb_instance_id is None
+                and not conn.is_panel_mount
+            ):
+                continue
+            if conn.is_panel_mount and conn.source_pcb_instance_id is None:
+                if (
+                    conn.enclosure_instance_id == enclosure_id
+                    or (
+                        conn.enclosure_panel_slot_id
+                        and conn.enclosure_panel_slot_id in own_template_slot_ids
+                    )
+                ):
+                    result.append((conn, tmpl))
+            elif conn.source_pcb_instance_id and conn.source_pcb_instance_id in direct_pcb_ids:
+                result.append((conn, tmpl))
+        return result
+
+    async def _enclosure_surface_connectors(
+        self, revision_id: UUID, enclosure_id: UUID
+    ) -> list[tuple[ConnectorInstance, ConnectorTemplate]]:
+        return await self._connectors_for_enclosure_instance(revision_id, enclosure_id)
+
+    async def _vehicle_level_connectors_for_enclosure(
+        self, revision_id: UUID, enclosure_id: UUID
+    ) -> list[tuple[ConnectorInstance, ConnectorTemplate]]:
+        return await self._connectors_for_enclosure_instance(revision_id, enclosure_id)
 
     async def _panel_connectors_for_enclosure(
         self, revision_id: UUID, enclosure_id: UUID
     ) -> list[tuple[ConnectorInstance, ConnectorTemplate]]:
+        enc = await self.db.get(EnclosureInstance, enclosure_id)
+        if not enc:
+            return []
+
+        own_template_slot_ids = await self._template_panel_slot_ids(enc.enclosure_template_id)
+        direct_pcb_ids = set(await self._pcb_ids_for_enclosure(enclosure_id))
+        descendant_ids = await self._descendant_enclosure_ids(enclosure_id)
+        descendant_template_ids: set[UUID] = set()
+        if descendant_ids:
+            descendant_template_ids = set(
+                (
+                    await self.db.execute(
+                        select(EnclosureInstance.enclosure_template_id).where(
+                            EnclosureInstance.id.in_(descendant_ids)
+                        )
+                    )
+                ).scalars().all()
+            )
+        descendant_slot_ids: set[UUID] = set()
+        if descendant_template_ids:
+            descendant_slot_ids = set(
+                (
+                    await self.db.execute(
+                        select(EnclosureTemplatePanelSlot.id).where(
+                            EnclosureTemplatePanelSlot.enclosure_template_id.in_(
+                                descendant_template_ids
+                            )
+                        )
+                    )
+                ).scalars().all()
+            )
+
         rows = (
             await self.db.execute(
                 select(ConnectorInstance, ConnectorTemplate)
@@ -496,11 +772,33 @@ class ProjectionService:
                 )
             )
         ).all()
-        return [
-            (conn, tmpl)
-            for conn, tmpl in rows
-            if conn.is_panel_mount or conn.source_pcb_instance_id is not None
-        ]
+
+        result: list[tuple[ConnectorInstance, ConnectorTemplate]] = []
+        for conn, tmpl in rows:
+            if (
+                is_inline_connector_template(tmpl)
+                and conn.pcb_instance_id is None
+                and not conn.is_panel_mount
+            ):
+                continue
+            if conn.is_panel_mount and conn.source_pcb_instance_id is None:
+                if (
+                    conn.enclosure_panel_slot_id
+                    and conn.enclosure_panel_slot_id not in own_template_slot_ids
+                ):
+                    continue
+                if conn.enclosure_panel_slot_id and conn.enclosure_panel_slot_id in descendant_slot_ids:
+                    continue
+                result.append((conn, tmpl))
+            elif conn.source_pcb_instance_id and conn.source_pcb_instance_id in direct_pcb_ids:
+                result.append((conn, tmpl))
+        return result
+
+    async def _pcb_ids_for_enclosure(self, enclosure_id: UUID) -> list[UUID]:
+        result = await self.db.execute(
+            select(PcbInstance.id).where(PcbInstance.enclosure_instance_id == enclosure_id)
+        )
+        return list(result.scalars().all())
 
     async def _connectors_for_node(
         self, revision_id: UUID, node_id: UUID

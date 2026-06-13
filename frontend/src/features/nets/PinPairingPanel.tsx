@@ -17,7 +17,11 @@ export function PinPairingPanel() {
   const selectedNodeKind = useAppStore((s) => s.selectedNodeKind);
 
   const connectorId =
-    selectedNodeKind === "connector" || selectedNodeKind === "panelMount" ? focusId : null;
+    selectedNodeKind === "connector" ||
+    selectedNodeKind === "inlineConnector" ||
+    selectedNodeKind === "panelMount"
+      ? focusId
+      : null;
 
   const [netMode, setNetMode] = useState<"existing" | "new">("existing");
   const [selectedNetId, setSelectedNetId] = useState("");

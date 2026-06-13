@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
 import { fetchHierarchy, type HierarchyNode } from "@/api/hierarchy";
 import { deleteConnector, deleteEnclosure, deletePcb } from "@/api/instances";
@@ -9,16 +9,21 @@ import { useAppStore } from "@/stores/appStore";
 import type { ProjectionLevel } from "@/api/types";
 import { ConfirmModal } from "@/components/ui/Modal";
 import { ConnectorInstanceLabel, connectorNodeTitle } from "@/components/library/ConnectorInstanceLabel";
+import { HierarchyIcon } from "@/components/shell/HierarchyIcons";
 
 function TreeNode({
   node,
   depth = 0,
+  collapsedIds,
+  onToggleCollapse,
   onSelect,
   selectedId,
   onRequestDelete,
 }: {
   node: HierarchyNode;
   depth?: number;
+  collapsedIds: Set<string>;
+  onToggleCollapse: (id: string) => void;
   onSelect: (id: string, kind: string, level: ProjectionLevel) => void;
   selectedId: string | null;
   onRequestDelete: (node: HierarchyNode) => void;
@@ -29,13 +34,18 @@ function TreeNode({
     pcb: "enclosure",
     node: "node",
     connector: "connector",
+    inlineConnector: "connector",
     panelMount: "connector",
   };
   const hasChildren = node.children.length > 0;
-  const canDelete = node.kind !== "vehicle" && node.kind !== "inlineGroup";
+  const isVehicle = node.kind === "vehicle";
+  const isCollapsed = !isVehicle && collapsedIds.has(node.id);
+  const canDelete = !isVehicle;
+  const canCollapse = hasChildren && !isVehicle;
 
   const hasTemplateLabel = Boolean(node.template_label);
-  const isConnector = node.kind === "connector" || node.kind === "panelMount";
+  const isConnector =
+    node.kind === "connector" || node.kind === "panelMount" || node.kind === "inlineConnector";
   const showStackedLabel =
     isConnector || node.kind === "enclosure" || node.kind === "node";
   const title = hasTemplateLabel || isConnector
@@ -46,27 +56,47 @@ function TreeNode({
     <li>
       <div
         className={clsx(
-          "flex items-center gap-1 rounded-md pr-1 transition",
+          "flex items-center gap-0.5 rounded-md pr-1 transition",
           selectedId === node.id
             ? "bg-tesla-accent/15 text-tesla-text"
             : "text-tesla-muted hover:bg-tesla-border/50 hover:text-tesla-text",
           node.kind === "vehicle" && "font-medium text-tesla-text",
         )}
       >
+        {isVehicle ? (
+          <span className="w-2 shrink-0" aria-hidden />
+        ) : (
+          <span
+            style={{ width: `${depth * 12 + 4}px` }}
+            className="shrink-0"
+            aria-hidden
+          />
+        )}
+        {canCollapse ? (
+          <button
+            type="button"
+            aria-label={isCollapsed ? "Expand" : "Collapse"}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleCollapse(node.id);
+            }}
+            className="shrink-0 rounded p-0.5 text-tesla-muted transition hover:bg-tesla-border/50 hover:text-tesla-text"
+          >
+            <ChevronIcon expanded={!isCollapsed} />
+          </button>
+        ) : (
+          !isVehicle && <span className="w-[18px] shrink-0" aria-hidden />
+        )}
         <button
           type="button"
           onClick={() => {
             const level = levelMap[node.kind];
             if (level) onSelect(node.id, node.kind, level);
           }}
-          style={{ paddingLeft: `${depth * 12 + 8}px` }}
-          className={clsx(
-            "min-w-0 flex-1 py-1.5 text-left text-sm",
-            showStackedLabel ? "flex items-center gap-1" : "truncate",
-          )}
+          className="flex min-w-0 flex-1 items-center gap-1.5 py-1.5 text-left text-sm"
           title={title}
         >
-          <span className="mr-1 shrink-0 opacity-60">{iconFor(node.kind)}</span>
+          <HierarchyIcon kind={node.kind} className="shrink-0 opacity-70" />
           {showStackedLabel ? (
             <ConnectorInstanceLabel
               label={node.label}
@@ -75,7 +105,7 @@ function TreeNode({
               className="min-w-0 flex-1"
             />
           ) : (
-            node.label
+            <span className="truncate">{node.label}</span>
           )}
         </button>
         {canDelete ? (
@@ -94,13 +124,15 @@ function TreeNode({
           <span className="w-[26px] shrink-0" aria-hidden />
         )}
       </div>
-      {hasChildren && (
+      {hasChildren && !isCollapsed && (
         <ul>
           {node.children.map((child) => (
             <TreeNode
               key={child.id}
               node={child}
               depth={depth + 1}
+              collapsedIds={collapsedIds}
+              onToggleCollapse={onToggleCollapse}
               onSelect={onSelect}
               selectedId={selectedId}
               onRequestDelete={onRequestDelete}
@@ -110,24 +142,6 @@ function TreeNode({
       )}
     </li>
   );
-}
-
-function iconFor(kind: string) {
-  switch (kind) {
-    case "inlineGroup":
-      return "⎯";
-    case "enclosure":
-      return "▣";
-    case "pcb":
-    case "node":
-      return "▤";
-    case "panelMount":
-      return "◎";
-    case "connector":
-      return "◉";
-    default:
-      return "•";
-  }
 }
 
 function VehiclesList({
@@ -221,6 +235,45 @@ function UtilitiesButtons({
   );
 }
 
+function defaultCollapsedIds(root: HierarchyNode): Set<string> {
+  return new Set(root.children.map((child) => child.id));
+}
+
+function allCollapsibleIds(root: HierarchyNode): Set<string> {
+  const ids = new Set<string>();
+  for (const child of root.children) {
+    collectCollapsibleIds(child, ids);
+  }
+  return ids;
+}
+
+function collectCollapsibleIds(node: HierarchyNode, ids: Set<string>) {
+  if (node.children.length > 0) {
+    ids.add(node.id);
+    for (const child of node.children) {
+      collectCollapsibleIds(child, ids);
+    }
+  }
+}
+
+function ChevronIcon({ expanded }: { expanded: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      width={14}
+      height={14}
+      aria-hidden
+      className={clsx("transition-transform", expanded && "rotate-90")}
+    >
+      <path
+        fill="currentColor"
+        d="M6.2 3.8a.6.6 0 0 1 .9 0l4.2 4.2a.6.6 0 0 1 0 .9l-4.2 4.2a.6.6 0 0 1-.9-.9L9.9 8 6.2 4.7a.6.6 0 0 1 0-.9Z"
+      />
+    </svg>
+  );
+}
+
+
 export function HierarchyNav() {
   const queryClient = useQueryClient();
   const mode = useAppStore((s) => s.mode);
@@ -235,6 +288,8 @@ export function HierarchyNav() {
   const searchQuery = useAppStore((s) => s.searchQuery).toLowerCase();
   const [deleteTopologyTarget, setDeleteTopologyTarget] = useState<HierarchyNode | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
+  const [collapseKey, setCollapseKey] = useState<string | null>(null);
 
   const isManufacturing = mode === "manufacturing";
 
@@ -249,6 +304,32 @@ export function HierarchyNav() {
     enabled: Boolean(vehicleId && revisionId && !isManufacturing),
   });
 
+  const hierarchyKey = vehicleId && revisionId ? `${vehicleId}:${revisionId}` : null;
+
+  useEffect(() => {
+    if (!hierarchy?.root || !hierarchyKey || collapseKey === hierarchyKey) return;
+    setCollapsedIds(defaultCollapsedIds(hierarchy.root));
+    setCollapseKey(hierarchyKey);
+  }, [hierarchy, hierarchyKey, collapseKey]);
+
+  const toggleCollapse = useCallback((id: string) => {
+    setCollapsedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const collapseAll = useCallback(() => {
+    if (!hierarchy?.root) return;
+    setCollapsedIds(allCollapsibleIds(hierarchy.root));
+  }, [hierarchy]);
+
+  const expandAll = useCallback(() => {
+    setCollapsedIds(new Set());
+  }, []);
+
   const deleteTopologyMutation = useMutation({
     mutationFn: async (node: HierarchyNode) => {
       if (!vehicleId || !revisionId) throw new Error("No vehicle selected");
@@ -260,7 +341,7 @@ export function HierarchyNav() {
         await deletePcb(vehicleId, revisionId, node.id);
         return;
       }
-      if (node.kind === "connector" || node.kind === "panelMount") {
+      if (node.kind === "connector" || node.kind === "panelMount" || node.kind === "inlineConnector") {
         await deleteConnector(vehicleId, revisionId, node.id);
         return;
       }
@@ -299,9 +380,18 @@ export function HierarchyNav() {
     selectVehicle(vid, rid);
     setFocus(null);
     setProjectionLevel("vehicle");
+    setCollapseKey(null);
   }
 
-  const filteredRoot = hierarchy?.root ? filterTree(hierarchy.root, searchQuery) : null;
+  const filteredRoot = useMemo(
+    () => (hierarchy?.root ? filterTree(hierarchy.root, searchQuery) : null),
+    [hierarchy, searchQuery],
+  );
+
+  const searchExpandedIds = useMemo(() => {
+    if (!searchQuery || !filteredRoot) return collapsedIds;
+    return new Set<string>();
+  }, [searchQuery, filteredRoot, collapsedIds]);
 
   if (isManufacturing) {
     return (
@@ -381,12 +471,36 @@ export function HierarchyNav() {
         />
         <UtilitiesButtons disabled={!vehicleId} />
         <div className="flex-1 overflow-y-auto p-2">
-          <p className="mb-2 px-2 text-xs uppercase tracking-wider text-tesla-muted">Topology</p>
+          <div className="mb-2 flex items-center justify-between gap-1 px-2">
+            <span className="text-xs uppercase tracking-wider text-tesla-muted">Topology</span>
+            {filteredRoot && filteredRoot.children.length > 0 && !searchQuery && (
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  onClick={expandAll}
+                  className="rounded px-1.5 py-0.5 text-[10px] text-tesla-muted transition hover:bg-tesla-border/50 hover:text-tesla-text"
+                  title="Expand all"
+                >
+                  Expand all
+                </button>
+                <button
+                  type="button"
+                  onClick={collapseAll}
+                  className="rounded px-1.5 py-0.5 text-[10px] text-tesla-muted transition hover:bg-tesla-border/50 hover:text-tesla-text"
+                  title="Collapse all"
+                >
+                  Collapse all
+                </button>
+              </div>
+            )}
+          </div>
           {!vehicleId && <p className="px-2 text-sm text-tesla-muted">Select a vehicle</p>}
           {filteredRoot && (
             <ul>
               <TreeNode
                 node={filteredRoot}
+                collapsedIds={searchExpandedIds}
+                onToggleCollapse={toggleCollapse}
                 onSelect={handleNodeSelect}
                 selectedId={selectedNodeId}
                 onRequestDelete={setDeleteTopologyTarget}
@@ -422,10 +536,11 @@ export function HierarchyNav() {
 function filterTree(node: HierarchyNode, query: string): HierarchyNode | null {
   if (!query) return node;
   const labelMatch = node.label.toLowerCase().includes(query);
+  const templateMatch = node.template_label?.toLowerCase().includes(query) ?? false;
   const children = node.children
     .map((c) => filterTree(c, query))
     .filter((c): c is HierarchyNode => c !== null);
-  if (labelMatch || children.length) {
+  if (labelMatch || templateMatch || children.length) {
     return { ...node, children };
   }
   return null;

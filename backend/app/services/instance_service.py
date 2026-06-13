@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.display import resolve_display_name
 from app.core.time import utc_now
 from app.core.revision_guard import ensure_mutable_revision
+from app.domains.connectors.export import is_inline_connector_template, should_export_from_node_slot
 from app.infra.db.models.catalog import ConnectorTemplate, ConnectorTemplatePin
 from app.infra.db.models.instances import (
     ConnectorInstance,
@@ -79,6 +80,12 @@ class InstanceService:
         if not template or template.vehicle_id != vehicle_id:
             raise HTTPException(status_code=404, detail="Enclosure template not found")
 
+        parent_id = payload.parent_enclosure_instance_id
+        if parent_id is not None:
+            parent = await self.db.get(EnclosureInstance, parent_id)
+            if not parent or parent.revision_id != revision_id or parent.vehicle_id != vehicle_id:
+                raise HTTPException(status_code=404, detail="Parent enclosure instance not found")
+
         nickname = (payload.nickname or "").strip() or None
         use_template_name = False if nickname else payload.use_template_name
 
@@ -87,6 +94,7 @@ class InstanceService:
             revision_id=revision_id,
             vehicle_id=vehicle_id,
             enclosure_template_id=template.id,
+            parent_enclosure_instance_id=parent_id,
             nickname=nickname,
             use_template_name=use_template_name,
             created_at=now,
@@ -144,6 +152,7 @@ class InstanceService:
             use_template_name=use_template_name,
             created_at=now,
             enclosure_template_id=template.id,
+            parent_enclosure_instance_id=parent_id,
             connector_instance_ids=connector_ids,
             pcb_instance_ids=pcb_ids,
         )
@@ -190,6 +199,12 @@ class InstanceService:
         )
         connector_ids: list[UUID] = []
         for slot in slots_result.scalars().all():
+            conn_template = await self.db.get(ConnectorTemplate, slot.connector_template_id)
+            if not conn_template:
+                raise HTTPException(status_code=404, detail="Connector template not found")
+            export = should_export_from_node_slot(
+                conn_template, slot, payload.enclosure_instance_id
+            )
             conn = await self._create_connector_from_slot(
                 revision_id=revision_id,
                 vehicle_id=vehicle_id,
@@ -197,12 +212,12 @@ class InstanceService:
                 pcb_instance_id=instance.id,
                 pcb_template_slot_id=slot.id,
                 enclosure_instance_id=payload.enclosure_instance_id,
-                is_panel_mount=bool(slot.export_to_enclosure),
+                is_panel_mount=export,
                 role=slot.default_role,
-                source_pcb_template_slot_id=slot.id if slot.export_to_enclosure else None,
-                source_pcb_instance_id=instance.id if slot.export_to_enclosure else None,
+                source_pcb_template_slot_id=slot.id if export else None,
+                source_pcb_instance_id=instance.id if export else None,
                 pin_origin_note=slot.description
-                or ("Exposed from PCB connector slot" if slot.export_to_enclosure else None),
+                or ("Exposed from PCB connector slot" if export else None),
                 nickname=slot.nickname,
                 now=now,
             )
@@ -241,10 +256,19 @@ class InstanceService:
         template = await self.db.get(ConnectorTemplate, payload.connector_template_id)
         if not template:
             raise HTTPException(status_code=404, detail="Connector template not found")
-        if payload.inline_gender is not None and not template.is_inline_template:
+        if payload.inline_gender is not None and not is_inline_connector_template(template):
             raise HTTPException(
                 status_code=400,
-                detail="Inline gender can only be set for inline connector templates",
+                detail="Inline gender can only be set for inline wire-to-wire connector templates",
+            )
+        if (
+            not payload.is_panel_mount
+            and payload.pcb_instance_id is None
+            and not is_inline_connector_template(template)
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="Only inline wire-to-wire connector templates can be added as inline connectors",
             )
         if payload.is_panel_mount and payload.inline_gender is not None:
             raise HTTPException(
@@ -326,6 +350,7 @@ class InstanceService:
                     use_template_name=enc.use_template_name,
                     created_at=enc.created_at,
                     enclosure_template_id=enc.enclosure_template_id,
+                    parent_enclosure_instance_id=enc.parent_enclosure_instance_id,
                     connector_instance_ids=conns,
                     pcb_instance_ids=pcbs,
                 )
@@ -403,6 +428,7 @@ class InstanceService:
             use_template_name=enc.use_template_name,
             created_at=enc.created_at,
             enclosure_template_id=enc.enclosure_template_id,
+            parent_enclosure_instance_id=enc.parent_enclosure_instance_id,
             connector_instance_ids=await self._connector_ids_for_enclosure(enc.id),
             pcb_instance_ids=await self._pcb_ids_for_enclosure(enc.id),
         )
@@ -472,13 +498,26 @@ class InstanceService:
         if not conn or conn.revision_id != revision_id or conn.vehicle_id != vehicle_id:
             raise HTTPException(status_code=404, detail="Connector instance not found")
 
+        template = await self.db.get(ConnectorTemplate, conn.connector_template_id)
+        if (
+            payload.nickname is not None
+            and (
+                conn.pcb_instance_id is not None
+                or conn.is_panel_mount
+                or not (template and is_inline_connector_template(template))
+            )
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="Only inline connector instances can be renamed",
+            )
+
         if payload.nickname is not None:
             nickname = payload.nickname.strip() or None
             conn.nickname = nickname
             conn.use_template_name = nickname is None
 
         await self.db.flush()
-        template = await self.db.get(ConnectorTemplate, conn.connector_template_id)
         pin_ids_result = await self.db.execute(
             select(Pin.id).where(Pin.connector_instance_id == conn.id)
         )
@@ -565,6 +604,20 @@ class InstanceService:
         if not enc or enc.revision_id != revision_id or enc.vehicle_id != vehicle_id:
             raise HTTPException(status_code=404, detail="Enclosure instance not found")
 
+        child_ids = list(
+            (
+                await self.db.execute(
+                    select(EnclosureInstance.id).where(
+                        EnclosureInstance.parent_enclosure_instance_id == enclosure_instance_id
+                    )
+                )
+            ).scalars().all()
+        )
+        for child_id in child_ids:
+            await self.delete_enclosure(
+                vehicle_id, revision_id, child_id, changed_by=changed_by
+            )
+
         pcb_ids = await self._pcb_ids_for_enclosure(enclosure_instance_id)
         connector_ids = await self._connector_ids_for_enclosure(enclosure_instance_id)
         pin_ids = await self._pin_ids_for_connectors(connector_ids)
@@ -578,10 +631,10 @@ class InstanceService:
             .values(enclosure_instance_id=None)
         )
         await self._delete_pins_and_connectors(pin_ids, connector_ids)
-        for pcb_id in pcb_ids:
-            pcb = await self.db.get(PcbInstance, pcb_id)
-            if pcb:
-                await self.db.delete(pcb)
+        if pcb_ids:
+            # Delete direct child PCBs before deleting the enclosure row to
+            # satisfy the pcb_instances.enclosure_instance_id FK constraint.
+            await self.db.execute(delete(PcbInstance).where(PcbInstance.id.in_(pcb_ids)))
         await self.db.delete(enc)
         await self.db.flush()
         await self._prune_orphan_signals(revision_id)
@@ -753,9 +806,11 @@ class InstanceService:
         return pin_ids
 
     async def _connector_ids_for_enclosure(self, enclosure_id: UUID) -> list[UUID]:
-        result = await self.db.execute(
-            select(ConnectorInstance.id).where(ConnectorInstance.enclosure_instance_id == enclosure_id)
-        )
+        pcb_ids = await self._pcb_ids_for_enclosure(enclosure_id)
+        clauses = [ConnectorInstance.enclosure_instance_id == enclosure_id]
+        if pcb_ids:
+            clauses.append(ConnectorInstance.pcb_instance_id.in_(pcb_ids))
+        result = await self.db.execute(select(ConnectorInstance.id).where(or_(*clauses)))
         return list(result.scalars().all())
 
     async def _pcb_ids_for_enclosure(self, enclosure_id: UUID) -> list[UUID]:

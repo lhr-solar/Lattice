@@ -3,7 +3,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 from pydantic import model_validator
 
-from app.infra.db.enums import ConnectorGender, ConnectorRole, SignalKind
+from app.infra.db.enums import ConnectorCategory, ConnectorGender, ConnectorRole, SignalKind
 from app.schemas.common import SchemaBase, TimestampSchema
 from app.schemas.shorts import TemplatePinShortCreate
 
@@ -23,6 +23,21 @@ class ConnectorTemplatePinResponse(SchemaBase):
     signal_kind: SignalKind | None
 
 
+def _validate_connector_template_mount_modes(
+    *,
+    connector_category: ConnectorCategory,
+    default_is_panel_mount: bool,
+    is_inline_template: bool,
+) -> None:
+    if connector_category == ConnectorCategory.WIRE_TO_WIRE:
+        if not default_is_panel_mount and not is_inline_template:
+            raise ValueError("Wire-to-wire connector must support panel mount and/or inline")
+        return
+    if is_inline_template:
+        raise ValueError("Wire-to-board connectors cannot be inline")
+    # Wire-to-board: standard vs panel mount is encoded in default_is_panel_mount.
+
+
 class ConnectorTemplateCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     manufacturer: str | None = None
@@ -36,6 +51,7 @@ class ConnectorTemplateCreate(BaseModel):
     male_image_url: str | None = None
     female_image_url: str | None = None
     key_code: str | None = None
+    connector_category: ConnectorCategory = ConnectorCategory.WIRE_TO_WIRE
     default_is_panel_mount: bool = False
     is_inline_template: bool = False
     default_inline_gender: ConnectorGender | None = None
@@ -45,8 +61,11 @@ class ConnectorTemplateCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_mount_modes(self) -> "ConnectorTemplateCreate":
-        if self.default_is_panel_mount and self.is_inline_template:
-            raise ValueError("Connector cannot be both panel-mount and inline")
+        _validate_connector_template_mount_modes(
+            connector_category=self.connector_category,
+            default_is_panel_mount=self.default_is_panel_mount,
+            is_inline_template=self.is_inline_template,
+        )
         return self
 
 
@@ -64,6 +83,7 @@ class ConnectorTemplateResponse(TimestampSchema):
     male_image_url: str | None
     female_image_url: str | None
     key_code: str | None
+    connector_category: ConnectorCategory
     default_is_panel_mount: bool
     is_inline_template: bool
     default_inline_gender: ConnectorGender | None = None
@@ -84,6 +104,7 @@ class ConnectorTemplateUpdate(BaseModel):
     male_image_url: str | None = None
     female_image_url: str | None = None
     key_code: str | None = None
+    connector_category: ConnectorCategory = ConnectorCategory.WIRE_TO_WIRE
     default_is_panel_mount: bool = False
     is_inline_template: bool = False
     default_inline_gender: ConnectorGender | None = None
@@ -92,6 +113,9 @@ class ConnectorTemplateUpdate(BaseModel):
 
     @model_validator(mode="after")
     def validate_mount_modes(self) -> "ConnectorTemplateUpdate":
-        if self.default_is_panel_mount and self.is_inline_template:
-            raise ValueError("Connector cannot be both panel-mount and inline")
+        _validate_connector_template_mount_modes(
+            connector_category=self.connector_category,
+            default_is_panel_mount=self.default_is_panel_mount,
+            is_inline_template=self.is_inline_template,
+        )
         return self

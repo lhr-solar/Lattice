@@ -1,9 +1,30 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ConnectorTemplate } from "@/api/connectorTemplates";
+import {
+  isWireToBoardTemplate,
+  isWireToWireTemplate,
+} from "@/api/connectorTemplates";
 import type { EnclosureTemplate, PcbTemplate } from "@/api/templates";
 
+function connectorCategoryLabel(template: ConnectorTemplate): string {
+  if (isWireToBoardTemplate(template)) {
+    return template.default_is_panel_mount
+      ? "Wire-to-board · panel mount"
+      : "Wire-to-board · standard";
+  }
+  const parts: string[] = [];
+  if (template.default_is_panel_mount) parts.push("panel");
+  if (template.is_inline_template) parts.push("inline");
+  return parts.length ? `Wire-to-wire · ${parts.join(", ")}` : "Wire-to-wire";
+}
+
 export function connectorSubtitle(connector: ConnectorTemplate) {
-  return [`${connector.pin_count} pins`, connector.manufacturer, connector.key_code]
+  return [
+    connectorCategoryLabel(connector),
+    `${connector.pin_count} pins`,
+    connector.manufacturer,
+    connector.key_code,
+  ]
     .filter(Boolean)
     .join(" · ");
 }
@@ -81,7 +102,7 @@ function SearchablePicker({
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
-        className="rounded border border-tesla-border bg-tesla-bg px-2 py-1.5 text-left text-sm text-tesla-text transition hover:border-tesla-accent"
+        className="flex h-8 items-center rounded border border-tesla-border bg-tesla-bg px-2 text-left text-sm text-tesla-text transition hover:border-tesla-accent"
       >
         {selected ? (
           <span className="block truncate">
@@ -302,3 +323,5 @@ export function InstancePicker({
     />
   );
 }
+
+export { isWireToBoardTemplate, isWireToWireTemplate };

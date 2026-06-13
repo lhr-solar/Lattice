@@ -8,10 +8,16 @@ import {
 } from "@/components/library/TemplatePickers";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  connectorCategoryOf,
   createConnectorTemplate,
   deleteConnectorTemplate,
   fetchConnectorTemplates,
+  supportsEnclosurePanelTemplate,
+  supportsNodeSlotTemplate,
+  supportsNodeSlotPigtailOption,
+  nodeSlotAutoBubblesToEnclosure,
   updateConnectorTemplate,
+  type ConnectorCategory,
 } from "@/api/connectorTemplates";
 import { fetchVehicles } from "@/api/vehicles";
 import {
@@ -41,6 +47,15 @@ export function LibraryBuilders() {
   const libraryTab = useAppStore((s) => s.libraryTab);
   const setLibraryTab = useAppStore((s) => s.setLibraryTab);
   const queryClient = useQueryClient();
+  const invalidateTopologyQueries = () => {
+    queryClient.invalidateQueries({ queryKey: ["hierarchy"] });
+    queryClient.invalidateQueries({ queryKey: ["design-projection"] });
+    queryClient.invalidateQueries({ queryKey: ["topology-summary"] });
+    queryClient.invalidateQueries({ queryKey: ["connection-table"] });
+    queryClient.invalidateQueries({ queryKey: ["pins"] });
+    queryClient.invalidateQueries({ queryKey: ["nets"] });
+    queryClient.invalidateQueries({ queryKey: ["shorts"] });
+  };
   const [activeTab, setActiveTab] = useState<Tab>(libraryTab);
   const [builderMode, setBuilderMode] = useState<null | "add" | "edit">(null);
   const [editingConnectorId, setEditingConnectorId] = useState<string | null>(null);
@@ -71,27 +86,42 @@ export function LibraryBuilders() {
 
   const connectorCreate = useMutation({
     mutationFn: createConnectorTemplate,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["connector-templates"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["connector-templates"] });
+      invalidateTopologyQueries();
+    },
   });
   const pcbCreate = useMutation({
     mutationFn: (payload: Parameters<typeof createPcbTemplate>[1]) =>
       createPcbTemplate(vehicleId!, payload),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["pcb-templates", vehicleId] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["pcb-templates", vehicleId] });
+      invalidateTopologyQueries();
+    },
   });
   const enclosureCreate = useMutation({
     mutationFn: (payload: Parameters<typeof createEnclosureTemplate>[1]) =>
       createEnclosureTemplate(vehicleId!, payload),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["enclosure-templates", vehicleId] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["enclosure-templates", vehicleId] });
+      invalidateTopologyQueries();
+    },
   });
   const connectorUpdate = useMutation({
     mutationFn: ({ id, payload }: { id: string; payload: Parameters<typeof createConnectorTemplate>[0] }) =>
       updateConnectorTemplate(id, payload),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["connector-templates"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["connector-templates"] });
+      invalidateTopologyQueries();
+    },
   });
   const pcbUpdate = useMutation({
     mutationFn: ({ id, payload }: { id: string; payload: Parameters<typeof createPcbTemplate>[1] }) =>
       updatePcbTemplate(vehicleId!, id, payload),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["pcb-templates", vehicleId] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["pcb-templates", vehicleId] });
+      invalidateTopologyQueries();
+    },
   });
   const enclosureUpdate = useMutation({
     mutationFn: ({
@@ -101,19 +131,31 @@ export function LibraryBuilders() {
       id: string;
       payload: Parameters<typeof createEnclosureTemplate>[1];
     }) => updateEnclosureTemplate(vehicleId!, id, payload),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["enclosure-templates", vehicleId] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["enclosure-templates", vehicleId] });
+      invalidateTopologyQueries();
+    },
   });
   const connectorDelete = useMutation({
     mutationFn: (id: string) => deleteConnectorTemplate(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["connector-templates"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["connector-templates"] });
+      invalidateTopologyQueries();
+    },
   });
   const pcbDelete = useMutation({
     mutationFn: (id: string) => deletePcbTemplate(vehicleId!, id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["pcb-templates", vehicleId] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["pcb-templates", vehicleId] });
+      invalidateTopologyQueries();
+    },
   });
   const enclosureDelete = useMutation({
     mutationFn: (id: string) => deleteEnclosureTemplate(vehicleId!, id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["enclosure-templates", vehicleId] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["enclosure-templates", vehicleId] });
+      invalidateTopologyQueries();
+    },
   });
   const connectorEditing = connectorTemplates.find((c) => c.id === editingConnectorId) ?? null;
   const pcbEditing = pcbTemplates.find((p) => p.id === editingPcbId) ?? null;
@@ -453,7 +495,6 @@ function ConnectorBuilderModal({
   onSubmit: (payload: Parameters<typeof createConnectorTemplate>[0]) => void;
   pending: boolean;
 }) {
-  type ConnectorType = "node" | "panel_mount" | "inline";
   const [name, setName] = useState("");
   const [pinCount, setPinCount] = useState(2);
   const [manufacturer, setManufacturer] = useState("");
@@ -465,7 +506,10 @@ function ConnectorBuilderModal({
   const [maleImage, setMaleImage] = useState("");
   const [femaleImage, setFemaleImage] = useState("");
   const [keyCode, setKeyCode] = useState("");
-  const [connectorType, setConnectorType] = useState<ConnectorType>("node");
+  const [connectorCategory, setConnectorCategory] = useState<ConnectorCategory>("wire_to_wire");
+  const [wireToWirePanelMount, setWireToWirePanelMount] = useState(false);
+  const [wireToWireInline, setWireToWireInline] = useState(true);
+  const [wireToBoardStyle, setWireToBoardStyle] = useState<"standard" | "panel_mount">("standard");
   const [voltageClass, setVoltageClass] = useState<"lv" | "hv">("lv");
 
   useEffect(() => {
@@ -486,12 +530,16 @@ function ConnectorBuilderModal({
       setMaleImage(initial.male_image_url ?? "");
       setFemaleImage(initial.female_image_url ?? "");
       setKeyCode(initial.key_code ?? "");
-      if (initial.default_is_panel_mount) {
-        setConnectorType("panel_mount");
-      } else if (initial.is_inline_template) {
-        setConnectorType("inline");
+      const category = connectorCategoryOf(initial);
+      setConnectorCategory(category);
+      if (category === "wire_to_board") {
+        setWireToBoardStyle(initial.default_is_panel_mount ? "panel_mount" : "standard");
+        setWireToWirePanelMount(false);
+        setWireToWireInline(false);
       } else {
-        setConnectorType("node");
+        setWireToWirePanelMount(Boolean(initial.default_is_panel_mount));
+        setWireToWireInline(Boolean(initial.is_inline_template));
+        setWireToBoardStyle("standard");
       }
       setVoltageClass("lv");
       return;
@@ -507,9 +555,19 @@ function ConnectorBuilderModal({
     setMaleImage("");
     setFemaleImage("");
     setKeyCode("");
-    setConnectorType("node");
+    setConnectorCategory("wire_to_wire");
+    setWireToWirePanelMount(false);
+    setWireToWireInline(true);
+    setWireToBoardStyle("standard");
     setVoltageClass("lv");
   }, [open, mode, initial]);
+
+  const canSubmit =
+    Boolean(name.trim()) &&
+    !pending &&
+    (connectorCategory === "wire_to_board" ||
+      wireToWirePanelMount ||
+      wireToWireInline);
 
   const pins = useMemo(
     () =>
@@ -537,7 +595,7 @@ function ConnectorBuilderModal({
           </button>
           <button
             type="button"
-            disabled={!name.trim() || pending}
+            disabled={!canSubmit}
             className="rounded bg-tesla-accent px-3 py-1 text-sm text-white disabled:opacity-50"
             onClick={() =>
               onSubmit({
@@ -552,8 +610,13 @@ function ConnectorBuilderModal({
                 male_image_url: maleImage || undefined,
                 female_image_url: femaleImage || undefined,
                 key_code: keyCode || undefined,
-                default_is_panel_mount: connectorType === "panel_mount",
-                is_inline_template: connectorType === "inline",
+                connector_category: connectorCategory,
+                default_is_panel_mount:
+                  connectorCategory === "wire_to_board"
+                    ? wireToBoardStyle === "panel_mount"
+                    : wireToWirePanelMount,
+                is_inline_template:
+                  connectorCategory === "wire_to_wire" && wireToWireInline,
                 pins: pins.map((p) => ({
                   ...p,
                   role: voltageClass,
@@ -614,49 +677,122 @@ function ConnectorBuilderModal({
           </div>
         </div>
         <div>
-          <p className="mb-1 text-xs text-tesla-muted">Connector type</p>
+          <p className="mb-1 text-xs text-tesla-muted">Connector category</p>
           <div className="relative flex rounded-md border border-tesla-border p-0.5">
             <span
               aria-hidden
               className="absolute bottom-0.5 left-0.5 top-0.5 rounded bg-tesla-accent transition-transform duration-200 ease-out"
               style={{
-                width: "calc((100% - 0.25rem) / 3)",
-                transform: `translateX(${
-                  connectorType === "panel_mount" ? 100 : connectorType === "inline" ? 200 : 0
-                }%)`,
+                width: "calc((100% - 0.25rem) / 2)",
+                transform: `translateX(${connectorCategory === "wire_to_board" ? 100 : 0}%)`,
               }}
             />
             <button
               type="button"
-              onClick={() => setConnectorType("node")}
+              onClick={() => setConnectorCategory("wire_to_wire")}
               className={`relative z-10 flex-1 rounded px-2 py-1.5 text-sm transition-colors ${
-                connectorType === "node" ? "text-white" : "text-tesla-muted hover:text-tesla-text"
-              }`}
-            >
-              Node
-            </button>
-            <button
-              type="button"
-              onClick={() => setConnectorType("panel_mount")}
-              className={`relative z-10 flex-1 rounded px-2 py-1.5 text-sm transition-colors ${
-                connectorType === "panel_mount"
+                connectorCategory === "wire_to_wire"
                   ? "text-white"
                   : "text-tesla-muted hover:text-tesla-text"
               }`}
             >
-              Panel Mount
+              Wire-to-wire
             </button>
             <button
               type="button"
-              onClick={() => setConnectorType("inline")}
+              onClick={() => setConnectorCategory("wire_to_board")}
               className={`relative z-10 flex-1 rounded px-2 py-1.5 text-sm transition-colors ${
-                connectorType === "inline" ? "text-white" : "text-tesla-muted hover:text-tesla-text"
+                connectorCategory === "wire_to_board"
+                  ? "text-white"
+                  : "text-tesla-muted hover:text-tesla-text"
               }`}
             >
-              Inline
+              Wire-to-board
             </button>
           </div>
         </div>
+        {connectorCategory === "wire_to_wire" ? (
+          <div>
+            <p className="mb-1 text-xs text-tesla-muted">Capabilities</p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                aria-pressed={wireToWirePanelMount}
+                onClick={() => setWireToWirePanelMount((prev) => !prev)}
+                className={`flex-1 rounded-md border p-0.5 text-sm transition-colors ${
+                  wireToWirePanelMount ? "border-tesla-accent" : "border-tesla-border"
+                }`}
+              >
+                <span
+                  className={`block rounded px-2 py-1.5 transition-colors ${
+                    wireToWirePanelMount
+                      ? "bg-tesla-accent text-white"
+                      : "text-tesla-muted hover:text-tesla-text"
+                  }`}
+                >
+                  Panel mount
+                </span>
+              </button>
+              <button
+                type="button"
+                aria-pressed={wireToWireInline}
+                onClick={() => setWireToWireInline((prev) => !prev)}
+                className={`flex-1 rounded-md border p-0.5 text-sm transition-colors ${
+                  wireToWireInline ? "border-tesla-accent" : "border-tesla-border"
+                }`}
+              >
+                <span
+                  className={`block rounded px-2 py-1.5 transition-colors ${
+                    wireToWireInline
+                      ? "bg-tesla-accent text-white"
+                      : "text-tesla-muted hover:text-tesla-text"
+                  }`}
+                >
+                  Inline
+                </span>
+              </button>
+            </div>
+            {!wireToWirePanelMount && !wireToWireInline && (
+              <p className="mt-1 text-xs text-red-300">Select at least one capability.</p>
+            )}
+          </div>
+        ) : (
+          <div>
+            <p className="mb-1 text-xs text-tesla-muted">Mount style</p>
+            <div className="relative flex rounded-md border border-tesla-border p-0.5">
+              <span
+                aria-hidden
+                className="absolute bottom-0.5 left-0.5 top-0.5 rounded bg-tesla-accent transition-transform duration-200 ease-out"
+                style={{
+                  width: "calc((100% - 0.25rem) / 2)",
+                  transform: `translateX(${wireToBoardStyle === "panel_mount" ? 100 : 0}%)`,
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => setWireToBoardStyle("standard")}
+                className={`relative z-10 flex-1 rounded px-2 py-1.5 text-sm transition-colors ${
+                  wireToBoardStyle === "standard"
+                    ? "text-white"
+                    : "text-tesla-muted hover:text-tesla-text"
+                }`}
+              >
+                Standard
+              </button>
+              <button
+                type="button"
+                onClick={() => setWireToBoardStyle("panel_mount")}
+                className={`relative z-10 flex-1 rounded px-2 py-1.5 text-sm transition-colors ${
+                  wireToBoardStyle === "panel_mount"
+                    ? "text-white"
+                    : "text-tesla-muted hover:text-tesla-text"
+                }`}
+              >
+                Panel mount
+              </button>
+            </div>
+          </div>
+        )}
         <div className="space-y-2 rounded border border-tesla-border p-3">
           <p className="text-xs font-medium uppercase tracking-wider text-tesla-muted">
             Mating pair
@@ -745,6 +881,16 @@ function PcbBuilderModal({
 
   const canSubmit = Boolean(name.trim()) && !pending;
 
+  const nodeSlotConnectors = useMemo(
+    () => connectors.filter((connector) => supportsNodeSlotTemplate(connector)),
+    [connectors],
+  );
+
+  const connectorById = useMemo(
+    () => new Map(connectors.map((connector) => [connector.id, connector])),
+    [connectors],
+  );
+
   return (
     <Modal
       open={open}
@@ -816,27 +962,31 @@ function PcbBuilderModal({
               </div>
               <div className="min-w-0 flex-1">
                 <ConnectorTemplatePicker
-                  connectors={connectors}
+                  connectors={nodeSlotConnectors}
                   value={row.connector_template_id}
                   onChange={(connectorId) =>
                     setRows((prev) =>
-                      prev.map((r, i) =>
-                        i === idx ? { ...r, connector_template_id: connectorId } : r,
-                      ),
+                      prev.map((r, i) => {
+                        if (i !== idx) return r;
+                        const tmpl = connectorId ? connectorById.get(connectorId) : undefined;
+                        return {
+                          ...r,
+                          connector_template_id: connectorId,
+                          export_to_enclosure:
+                            tmpl && supportsNodeSlotPigtailOption(tmpl)
+                              ? r.export_to_enclosure
+                              : false,
+                        };
+                      }),
                     )
                   }
                   onAddAction={onAddConnectorTemplate}
                 />
               </div>
-              <button
-                type="button"
-                className="mt-5 rounded border border-red-500/50 px-2 py-1 text-sm text-red-300"
+              <RemoveLineButton
                 onClick={() => setRows((prev) => prev.filter((_, i) => i !== idx))}
-                title="Remove slot"
-                aria-label="Remove slot"
-              >
-                🗑
-              </button>
+                label="Remove connector slot"
+              />
             </div>
             <div className="grid grid-cols-2 gap-2">
               <Field
@@ -854,18 +1004,39 @@ function PcbBuilderModal({
                 }
               />
             </div>
-            <label className="flex items-center gap-2 text-xs text-tesla-muted">
-              <input
-                type="checkbox"
-                checked={row.export_to_enclosure}
-                onChange={(e) =>
-                  setRows((prev) =>
-                    prev.map((r, i) => (i === idx ? { ...r, export_to_enclosure: e.target.checked } : r)),
-                  )
-                }
-              />
-              Export pins to enclosure (panel/pigtail override)
-            </label>
+            {(() => {
+              const selected = row.connector_template_id
+                ? connectorById.get(row.connector_template_id)
+                : undefined;
+              if (!selected) return null;
+              if (supportsNodeSlotPigtailOption(selected)) {
+                return (
+                  <label className="flex items-center gap-2 text-xs text-tesla-muted">
+                    <input
+                      type="checkbox"
+                      checked={row.export_to_enclosure}
+                      onChange={(e) =>
+                        setRows((prev) =>
+                          prev.map((r, i) =>
+                            i === idx ? { ...r, export_to_enclosure: e.target.checked } : r,
+                          ),
+                        )
+                      }
+                    />
+                    Pigtail this connector (export pins to parent enclosure)
+                  </label>
+                );
+              }
+              if (nodeSlotAutoBubblesToEnclosure(selected)) {
+                return (
+                  <p className="text-xs text-tesla-muted">
+                    Panel mount connectors bubble up to the parent enclosure when the node is
+                    placed inside one; at vehicle level they stay on the node.
+                  </p>
+                );
+              }
+              return null;
+            })()}
           </div>
         ))}
       </div>
@@ -900,7 +1071,7 @@ function EnclosureBuilderModal({
   const [panelSlots, setPanelSlots] = useState<Array<{ slot_key: string; connector_template_id: string }>>([]);
   const [pcbSlots, setPcbSlots] = useState<Array<{ slot_key: string; pcb_template_id: string }>>([]);
   const panelMountConnectors = useMemo(
-    () => connectors.filter((connector) => connector.default_is_panel_mount),
+    () => connectors.filter((connector) => supportsEnclosurePanelTemplate(connector)),
     [connectors],
   );
 
@@ -966,7 +1137,7 @@ function EnclosureBuilderModal({
                 ...prev,
                 {
                   slot_key: `PM${prev.length + 1}`,
-                  connector_template_id: panelMountConnectors[0]?.id ?? "",
+                  connector_template_id: "",
                 },
               ])
             }
@@ -974,26 +1145,34 @@ function EnclosureBuilderModal({
             + Add panel connector
           </button>
           {panelSlots.map((row, idx) => (
-            <div key={`${row.slot_key}-${idx}`} className="mt-2 grid grid-cols-2 gap-2">
-              <Field
-                label="Slot"
-                value={row.slot_key}
-                onChange={(v) =>
-                  setPanelSlots((prev) => prev.map((r, i) => (i === idx ? { ...r, slot_key: v } : r)))
-                }
-              />
-              <ConnectorTemplatePicker
-                label="Connector"
-                connectors={panelMountConnectors}
-                value={row.connector_template_id}
-                onChange={(connectorId) =>
-                  setPanelSlots((prev) =>
-                    prev.map((r, i) =>
-                      i === idx ? { ...r, connector_template_id: connectorId } : r,
-                    ),
-                  )
-                }
-                onAddAction={onAddConnectorTemplate}
+            <div key={`${row.slot_key}-${idx}`} className="mt-2 flex items-start gap-2 rounded border border-tesla-border p-2">
+              <div className="w-28 shrink-0">
+                <Field
+                  label="Slot"
+                  value={row.slot_key}
+                  onChange={(v) =>
+                    setPanelSlots((prev) => prev.map((r, i) => (i === idx ? { ...r, slot_key: v } : r)))
+                  }
+                />
+              </div>
+              <div className="min-w-0 flex-1">
+                <ConnectorTemplatePicker
+                  label="Connector"
+                  connectors={panelMountConnectors}
+                  value={row.connector_template_id}
+                  onChange={(connectorId) =>
+                    setPanelSlots((prev) =>
+                      prev.map((r, i) =>
+                        i === idx ? { ...r, connector_template_id: connectorId } : r,
+                      ),
+                    )
+                  }
+                  onAddAction={onAddConnectorTemplate}
+                />
+              </div>
+              <RemoveLineButton
+                onClick={() => setPanelSlots((prev) => prev.filter((_, i) => i !== idx))}
+                label="Remove panel connector"
               />
             </div>
           ))}
@@ -1009,7 +1188,7 @@ function EnclosureBuilderModal({
             + Add Node
           </button>
           {pcbSlots.map((row, idx) => (
-            <div key={`${row.slot_key}-${idx}`} className="mt-2 flex items-start gap-2">
+            <div key={`${row.slot_key}-${idx}`} className="mt-2 flex items-start gap-2 rounded border border-tesla-border p-2">
               <div className="w-28 shrink-0">
                 <Field
                   label="Slot"
@@ -1031,15 +1210,38 @@ function EnclosureBuilderModal({
                   onAddAction={onAddPcbTemplate}
                 />
               </div>
+              <RemoveLineButton
+                onClick={() => setPcbSlots((prev) => prev.filter((_, i) => i !== idx))}
+                label="Remove node slot"
+              />
             </div>
           ))}
         </div>
         <p className="text-xs text-tesla-muted">
-          Enclosure-exposed pins can come from true panel connectors or node connectors marked
-          as exported (panel/pigtail case by case).
+          Panel slots accept wire-to-wire connectors with panel mount enabled. Node slots on
+          attached nodes use wire-to-board connectors only.
         </p>
       </div>
     </Modal>
+  );
+}
+
+function RemoveLineButton({ onClick, label }: { onClick: () => void; label: string }) {
+  return (
+    <div className="flex shrink-0 flex-col gap-1 self-start">
+      <span className="pointer-events-none select-none text-xs leading-none text-transparent" aria-hidden>
+        Remove
+      </span>
+      <button
+        type="button"
+        className="flex size-8 shrink-0 items-center justify-center rounded border border-tesla-border bg-tesla-bg text-base leading-none text-tesla-muted transition hover:border-red-500/50 hover:text-red-300"
+        onClick={onClick}
+        title={label}
+        aria-label={label}
+      >
+        ×
+      </button>
+    </div>
   );
 }
 
@@ -1061,7 +1263,7 @@ function Field({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
-        className="rounded border border-tesla-border bg-tesla-bg px-2 py-1 text-sm text-tesla-text disabled:opacity-50"
+        className="h-8 rounded border border-tesla-border bg-tesla-bg px-2 text-sm text-tesla-text disabled:opacity-50"
       />
     </label>
   );

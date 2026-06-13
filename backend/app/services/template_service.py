@@ -4,7 +4,13 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
-from app.infra.db.models.instances import ConnectorInstance
+from app.domains.connectors.export import (
+    supports_enclosure_panel_template,
+    supports_node_slot_template,
+)
+from app.infra.db.models.catalog import ConnectorTemplate
+from app.infra.db.models.instances import EnclosureInstance, PcbInstance
+from app.infra.db.models.vehicle import Revision
 from app.infra.db.models.templates import (
     EnclosureTemplate,
     EnclosureTemplatePcbSlot,
@@ -23,6 +29,8 @@ from app.schemas.templates import (
     PcbTemplateUpdate,
     PcbTemplateResponse,
 )
+from app.services.connector_reconcile_service import ConnectorReconcileService
+from app.services.revision_sync_service import RevisionSyncService
 
 
 class TemplateService:
@@ -34,6 +42,7 @@ class TemplateService:
         self.db.add(template)
         await self.db.flush()
         for slot in payload.slots:
+            await self._validate_node_slot_connector(slot.connector_template_id, slot.slot_key)
             self.db.add(
                 PcbTemplateConnectorSlot(
                     pcb_template_id=template.id,
@@ -66,6 +75,7 @@ class TemplateService:
         requested_keys = {slot.slot_key for slot in payload.slots}
 
         for slot in payload.slots:
+            await self._validate_node_slot_connector(slot.connector_template_id, slot.slot_key)
             current = existing_by_key.get(slot.slot_key)
             if current:
                 current.connector_template_id = slot.connector_template_id
@@ -91,17 +101,14 @@ class TemplateService:
         for slot in existing_slots:
             if slot.slot_key in requested_keys:
                 continue
-            in_use = await self.db.execute(
-                select(ConnectorInstance.id).where(ConnectorInstance.pcb_template_slot_id == slot.id).limit(1)
+            await ConnectorReconcileService(self.db).remove_instances_for_pcb_template_slot(
+                slot.id, slot_key=slot.slot_key
             )
-            if in_use.scalar_one_or_none() is not None:
-                raise HTTPException(
-                    status_code=409,
-                    detail=f'Cannot remove PCB slot "{slot.slot_key}" because it is in use by connector instances',
-                )
             await self.db.delete(slot)
 
         await self.db.flush()
+        await ConnectorReconcileService(self.db).sync_pcb_template_instances(template.id)
+        await self._notify_template_change(vehicle_id, template.id, kind="pcb")
         return await self.get_pcb_template(template.id)
 
     async def list_pcb_templates(self, vehicle_id: UUID) -> list[PcbTemplateResponse]:
@@ -166,6 +173,7 @@ class TemplateService:
         self.db.add(template)
         await self.db.flush()
         for slot in payload.slots:
+            await self._validate_enclosure_panel_connector(slot.connector_template_id, slot.slot_key)
             self.db.add(
                 EnclosureTemplatePanelSlot(
                     enclosure_template_id=template.id,
@@ -218,6 +226,7 @@ class TemplateService:
         requested_pcb_keys = {slot.slot_key for slot in payload.pcb_slots}
 
         for slot in payload.slots:
+            await self._validate_enclosure_panel_connector(slot.connector_template_id, slot.slot_key)
             current = existing_panels_by_key.get(slot.slot_key)
             if current:
                 current.connector_template_id = slot.connector_template_id
@@ -249,18 +258,9 @@ class TemplateService:
         for slot in existing_panel_slots:
             if slot.slot_key in requested_panel_keys:
                 continue
-            in_use = await self.db.execute(
-                select(ConnectorInstance.id)
-                .where(ConnectorInstance.enclosure_panel_slot_id == slot.id)
-                .limit(1)
+            await ConnectorReconcileService(self.db).remove_instances_for_enclosure_panel_slot(
+                slot.id, slot_key=slot.slot_key
             )
-            if in_use.scalar_one_or_none() is not None:
-                raise HTTPException(
-                    status_code=409,
-                    detail=(
-                        f'Cannot remove enclosure panel slot "{slot.slot_key}" because it is in use'
-                    ),
-                )
             await self.db.delete(slot)
 
         for slot in existing_pcb_slots:
@@ -269,6 +269,8 @@ class TemplateService:
             await self.db.delete(slot)
 
         await self.db.flush()
+        await ConnectorReconcileService(self.db).sync_enclosure_panel_instances(template.id)
+        await self._notify_template_change(vehicle_id, template.id, kind="enclosure")
         return await self.get_enclosure_template(template.id)
 
     async def list_enclosure_templates(self, vehicle_id: UUID) -> list[EnclosureTemplateResponse]:
@@ -334,3 +336,78 @@ class TemplateService:
             created_at=template.created_at,
             updated_at=template.updated_at,
         )
+
+    async def _notify_template_change(
+        self,
+        vehicle_id: UUID,
+        template_id: UUID,
+        *,
+        kind: str,
+    ) -> None:
+        if kind == "pcb":
+            rows = (
+                await self.db.execute(
+                    select(PcbInstance.revision_id)
+                    .join(Revision, PcbInstance.revision_id == Revision.id)
+                    .where(
+                        PcbInstance.vehicle_id == vehicle_id,
+                        PcbInstance.pcb_template_id == template_id,
+                        Revision.is_immutable.is_(False),
+                    )
+                    .distinct()
+                )
+            ).all()
+        else:
+            rows = (
+                await self.db.execute(
+                    select(EnclosureInstance.revision_id)
+                    .join(Revision, EnclosureInstance.revision_id == Revision.id)
+                    .where(
+                        EnclosureInstance.vehicle_id == vehicle_id,
+                        EnclosureInstance.enclosure_template_id == template_id,
+                        Revision.is_immutable.is_(False),
+                    )
+                    .distinct()
+                )
+            ).all()
+        if not rows:
+            return
+        sync = RevisionSyncService(self.db)
+        for (revision_id,) in rows:
+            await sync.notify_domains(
+                vehicle_id=vehicle_id,
+                revision_id=revision_id,
+                domains=[
+                    "hierarchy",
+                    "design-projection",
+                    "connection-table",
+                    "topology-summary",
+                    "pins",
+                    "nets",
+                    "shorts",
+                ],
+            )
+
+    async def _validate_enclosure_panel_connector(self, connector_template_id: UUID, slot_key: str) -> None:
+        tmpl = await self.db.get(ConnectorTemplate, connector_template_id)
+        if not tmpl:
+            raise HTTPException(status_code=404, detail="Connector template not found")
+        if not supports_enclosure_panel_template(tmpl):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f'Enclosure panel slot "{slot_key}" only accepts wire-to-wire panel-mount connector templates'
+                ),
+            )
+
+    async def _validate_node_slot_connector(self, connector_template_id: UUID, slot_key: str) -> None:
+        tmpl = await self.db.get(ConnectorTemplate, connector_template_id)
+        if not tmpl:
+            raise HTTPException(status_code=404, detail="Connector template not found")
+        if not supports_node_slot_template(tmpl):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f'Node slot "{slot_key}" only accepts wire-to-board connector templates'
+                ),
+            )

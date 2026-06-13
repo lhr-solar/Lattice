@@ -19,6 +19,7 @@ class PcbInstanceCreate(InstanceCreateBase):
 
 class EnclosureInstanceCreate(InstanceCreateBase):
     enclosure_template_id: UUID
+    parent_enclosure_instance_id: UUID | None = None
 
 
 class ConnectorInstanceCreate(InstanceCreateBase):
@@ -48,6 +49,7 @@ class PcbInstanceResponse(InstanceResponse):
 
 class EnclosureInstanceResponse(InstanceResponse):
     enclosure_template_id: UUID
+    parent_enclosure_instance_id: UUID | None = None
     connector_instance_ids: list[UUID] = []
     pcb_instance_ids: list[UUID] = []
 

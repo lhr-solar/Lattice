@@ -1,12 +1,12 @@
 import uuid
 from decimal import Decimal
 
-from sqlalchemy import Boolean, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Enum, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.infra.db.base import Base, TimestampMixin, uuid_pk
-from app.infra.db.enums import ConnectorGender, ConnectorRole, SignalKind
+from app.infra.db.enums import ConnectorCategory, ConnectorGender, ConnectorRole, SignalKind
 
 
 class ConnectorTemplate(Base, TimestampMixin):
@@ -28,6 +28,17 @@ class ConnectorTemplate(Base, TimestampMixin):
     male_image_url: Mapped[str | None] = mapped_column(Text)
     female_image_url: Mapped[str | None] = mapped_column(Text)
     key_code: Mapped[str | None] = mapped_column(String(128))
+    connector_category: Mapped[ConnectorCategory] = mapped_column(
+        Enum(
+            ConnectorCategory,
+            values_callable=lambda enum: [item.value for item in enum],
+            native_enum=False,
+            length=32,
+        ),
+        nullable=False,
+        default=ConnectorCategory.WIRE_TO_WIRE,
+        server_default=ConnectorCategory.WIRE_TO_WIRE.value,
+    )
     default_is_panel_mount: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_inline_template: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     metadata_: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, server_default="{}")

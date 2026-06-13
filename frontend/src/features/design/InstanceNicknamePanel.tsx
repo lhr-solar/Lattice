@@ -1,7 +1,11 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchHierarchy } from "@/api/hierarchy";
-import { updateEnclosureInstance, updatePcbInstance } from "@/api/instances";
+import {
+  updateConnectorInstance,
+  updateEnclosureInstance,
+  updatePcbInstance,
+} from "@/api/instances";
 import { StaleRevisionBanner } from "@/components/shell/StaleRevisionBanner";
 import { handleMutationError } from "@/lib/mutationErrors";
 import { useAppStore } from "@/stores/appStore";
@@ -20,7 +24,9 @@ export function InstanceNicknamePanel() {
 
   const isEnclosure = selectedNodeKind === "enclosure";
   const isNode = selectedNodeKind === "node";
-  const instanceId = isEnclosure || isNode ? focusId : null;
+  const isInlineConnector = selectedNodeKind === "inlineConnector";
+  const instanceId =
+    isEnclosure || isNode || isInlineConnector ? focusId : null;
 
   const { data: hierarchy } = useQuery({
     queryKey: ["hierarchy", vehicleId, revisionId],
@@ -61,7 +67,11 @@ export function InstanceNicknamePanel() {
         await updateEnclosureInstance(vehicleId, revisionId, instanceId, body);
         return;
       }
-      await updatePcbInstance(vehicleId, revisionId, instanceId, body);
+      if (isNode) {
+        await updatePcbInstance(vehicleId, revisionId, instanceId, body);
+        return;
+      }
+      await updateConnectorInstance(vehicleId, revisionId, instanceId, body);
     },
     onSuccess: () => {
       setMessage("Name saved.");
@@ -75,7 +85,11 @@ export function InstanceNicknamePanel() {
 
   if (!vehicleId || !revisionId || !instanceId || !node) return null;
 
-  const title = isEnclosure ? "Enclosure name" : "Node name";
+  const title = isEnclosure
+    ? "Enclosure name"
+    : isNode
+      ? "Node name"
+      : "Inline connector name";
 
   return (
     <div className="mt-4 border-t border-tesla-border pt-4">

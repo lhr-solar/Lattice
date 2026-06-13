@@ -1,4 +1,5 @@
 interface ConnectorInstanceLabelProps {
+  
   label: string;
   templateLabel?: string | null;
   /** When true, stack template below primary (tree). When false, inline (canvas header). */

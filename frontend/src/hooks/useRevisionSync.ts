@@ -5,6 +5,7 @@ import { invalidateAllRevisionData, invalidateRevisionDomains } from "@/lib/revi
 import { buildWsUrl } from "@/lib/wsUrl";
 import { useAppStore } from "@/stores/appStore";
 import { useRevisionSyncStore } from "@/stores/revisionSyncStore";
+import { useSessionStore } from "@/stores/sessionStore";
 
 interface RevisionChangedEvent {
   type: "revision_changed";
@@ -40,6 +41,7 @@ export function useRevisionSync(): void {
   const setSyncStatus = useRevisionSyncStore((s) => s.setSyncStatus);
   const syncStatus = useRevisionSyncStore((s) => s.syncStatus);
   const reset = useRevisionSyncStore((s) => s.reset);
+  const username = useSessionStore((s) => s.username);
 
   const dirtyRef = useRef(dirtyFormCount);
   const sequenceRef = useRef(editSequence);
@@ -88,7 +90,12 @@ export function useRevisionSync(): void {
 
       setEditSequence(event.edit_sequence);
 
+      const isOwnEdit = Boolean(
+        event.changed_by && username && event.changed_by === username,
+      );
+
       if (dirtyRef.current > 0) {
+        if (isOwnEdit) return;
         markStale(event.changed_by);
         return;
       }

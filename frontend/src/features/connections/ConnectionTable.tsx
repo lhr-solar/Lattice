@@ -13,6 +13,7 @@ import {
 } from "@/api/connections";
 import { updateEdge } from "@/api/topology";
 import { fetchNets, fetchPins, type NetPinInfo } from "@/api/nets";
+import { fetchHierarchy, type HierarchyNode } from "@/api/hierarchy";
 import { updateNet } from "@/api/nets";
 import { updateConnectorPin } from "@/api/instances";
 import {
@@ -27,6 +28,7 @@ import { WireColorPresetButton, WireColorSwatch } from "@/components/wiring/Wire
 import { WIRE_COLOR_PRESETS } from "@/lib/wireColors";
 import { useAutoDismiss } from "@/hooks/useAutoDismiss";
 import { invalidateRevisionDomains } from "@/lib/revisionInvalidation";
+import { TopologyDestinationPicker } from "@/features/connections/TopologyDestinationPicker";
 
 function invalidateAll(qc: QueryClient) {
   invalidateRevisionDomains(qc, [
@@ -191,6 +193,12 @@ export function ConnectionTable() {
     enabled: Boolean(show && vehicleId && revisionId),
   });
 
+  const { data: hierarchy } = useQuery({
+    queryKey: ["hierarchy", vehicleId, revisionId],
+    queryFn: () => fetchHierarchy(vehicleId!, revisionId!),
+    enabled: Boolean(show && vehicleId && revisionId),
+  });
+
   const { data: nets = [] } = useQuery({
     queryKey: ["nets", vehicleId, revisionId, "all"],
     queryFn: () => fetchNets(vehicleId!, revisionId!),
@@ -282,6 +290,7 @@ export function ConnectionTable() {
                       templateName={group.templateName}
                       rows={group.rows}
                       allPins={allPins}
+                      hierarchyRoot={hierarchy?.root}
                       nets={nets}
                       vehicleId={vehicleId!}
                       revisionId={revisionId!}
@@ -400,6 +409,7 @@ function ConnectorGroup({
   templateName,
   rows,
   allPins,
+  hierarchyRoot,
   nets,
   vehicleId,
   revisionId,
@@ -414,6 +424,7 @@ function ConnectorGroup({
   templateName?: string | null;
   rows: PinConnectionRow[];
   allPins: NetPinInfo[];
+  hierarchyRoot: HierarchyNode | undefined;
   nets: { id: string; name: string }[];
   vehicleId: string;
   revisionId: string;
@@ -490,6 +501,7 @@ function ConnectorGroup({
               key={row.pin_id}
               row={row}
               allPins={allPins}
+              hierarchyRoot={hierarchyRoot}
               nets={nets}
               vehicleId={vehicleId}
               revisionId={revisionId}
@@ -506,6 +518,7 @@ function ConnectorGroup({
 function PinRow({
   row,
   allPins,
+  hierarchyRoot,
   nets,
   vehicleId,
   revisionId,
@@ -514,6 +527,7 @@ function PinRow({
 }: {
   row: PinConnectionRow;
   allPins: NetPinInfo[];
+  hierarchyRoot: HierarchyNode | undefined;
   nets: { id: string; name: string }[];
   vehicleId: string;
   revisionId: string;
@@ -544,6 +558,7 @@ function PinRow({
         <DestinationsCell
           row={row}
           allPins={allPins}
+          hierarchyRoot={hierarchyRoot}
           vehicleId={vehicleId}
           revisionId={revisionId}
           onFlash={onFlash}
@@ -906,6 +921,7 @@ function WireDestinationChip({
 function DestinationsCell({
   row,
   allPins,
+  hierarchyRoot,
   vehicleId,
   revisionId,
   onFlash,
@@ -913,6 +929,7 @@ function DestinationsCell({
 }: {
   row: PinConnectionRow;
   allPins: NetPinInfo[];
+  hierarchyRoot: HierarchyNode | undefined;
   vehicleId: string;
   revisionId: string;
   onFlash: (f: { kind: ConnectPinsResult["net_action"]; text: string }) => void;
@@ -939,19 +956,6 @@ function DestinationsCell({
     return () => document.removeEventListener("mousedown", onDown);
   }, [adding]);
 
-  const connectors = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const p of allPins) {
-      if (p.connector_instance_id === row.connector_instance_id) continue;
-      if (!m.has(p.connector_instance_id)) m.set(p.connector_instance_id, p.connector_label);
-    }
-    return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1]));
-  }, [allPins, row.connector_instance_id]);
-
-  const targetPins = useMemo(
-    () => allPins.filter((p) => p.connector_instance_id === connId),
-    [allPins, connId],
-  );
   const existingTargets = new Set(row.destinations.map((d) => d.other_pin_id));
 
   const connect = useMutation({
@@ -1008,50 +1012,17 @@ function DestinationsCell({
       </button>
 
       {adding && (
-        <div className="absolute left-0 top-full z-30 mt-1 w-80 rounded-md border border-tesla-border bg-tesla-surface p-2 shadow-xl">
-          <p className="mb-1 text-[11px] uppercase tracking-wide text-tesla-muted">Target connector</p>
-          <select
-            value={connId}
-            onChange={(e) => setConnId(e.target.value)}
-            className="mb-2 w-full rounded border border-tesla-border bg-tesla-bg px-2 py-1 text-sm outline-none focus:border-tesla-accent"
-          >
-            <option value="">Select connector…</option>
-            {connectors.map(([id, lbl]) => (
-              <option key={id} value={id}>
-                {lbl}
-              </option>
-            ))}
-          </select>
-          {connId && (
-            <>
-              <p className="mb-1 text-[11px] uppercase tracking-wide text-tesla-muted">Target pin</p>
-              <ul className="max-h-48 overflow-y-auto">
-                {targetPins.map((p) => {
-                  const already = existingTargets.has(p.pin_id);
-                  return (
-                    <li key={p.pin_id}>
-                      <button
-                        type="button"
-                        disabled={already || connect.isPending}
-                        onClick={() => connect.mutate({ pinBId: p.pin_id })}
-                        className="flex w-full items-center justify-between rounded px-2 py-1 text-left text-sm transition hover:bg-tesla-border/40 disabled:opacity-40"
-                      >
-                        <span>
-                          #{p.pin_number} {p.pin_name}
-                        </span>
-                        <span className="text-xs text-tesla-muted">
-                          {already ? "linked" : (p.primary_net_name ?? "")}
-                        </span>
-                      </button>
-                    </li>
-                  );
-                })}
-                {targetPins.length === 0 && (
-                  <li className="px-2 py-1 text-xs text-tesla-muted">No pins</li>
-                )}
-              </ul>
-            </>
-          )}
+        <div className="absolute left-0 top-full z-30 mt-1 w-[420px] rounded-md border border-tesla-border bg-tesla-surface p-2 shadow-xl">
+          <TopologyDestinationPicker
+            hierarchyRoot={hierarchyRoot}
+            allPins={allPins}
+            excludeConnectorId={row.connector_instance_id}
+            selectedConnectorId={connId}
+            onSelectConnector={setConnId}
+            existingTargetPinIds={existingTargets}
+            connectPending={connect.isPending}
+            onSelectPin={(pinBId) => connect.mutate({ pinBId })}
+          />
         </div>
       )}
 

@@ -17,7 +17,10 @@ export function PinoutEditorPanel() {
   const focusId = useAppStore((s) => s.focusId);
 
   const connectorId =
-    selectedNodeKind === "connector" || selectedNodeKind === "panelMount" || selectedNodeKind === "group"
+    selectedNodeKind === "connector" ||
+    selectedNodeKind === "inlineConnector" ||
+    selectedNodeKind === "panelMount" ||
+    selectedNodeKind === "group"
       ? focusId
       : null;
 
@@ -70,7 +73,6 @@ function PinoutEditorModal({
   const revisionId = useAppStore((s) => s.selectedRevisionId);
   const setShowNetManager = useAppStore((s) => s.setShowNetManager);
   const setShowPinNameLibrary = useAppStore((s) => s.setShowPinNameLibrary);
-  const editSequence = useRevisionSyncStore((s) => s.editSequence);
   const staleRevision = useRevisionSyncStore((s) => s.staleRevision);
   const setDirtyForm = useRevisionSyncStore((s) => s.setDirtyForm);
 
@@ -150,7 +152,6 @@ function PinoutEditorModal({
           tasks.push(
             updateConnectorPin(vehicleId!, revisionId!, connectorId, pin.pin_id, {
               name,
-              expected_edit_sequence: editSequence,
             }),
           );
         }
@@ -164,6 +165,7 @@ function PinoutEditorModal({
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["pins"] }),
         queryClient.invalidateQueries({ queryKey: ["design-projection"] }),
+        queryClient.invalidateQueries({ queryKey: ["topology-summary"] }),
         queryClient.invalidateQueries({ queryKey: ["nets"] }),
         queryClient.invalidateQueries({ queryKey: ["net-detail"] }),
         queryClient.invalidateQueries({ queryKey: ["connection-table"] }),

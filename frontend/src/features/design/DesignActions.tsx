@@ -1,22 +1,30 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { fetchConnectorTemplates } from "@/api/connectorTemplates";
+import {
+  fetchConnectorTemplates,
+  supportsInlineAddTemplate,
+} from "@/api/connectorTemplates";
 import { createConnector, createEnclosure, createPcb } from "@/api/instances";
 import {
   fetchEnclosureTemplates,
   fetchPcbTemplates,
 } from "@/api/templates";
-import { fetchHierarchy } from "@/api/hierarchy";
+import { fetchHierarchy, type HierarchyNode } from "@/api/hierarchy";
 import { useAppStore } from "@/stores/appStore";
 import { Modal } from "@/components/ui/Modal";
 import {
   ConnectorTemplatePicker,
   EnclosureTemplatePicker,
-  InstancePicker,
   PcbTemplatePicker,
 } from "@/components/library/TemplatePickers";
 
 type AddKind = "enclosure" | "node" | "inline";
+
+interface AddTarget {
+  scope: "vehicle" | "enclosure";
+  enclosureId: string | null;
+  label: string;
+}
 
 export function DesignActions() {
   const queryClient = useQueryClient();
@@ -29,7 +37,6 @@ export function DesignActions() {
   const [activeAdd, setActiveAdd] = useState<AddKind | null>(null);
   const [templateId, setTemplateId] = useState("");
   const [nickname, setNickname] = useState("");
-  const [targetEnclosureId, setTargetEnclosureId] = useState("");
 
   const { data: connectors = [] } = useQuery({
     queryKey: ["connector-templates"],
@@ -54,6 +61,28 @@ export function DesignActions() {
     enabled: Boolean(vehicleId && revisionId),
   });
 
+  const addTarget = useMemo((): AddTarget => {
+    if (
+      selectedNodeKind === "enclosure" &&
+      selectedNodeId &&
+      hierarchy?.root
+    ) {
+      const node = findHierarchyNode(hierarchy.root, selectedNodeId);
+      if (node) {
+        return {
+          scope: "enclosure",
+          enclosureId: selectedNodeId,
+          label: node.label,
+        };
+      }
+    }
+    return {
+      scope: "vehicle",
+      enclosureId: null,
+      label: "Vehicle",
+    };
+  }, [selectedNodeKind, selectedNodeId, hierarchy]);
+
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ["hierarchy"] });
     queryClient.invalidateQueries({ queryKey: ["design-projection"] });
@@ -61,13 +90,8 @@ export function DesignActions() {
   };
 
   const inlineTemplates = useMemo(
-    () => connectors.filter((c) => Boolean(c.is_inline_template)),
+    () => connectors.filter((c) => supportsInlineAddTemplate(c)),
     [connectors],
-  );
-
-  const enclosureInstances = useMemo(
-    () => hierarchy?.root.children.filter((node) => node.kind === "enclosure") ?? [],
-    [hierarchy],
   );
 
   const addEnclosure = useMutation({
@@ -75,6 +99,7 @@ export function DesignActions() {
       if (!vehicleId || !revisionId || !templateId) return;
       await createEnclosure(vehicleId, revisionId, {
         enclosure_template_id: templateId,
+        parent_enclosure_instance_id: addTarget.enclosureId,
         nickname: nickname.trim() || undefined,
       });
     },
@@ -86,10 +111,10 @@ export function DesignActions() {
 
   const addPcb = useMutation({
     mutationFn: async () => {
-      if (!vehicleId || !revisionId || !templateId || !targetEnclosureId) return;
+      if (!vehicleId || !revisionId || !templateId) return;
       await createPcb(vehicleId, revisionId, {
         pcb_template_id: templateId,
-        enclosure_instance_id: targetEnclosureId,
+        enclosure_instance_id: addTarget.enclosureId ?? undefined,
         nickname: nickname.trim() || undefined,
       });
     },
@@ -104,7 +129,11 @@ export function DesignActions() {
       if (!vehicleId || !revisionId || !templateId) return;
       await createConnector(vehicleId, revisionId, {
         connector_template_id: templateId,
+        ...(addTarget.enclosureId
+          ? { enclosure_instance_id: addTarget.enclosureId }
+          : {}),
         is_panel_mount: false,
+        nickname: nickname.trim() || undefined,
       });
     },
     onSuccess: () => {
@@ -120,22 +149,12 @@ export function DesignActions() {
     setActiveAdd(kind);
     setTemplateId("");
     setNickname("");
-    if (kind === "node") {
-      const preferredEnclosureId =
-        selectedNodeKind === "enclosure" && selectedNodeId
-          ? selectedNodeId
-          : enclosureInstances[0]?.id ?? "";
-      setTargetEnclosureId(preferredEnclosureId);
-    } else {
-      setTargetEnclosureId("");
-    }
   }
 
   function closeAddModal() {
     setActiveAdd(null);
     setTemplateId("");
     setNickname("");
-    setTargetEnclosureId("");
   }
 
   function handleAdd() {
@@ -144,18 +163,17 @@ export function DesignActions() {
     if (activeAdd === "inline") addInlineConnector.mutate();
   }
 
-  const canAdd =
-    Boolean(templateId) &&
-    !pending &&
-    (activeAdd !== "node" || Boolean(targetEnclosureId));
+  const canAdd = Boolean(templateId) && !pending;
+
+  const targetLabel = addTarget.label;
 
   const addTitle =
     activeAdd === "enclosure"
-      ? "Add Enclosure"
+      ? `Add enclosure to ${targetLabel}`
       : activeAdd === "node"
-        ? "Add Node"
+        ? `Add node to ${targetLabel}`
         : activeAdd === "inline"
-          ? "Add Inline Connector"
+          ? `Add inline to ${targetLabel}`
           : "";
 
   if (!vehicleId || !revisionId) {
@@ -166,9 +184,18 @@ export function DesignActions() {
     <div className="space-y-3 text-sm">
       <p className="text-xs uppercase tracking-wider text-tesla-muted">Add from library</p>
       <div className="grid gap-2">
-        <ActionButton label="Add Enclosure" onClick={() => openAddModal("enclosure")} />
-        <ActionButton label="Add Node" onClick={() => openAddModal("node")} />
-        <ActionButton label="Add Inline Connector" onClick={() => openAddModal("inline")} />
+        <ActionButton
+          label={`Add enclosure to ${targetLabel}`}
+          onClick={() => openAddModal("enclosure")}
+        />
+        <ActionButton
+          label={`Add node to ${targetLabel}`}
+          onClick={() => openAddModal("node")}
+        />
+        <ActionButton
+          label={`Add inline to ${targetLabel}`}
+          onClick={() => openAddModal("inline")}
+        />
       </div>
 
       <Modal
@@ -208,26 +235,15 @@ export function DesignActions() {
             />
           )}
           {activeAdd === "node" && (
-            <>
-              <PcbTemplatePicker
-                pcbs={pcbTemplates}
-                value={templateId}
-                onChange={setTemplateId}
-                onAddAction={() => {
-                  setLibraryTab("node");
-                  setShowLibraryManager(true);
-                }}
-              />
-              <InstancePicker
-                label="Target enclosure"
-                instances={enclosureInstances}
-                value={targetEnclosureId}
-                onChange={setTargetEnclosureId}
-                placeholder="Select enclosure instance…"
-                onAddAction={() => openAddModal("enclosure")}
-                addActionLabel="Add enclosure instance"
-              />
-            </>
+            <PcbTemplatePicker
+              pcbs={pcbTemplates}
+              value={templateId}
+              onChange={setTemplateId}
+              onAddAction={() => {
+                setLibraryTab("node");
+                setShowLibraryManager(true);
+              }}
+            />
           )}
           {activeAdd === "inline" && (
             <ConnectorTemplatePicker
@@ -241,7 +257,7 @@ export function DesignActions() {
               }}
             />
           )}
-          {(activeAdd === "enclosure" || activeAdd === "node") && (
+          {activeAdd !== null && (
             <label className="flex flex-col gap-1 text-xs text-tesla-muted">
               Custom name
               <input
@@ -262,25 +278,28 @@ function ActionButton({
   label,
   onClick,
   disabled,
-  variant = "default",
 }: {
   label: string;
   onClick: () => void;
   disabled?: boolean;
-  variant?: "default" | "accent";
 }) {
   return (
     <button
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className={
-        variant === "accent"
-          ? "w-full rounded-md bg-tesla-accent px-2 py-1.5 text-xs text-white disabled:opacity-40"
-          : "w-full rounded-md border border-tesla-border px-2 py-1.5 text-xs text-tesla-text transition hover:border-tesla-accent disabled:opacity-40"
-      }
+      className="w-full rounded-md border border-tesla-border px-2 py-1.5 text-xs text-tesla-text transition hover:border-tesla-accent disabled:opacity-40"
     >
       {label}
     </button>
   );
+}
+
+function findHierarchyNode(node: HierarchyNode, id: string): HierarchyNode | null {
+  if (node.id === id) return node;
+  for (const child of node.children) {
+    const found = findHierarchyNode(child, id);
+    if (found) return found;
+  }
+  return null;
 }

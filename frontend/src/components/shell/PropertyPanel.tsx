@@ -23,6 +23,7 @@ export function PropertyPanel() {
     if (selectedNodeKind === "enclosure") return { kind: "enclosure" as const, id: focusId };
     if (
       selectedNodeKind === "connector" ||
+      selectedNodeKind === "inlineConnector" ||
       selectedNodeKind === "panelMount" ||
       selectedNodeKind === "group"
     )

@@ -32,7 +32,7 @@ export function AppShell({ onOpenAdmin }: AppShellProps) {
       <TopBar onOpenAdmin={onOpenAdmin} />
       <div className="relative flex min-h-0 flex-1">
         <HierarchyNav />
-        <main className="relative min-w-0 flex-1">
+        <main className="relative min-h-0 flex-1 overflow-hidden">
           <TopologyCanvas />
           {mode === "manufacturing" && <ManufacturingPanel />}
         </main>

@@ -11,6 +11,7 @@ from app.core.display import (
     resolve_display_name,
 )
 from app.core.revision_guard import ensure_mutable_revision
+from app.domains.connectors.export import connector_kind_for_instance
 from app.domains.topology.net_naming import is_auto_named_signal
 from app.domains.topology.pin_shorts import load_short_indexes_for_connectors
 from app.domains.topology.wire_defaults import (
@@ -187,14 +188,7 @@ class ConnectionService:
                 slot_key=slot_key,
                 slot_nickname=slot_nickname,
             )
-            if conn.source_pcb_instance_id is not None:
-                connector_kind = "pigtail"
-            elif conn.is_panel_mount:
-                connector_kind = "panel"
-            elif conn.pcb_instance_id is not None:
-                connector_kind = "pcb"
-            else:
-                connector_kind = "inline"
+            connector_kind = connector_kind_for_instance(conn, tmpl)
             if conn.pcb_instance_id and conn.pcb_instance_id in node_label:
                 node_id = conn.pcb_instance_id
                 enc_id = node_enclosure.get(node_id)

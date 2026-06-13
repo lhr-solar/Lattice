@@ -44,6 +44,11 @@ class EnclosureInstance(Base):
     enclosure_template_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("enclosure_templates.id"), nullable=False
     )
+    parent_enclosure_instance_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("enclosure_instances.id", ondelete="CASCADE"),
+        index=True,
+    )
     nickname: Mapped[str | None] = mapped_column(String(255))
     use_template_name: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     metadata_: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, server_default="{}")

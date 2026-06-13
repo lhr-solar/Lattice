@@ -1,0 +1,47 @@
+# Dependencies and build artifacts
+node_modules/
+.venv/
+venv/
+frontend/dist/
+dist/
+build/
+
+# Graphify output (don't re-index generated graph files)
+graphify-out/
+
+# Install/config files graphify writes for agents
+AGENTS.md
+.cursor/rules/graphify.mdc
+
+# Docs (need LLM API key for semantic extraction — skip for code-only graph)
+README.md
+*.md
+.env.example
+**/.env.example
+backend/requirements.txt
+*.yml
+*.yaml
+*.html
+.github/
+
+# Environment and caches
+.env
+.env.local
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+
+# Large/binary assets
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.ico
+*.svg
+*.woff
+*.woff2
+
+# Lock files (low signal for architecture)
+package-lock.json

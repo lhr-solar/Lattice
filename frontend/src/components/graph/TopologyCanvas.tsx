@@ -24,19 +24,19 @@ import { invalidateRevisionDomains } from "@/lib/revisionInvalidation";
 import { useAppStore } from "@/stores/appStore";
 import { CONTAINER_KINDS, nodeTypes } from "./nodes";
 import { edgeTypes } from "./edges/DeletableEdge";
-
-// Deterministic nested-layout constants (all px).
-const PIN_ROW_H = 20;
-const GROUP_HEADER_H = 26;
-const GROUP_BOTTOM_PAD = 8;
-const GROUP_WIDTH = 248;
-const GROUP_GAP = 10;
-const PIN_INNER_PAD = 8;
-const PIN_PORT_WIDTH = GROUP_WIDTH - PIN_INNER_PAD * 2;
-const PIN_PORT_H = PIN_ROW_H - 3;
-const CONTAINER_PAD_X = 14;
-const CONTAINER_TITLE_H = 42;
-const CONTAINER_PAD_BOTTOM = 14;
+import {
+  CONTAINER_PAD_X,
+  FLOW_ORIGIN_X,
+  FLOW_ORIGIN_Y,
+  GROUP_HEADER_H,
+  GROUP_WIDTH,
+  measureContainer,
+  PIN_INNER_PAD,
+  PIN_PORT_H,
+  PIN_PORT_WIDTH,
+  PIN_ROW_H,
+  reflowContainerColumns,
+} from "./graphLayout";
 
 /** Build React Flow nodes from the backend projection, computing the nested
  *  layout (containers -> connector groups -> pin ports) on the frontend so pin
@@ -65,27 +65,33 @@ function buildNodes(dto: DesignNodeDto[]): Node[] {
 
   const out: Node[] = [];
 
-  containers.forEach((container, idx) => {
+  const containerPlans = containers.map((container) => {
     const groups = groupsByParent.get(container.id) ?? [];
-    let cy = CONTAINER_TITLE_H;
-    const groupLayouts = groups.map((group) => {
-      const ports = portsByParent.get(group.id) ?? [];
-      const height = GROUP_HEADER_H + Math.max(ports.length, 1) * PIN_ROW_H + GROUP_BOTTOM_PAD;
-      const layout = { group, ports, y: cy, height };
-      cy += height + GROUP_GAP;
-      return layout;
-    });
-    const contentBottom = groups.length ? cy - GROUP_GAP : CONTAINER_TITLE_H + 24;
-    const containerHeight = contentBottom + CONTAINER_PAD_BOTTOM;
-    const containerWidth = CONTAINER_PAD_X * 2 + GROUP_WIDTH;
-    const position = container.position ?? { x: 90 + idx * (containerWidth + 60), y: 80 };
+    const { groupLayouts, containerWidth, containerHeight } = measureContainer(
+      container,
+      groups,
+      portsByParent,
+    );
+    return {
+      container,
+      groupLayouts,
+      containerWidth,
+      containerHeight,
+      position: { x: FLOW_ORIGIN_X, y: FLOW_ORIGIN_Y },
+    };
+  });
+
+  reflowContainerColumns(containerPlans);
+
+  for (const plan of containerPlans) {
+    const { container, groupLayouts, containerWidth, containerHeight, position } = plan;
 
     out.push({
       id: container.id,
       type: container.kind,
       position,
       data: { label: container.label, ...container.data },
-      style: { width: containerWidth, height: containerHeight },
+      style: { width: containerWidth, height: containerHeight, pointerEvents: "none" },
       draggable: true,
     });
 
@@ -97,7 +103,7 @@ function buildNodes(dto: DesignNodeDto[]): Node[] {
         extent: "parent",
         position: { x: CONTAINER_PAD_X, y: gl.y },
         data: { label: gl.group.label, ...gl.group.data },
-        style: { width: GROUP_WIDTH, height: gl.height },
+        style: { width: GROUP_WIDTH, height: gl.height, pointerEvents: "none" },
         draggable: false,
         selectable: false,
       });
@@ -109,12 +115,12 @@ function buildNodes(dto: DesignNodeDto[]): Node[] {
           extent: "parent",
           position: { x: PIN_INNER_PAD, y: GROUP_HEADER_H + i * PIN_ROW_H },
           data: { label: port.label, ...port.data },
-          style: { width: PIN_PORT_WIDTH, height: PIN_PORT_H },
+          style: { width: PIN_PORT_WIDTH, height: PIN_PORT_H, pointerEvents: "all" },
           draggable: false,
         });
       });
     }
-  });
+  }
 
   // Leaf-level standalone nodes (connector + pin views).
   dto.forEach((n, i) => {
@@ -144,6 +150,7 @@ export function TopologyCanvas() {
   const clearPairing = useAppStore((s) => s.clearPairing);
   const queryClient = useQueryClient();
   const [wireError, setWireError] = useState<string | null>(null);
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const clearWireError = useCallback(() => setWireError(null), []);
   useAutoDismiss(wireError, clearWireError);
 
@@ -192,12 +199,42 @@ export function TopologyCanvas() {
     onError: (error) => setWireError(handleMutationError(error, "Failed to remove short.")),
   });
 
+  const deleteEdge = useCallback(
+    (edge: Edge) => {
+      setSelectedEdgeId(null);
+      const isShort = edge.data?.short === true || edge.id.startsWith("short:");
+      if (isShort) {
+        const connectorId = String(edge.data?.connectorInstanceId ?? "");
+        const shortId = String(edge.data?.shortId ?? edge.id.replace("short:", ""));
+        if (connectorId) deleteShortMutation.mutate({ connectorId, shortId });
+        return;
+      }
+      deleteWireMutation.mutate(edge.id);
+    },
+    [deleteShortMutation, deleteWireMutation],
+  );
+
+  const selectEdge = useCallback((edgeId: string) => {
+    setSelectedEdgeId(edgeId);
+  }, []);
+
+  const onEdgesDelete = useCallback(
+    (deleted: Edge[]) => {
+      for (const edge of deleted) deleteEdge(edge);
+    },
+    [deleteEdge],
+  );
+
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["design-projection", vehicleId, revisionId, level, focusId],
     queryFn: () =>
       fetchDesignProjection(vehicleId!, revisionId!, level, focusId ?? undefined),
     enabled: Boolean(vehicleId && revisionId),
   });
+
+  useEffect(() => {
+    setSelectedEdgeId(null);
+  }, [vehicleId, revisionId, level, focusId]);
 
   useEffect(() => {
     if (!error) return;
@@ -213,32 +250,30 @@ export function TopologyCanvas() {
     () =>
       (data?.edges ?? []).map((e) => {
         const isShort = e.kind === "short" || e.data?.short;
-        const onDelete = () => {
-          if (isShort) {
-            const connectorId = String(e.data?.connectorInstanceId ?? "");
-            const shortId = String(e.data?.shortId ?? e.id.replace("short:", ""));
-            if (connectorId) deleteShortMutation.mutate({ connectorId, shortId });
-          } else {
-            deleteWireMutation.mutate(e.id);
-          }
-        };
         return {
           id: e.id,
           source: e.source,
           target: e.target,
           type: "deletable",
           label: e.label ?? undefined,
-          data: { ...e.data, onDelete },
+          selected: selectedEdgeId === e.id,
+          data: {
+            ...e.data,
+            onSelect: () => selectEdge(e.id),
+            onDelete: () => deleteEdge({ id: e.id, data: e.data } as Edge),
+          },
           style: {
             stroke: isShort ? "#f59e0b" : "#6b6b6b",
             strokeDasharray: isShort ? "6 4" : undefined,
-            strokeWidth: isShort ? 2 : 1,
+            strokeWidth: selectedEdgeId === e.id ? 2.5 : isShort ? 2 : 1.5,
           },
           animated: e.kind === "bus",
+          selectable: true,
+          focusable: true,
+          interactionWidth: 8,
         };
       }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [data],
+    [data, deleteEdge, selectEdge, selectedEdgeId],
   );
 
   function tryPair(pinAId: string, pinBId: string) {
@@ -280,13 +315,22 @@ export function TopologyCanvas() {
     );
   }
 
+  const edgeCount = data?.edges?.length ?? 0;
+
   return (
-    <div className="h-full w-full">
+    <div className="absolute inset-0">
       <CanvasControls />
-      {wireMode && (
-        <div className="pointer-events-none absolute left-3 top-3 z-10 rounded border border-tesla-accent/40 bg-tesla-bg/90 px-2 py-1 text-xs text-tesla-muted">
-          Wire mode: {pairingPinAId ? "pick pin B (or drag) to finish wire" : "pick pin A or drag between pins"}
+      {wireMode ? (
+        <div className="pointer-events-none absolute left-3 top-3 z-10 max-w-md rounded border border-tesla-accent/40 bg-tesla-bg/90 px-2 py-1 text-xs text-tesla-muted">
+          Wire mode: {pairingPinAId ? "pick pin B (or drag) to finish" : "pick pin A or drag between pins"}
+          {edgeCount > 0 && " · click a wire, then × or Delete to remove"}
         </div>
+      ) : (
+        edgeCount > 0 && (
+          <div className="pointer-events-none absolute left-3 top-3 z-10 rounded border border-tesla-border bg-tesla-bg/90 px-2 py-1 text-xs text-tesla-muted">
+            Click a wire to select · × or Delete to remove
+          </div>
+        )
       )}
       {wireError && (
         <div className="absolute left-3 top-12 z-10 max-w-sm rounded border border-amber-500/40 bg-tesla-bg/95 px-2 py-1 text-xs text-amber-100">
@@ -294,16 +338,23 @@ export function TopologyCanvas() {
         </div>
       )}
       <ReactFlow
+        className="h-full w-full"
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         fitView
         colorMode="dark"
-        deleteKeyCode={null}
+        deleteKeyCode={["Backspace", "Delete"]}
+        onEdgesDelete={onEdgesDelete}
+        elevateEdgesOnSelect
+        defaultEdgeOptions={{ selectable: true, focusable: true, interactionWidth: 8 }}
         proOptions={{ hideAttribution: true }}
         onConnect={onConnect}
+        onEdgeClick={(_, edge) => selectEdge(edge.id)}
+        onPaneClick={() => setSelectedEdgeId(null)}
         onNodeClick={(_, node) => {
+          setSelectedEdgeId(null);
           if (wireMode && node.id.startsWith("port:")) {
             const pinId = node.id.replace("port:", "");
             if (!pairingPinAId) {
@@ -333,6 +384,11 @@ export function TopologyCanvas() {
           if (node.id.startsWith("node:")) {
             setProjectionLevel("node");
             setFocus(node.id.replace("node:", ""), "node");
+            return;
+          }
+          if (node.id.startsWith("inline:")) {
+            setProjectionLevel("connector");
+            setFocus(node.id.replace("inline:", ""), "inlineConnector");
             return;
           }
           if (node.id.startsWith("enclosure:")) {
@@ -384,6 +440,7 @@ function CanvasControls() {
       if (
         level === "connector" ||
         selectedNodeKind === "connector" ||
+        selectedNodeKind === "inlineConnector" ||
         selectedNodeKind === "panelMount" ||
         selectedNodeKind === "group"
       )

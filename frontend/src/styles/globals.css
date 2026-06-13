@@ -78,3 +78,13 @@
 .react-flow__minimap {
   background-color: #141414 !important;
 }
+
+/* Custom deletable edges use a narrow hit path; disable the default wide interaction stroke. */
+.react-flow__edge-interaction {
+  pointer-events: none;
+}
+
+.deletable-edge-hit {
+  pointer-events: stroke;
+  cursor: pointer;
+}
