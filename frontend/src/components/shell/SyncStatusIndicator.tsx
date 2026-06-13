@@ -18,15 +18,22 @@ export function SyncStatusIndicator() {
   const revisionId = useAppStore((s) => s.selectedRevisionId);
   const syncStatus = useRevisionSyncStore((s) => s.syncStatus);
 
-  if (!vehicleId || !revisionId) return null;
+  const active = Boolean(vehicleId && revisionId);
 
   return (
     <span
-      className="inline-flex items-center gap-1.5 text-xs text-tesla-muted"
-      title={LABELS[syncStatus]}
+      className="inline-flex min-w-[7.25rem] items-center gap-1.5 text-xs text-tesla-muted"
+      title={active ? LABELS[syncStatus] : undefined}
+      aria-hidden={!active}
     >
-      <span className={`h-2 w-2 rounded-full ${COLORS[syncStatus]}`} />
-      {LABELS[syncStatus]}
+      {active ? (
+        <>
+          <span className={`h-2 w-2 shrink-0 rounded-full ${COLORS[syncStatus]}`} />
+          <span className="whitespace-nowrap">{LABELS[syncStatus]}</span>
+        </>
+      ) : (
+        <span className="invisible whitespace-nowrap">Live sync</span>
+      )}
     </span>
   );
 }

@@ -7,31 +7,37 @@ import {
   updatePcbInstance,
 } from "@/api/instances";
 import { StaleRevisionBanner } from "@/components/shell/StaleRevisionBanner";
+import { Modal } from "@/components/ui/Modal";
+import { ConnectorInstanceLabel } from "@/components/library/ConnectorInstanceLabel";
+import { InstanceRenameFields } from "@/features/design/InstanceRenameFields";
 import { handleMutationError } from "@/lib/mutationErrors";
 import { useAppStore } from "@/stores/appStore";
 import { useRevisionSyncStore } from "@/stores/revisionSyncStore";
-import { ConnectorInstanceLabel } from "@/components/library/ConnectorInstanceLabel";
 
-export function InstanceNicknamePanel() {
+export type RenameInstanceKind = "enclosure" | "node" | "pcb" | "inlineConnector";
+
+interface RenameInstanceModalProps {
+  open: boolean;
+  instanceId: string | null;
+  kind: RenameInstanceKind | null;
+  onClose: () => void;
+}
+
+export function RenameInstanceModal({ open, instanceId, kind, onClose }: RenameInstanceModalProps) {
   const queryClient = useQueryClient();
   const vehicleId = useAppStore((s) => s.selectedVehicleId);
   const revisionId = useAppStore((s) => s.selectedRevisionId);
-  const selectedNodeKind = useAppStore((s) => s.selectedNodeKind);
-  const focusId = useAppStore((s) => s.focusId);
   const editSequence = useRevisionSyncStore((s) => s.editSequence);
   const staleRevision = useRevisionSyncStore((s) => s.staleRevision);
   const setDirtyForm = useRevisionSyncStore((s) => s.setDirtyForm);
 
-  const isEnclosure = selectedNodeKind === "enclosure";
-  const isNode = selectedNodeKind === "node";
-  const isInlineConnector = selectedNodeKind === "inlineConnector";
-  const instanceId =
-    isEnclosure || isNode || isInlineConnector ? focusId : null;
+  const isEnclosure = kind === "enclosure";
+  const isNode = kind === "node" || kind === "pcb";
 
   const { data: hierarchy } = useQuery({
     queryKey: ["hierarchy", vehicleId, revisionId],
     queryFn: () => fetchHierarchy(vehicleId!, revisionId!),
-    enabled: Boolean(vehicleId && revisionId && instanceId),
+    enabled: Boolean(open && vehicleId && revisionId && instanceId),
   });
 
   const node =
@@ -41,23 +47,25 @@ export function InstanceNicknamePanel() {
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!node) {
+    if (!open || !node) {
       setDraft("");
       setMessage(null);
       return;
     }
     setDraft(node.template_label ? node.label : "");
     setMessage(null);
-  }, [node?.id, node?.label, node?.template_label]);
+  }, [open, node?.id, node?.label, node?.template_label]);
 
+  const libraryName = node?.template_label ?? node?.label ?? "";
   const hasCustomName = Boolean(node?.template_label);
   const unchanged = hasCustomName ? draft.trim() === node?.label : draft.trim() === "";
   const isDirty = Boolean(node && !unchanged);
 
   useEffect(() => {
+    if (!open) return;
     setDirtyForm(isDirty);
     return () => setDirtyForm(false);
-  }, [isDirty, setDirtyForm]);
+  }, [open, isDirty, setDirtyForm]);
 
   const save = useMutation({
     mutationFn: async (nickname: string) => {
@@ -83,61 +91,64 @@ export function InstanceNicknamePanel() {
     onError: (error) => setMessage(handleMutationError(error, "Failed to save name.")),
   });
 
-  if (!vehicleId || !revisionId || !instanceId || !node) return null;
+  if (!open || !instanceId || !kind) return null;
 
   const title = isEnclosure
-    ? "Enclosure name"
+    ? "Rename enclosure"
     : isNode
-      ? "Node name"
-      : "Inline connector name";
+      ? "Rename node"
+      : "Rename inline connector";
 
   return (
-    <div className="mt-4 border-t border-tesla-border pt-4">
-      <StaleRevisionBanner className="mb-2" />
-      <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-tesla-muted">
-        {title}
-      </h3>
-      <div className="mb-2 text-sm">
-        <ConnectorInstanceLabel
-          label={node.label}
-          templateLabel={node.template_label}
-          stacked
-        />
-      </div>
-      <label className="mb-2 block text-xs text-tesla-muted">
-        Custom name
-        <input
-          value={draft}
-          onChange={(e) => {
-            setDraft(e.target.value);
-            setMessage(null);
-          }}
-          placeholder={node.template_label ?? node.label}
-          className="mt-1 w-full rounded border border-tesla-border bg-tesla-bg px-2 py-1 text-sm outline-none focus:border-tesla-accent"
-        />
-      </label>
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          disabled={unchanged || save.isPending || staleRevision}
-          onClick={() => save.mutate(draft.trim())}
-          className="rounded border border-tesla-border px-2 py-1 text-xs text-tesla-muted transition hover:border-tesla-accent hover:text-tesla-text disabled:opacity-40"
-        >
-          {save.isPending ? "Saving…" : "Save name"}
-        </button>
-        {hasCustomName && (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={title}
+      footer={
+        <>
           <button
             type="button"
-            disabled={save.isPending || staleRevision}
-            onClick={() => save.mutate("")}
-            className="rounded border border-tesla-border px-2 py-1 text-xs text-tesla-muted transition hover:border-tesla-accent hover:text-tesla-text disabled:opacity-40"
+            className="whitespace-nowrap rounded border border-tesla-border px-3 py-1 text-sm"
+            onClick={onClose}
           >
-            Use template name
+            Cancel
           </button>
-        )}
-      </div>
+          <button
+            type="button"
+            disabled={!node || unchanged || save.isPending || staleRevision}
+            onClick={() => save.mutate(draft.trim())}
+            className="whitespace-nowrap rounded bg-tesla-accent px-3 py-1 text-sm text-white disabled:opacity-50"
+          >
+            {save.isPending ? "Saving…" : "Save name"}
+          </button>
+        </>
+      }
+    >
+      <StaleRevisionBanner className="mb-3" />
+      {node && (
+        <div className="mb-3 text-sm">
+          <ConnectorInstanceLabel
+            label={node.label}
+            templateLabel={node.template_label}
+            stacked
+          />
+        </div>
+      )}
+      {node && (
+        <InstanceRenameFields
+          draft={draft}
+          libraryName={libraryName}
+          placeholder={libraryName}
+          disabled={save.isPending || staleRevision}
+          onDraftChange={(value) => {
+            setDraft(value);
+            setMessage(null);
+          }}
+          onUseLibraryName={() => save.mutate("")}
+        />
+      )}
       {message && <p className="mt-2 text-xs text-tesla-muted">{message}</p>}
-    </div>
+    </Modal>
   );
 }
 

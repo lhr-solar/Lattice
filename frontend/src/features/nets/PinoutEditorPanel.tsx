@@ -2,8 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { assignPinNet, fetchNets, fetchPins } from "@/api/nets";
 import { fetchPinNameLibrary } from "@/api/pinNames";
-import { updateConnectorPin, updateConnectorPinout } from "@/api/instances";
+import { fetchHierarchy, type HierarchyNode } from "@/api/hierarchy";
+import { updateConnectorInstance, updateConnectorPin, updateConnectorPinout } from "@/api/instances";
 import { PinTemplatePicker } from "@/components/library/PinTemplatePicker";
+import { ConnectorInstanceLabel } from "@/components/library/ConnectorInstanceLabel";
+import { InstanceRenameFields } from "@/features/design/InstanceRenameFields";
 import {
   applyPinTemplateNames,
   findPinTemplateConflicts,
@@ -19,56 +22,16 @@ import { useRevisionSyncStore } from "@/stores/revisionSyncStore";
 import { InstancePicker } from "@/components/library/TemplatePickers";
 import { PinNamePicker } from "@/components/library/PinNamePicker";
 
-export function PinoutEditorPanel() {
-  const vehicleId = useAppStore((s) => s.selectedVehicleId);
-  const revisionId = useAppStore((s) => s.selectedRevisionId);
-  const selectedNodeKind = useAppStore((s) => s.selectedNodeKind);
-  const focusId = useAppStore((s) => s.focusId);
-
-  const connectorId =
-    selectedNodeKind === "connector" ||
-    selectedNodeKind === "inlineConnector" ||
-    selectedNodeKind === "panelMount" ||
-    selectedNodeKind === "group"
-      ? focusId
-      : null;
-
-  const [showModal, setShowModal] = useState(false);
-
-  if (!vehicleId || !revisionId) return null;
-
-  return (
-    <>
-      <div className="mt-4 border-t border-tesla-border pt-4">
-        <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-tesla-muted">
-          Connector pinout
-        </h3>
-        {!connectorId ? (
-          <p className="text-sm text-tesla-muted">
-            Select any connector (inline, panel mount, or node connector) to edit its pinout.
-          </p>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setShowModal(true)}
-            className="w-full rounded-md border border-tesla-border px-3 py-2 text-sm text-tesla-muted transition hover:border-tesla-accent hover:text-tesla-text"
-          >
-            Edit pinout
-          </button>
-        )}
-      </div>
-      {connectorId && (
-        <PinoutEditorModal
-          open={showModal}
-          connectorId={connectorId}
-          onClose={() => setShowModal(false)}
-        />
-      )}
-    </>
-  );
+function findHierarchyNode(node: HierarchyNode, id: string): HierarchyNode | null {
+  if (node.id === id) return node;
+  for (const child of node.children) {
+    const found = findHierarchyNode(child, id);
+    if (found) return found;
+  }
+  return null;
 }
 
-function PinoutEditorModal({
+export function PinoutEditorModal({
   open,
   connectorId,
   onClose,
@@ -87,9 +50,11 @@ function PinoutEditorModal({
   const clearStale = useRevisionSyncStore((s) => s.clearStale);
   const beginOwnSave = useRevisionSyncStore((s) => s.beginOwnSave);
   const endOwnSave = useRevisionSyncStore((s) => s.endOwnSave);
+  const editSequence = useRevisionSyncStore((s) => s.editSequence);
 
   const [draftNetAssignments, setDraftNetAssignments] = useState<Record<string, string>>({});
   const [draftNames, setDraftNames] = useState<Record<string, string>>({});
+  const [draftNickname, setDraftNickname] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [selectedPinTemplateId, setSelectedPinTemplateId] = useState("");
   const [pendingTemplate, setPendingTemplate] = useState<PinTemplate | null>(null);
@@ -106,6 +71,15 @@ function PinoutEditorModal({
     queryFn: () => fetchPinNameLibrary(vehicleId!),
     enabled: Boolean(open && vehicleId),
   });
+
+  const { data: hierarchy } = useQuery({
+    queryKey: ["hierarchy", vehicleId, revisionId],
+    queryFn: () => fetchHierarchy(vehicleId!, revisionId!),
+    enabled: Boolean(open && vehicleId && revisionId),
+  });
+
+  const hierarchyNode =
+    hierarchy?.root ? findHierarchyNode(hierarchy.root, connectorId) : null;
 
   const { data: pins = [], isLoading } = useQuery({
     queryKey: ["pins", vehicleId, revisionId, connectorId],
@@ -127,16 +101,26 @@ function PinoutEditorModal({
     if (!open) return;
     setDraftNetAssignments({});
     setDraftNames({});
+    setDraftNickname("");
     setMessage(null);
     setSelectedPinTemplateId("");
     setPendingTemplate(null);
     setConflicts([]);
   }, [open, connectorId]);
 
-  const connectorLabel = sortedPins[0]?.connector_label ?? "Connector";
+  useEffect(() => {
+    if (!open || !hierarchyNode) return;
+    setDraftNickname(hierarchyNode.template_label ? hierarchyNode.label : "");
+  }, [open, hierarchyNode?.id, hierarchyNode?.label, hierarchyNode?.template_label]);
+
+  const connectorLabel = hierarchyNode?.label ?? sortedPins[0]?.connector_label ?? "Connector";
+  const libraryName = hierarchyNode?.template_label ?? hierarchyNode?.label ?? connectorLabel;
+  const hasCustomConnectorName = Boolean(hierarchyNode?.template_label);
+  const savedNickname = hasCustomConnectorName ? hierarchyNode!.label : "";
+  const nicknameChanged = draftNickname.trim() !== savedNickname.trim();
   const sharedPinout = sortedPins[0]?.shared_pinout ?? false;
 
-  const hasChanges = useMemo(
+  const hasPinoutChanges = useMemo(
     () =>
       sortedPins.some((pin) => {
         const netValue = draftNetAssignments[pin.pin_id] ?? pin.primary_net_id ?? "__unassigned__";
@@ -147,6 +131,8 @@ function PinoutEditorModal({
     [sortedPins, draftNetAssignments, draftNames],
   );
 
+  const hasChanges = hasPinoutChanges || nicknameChanged;
+
   useEffect(() => {
     if (!open) return;
     setDirtyForm(hasChanges);
@@ -156,6 +142,16 @@ function PinoutEditorModal({
   const saveAll = useMutation({
     mutationFn: async () => {
       const tasks: Promise<unknown>[] = [];
+
+      if (nicknameChanged) {
+        tasks.push(
+          updateConnectorInstance(vehicleId!, revisionId!, connectorId, {
+            nickname: draftNickname.trim(),
+            expected_edit_sequence: editSequence,
+          }),
+        );
+      }
+
       const nameUpdates = sortedPins
         .map((pin) => ({
           pin,
@@ -203,15 +199,27 @@ function PinoutEditorModal({
       clearStale();
     },
     onSuccess: async () => {
-      setMessage(
-        sharedPinout
-          ? "Pinout saved. Pin names updated on all instances of this node or enclosure slot."
-          : "Pinout saved.",
-      );
+      const messages: string[] = [];
+      if (nicknameChanged) {
+        messages.push(
+          sharedPinout
+            ? "Connector name updated on all instances sharing this slot."
+            : "Connector name saved.",
+        );
+      }
+      if (hasPinoutChanges) {
+        messages.push(
+          sharedPinout
+            ? "Pinout saved. Pin names updated on all instances of this node or enclosure slot."
+            : "Pinout saved.",
+        );
+      }
+      setMessage(messages.join(" "));
       setDraftNetAssignments({});
       setDraftNames({});
       clearStale();
       await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["hierarchy"] }),
         queryClient.invalidateQueries({ queryKey: ["pins"] }),
         queryClient.invalidateQueries({ queryKey: ["design-projection"] }),
         queryClient.invalidateQueries({ queryKey: ["topology-summary"] }),
@@ -287,18 +295,41 @@ function PinoutEditorModal({
           </button>
         </header>
 
-        <div className="border-b border-tesla-border px-4 py-2">
-          <StaleRevisionBanner />
+        <div className="border-b border-tesla-border px-4 py-3">
+          <StaleRevisionBanner className="mb-3" />
+          {hierarchyNode && (
+            <div className="mb-3 text-sm">
+              <ConnectorInstanceLabel
+                label={hierarchyNode.label}
+                templateLabel={hierarchyNode.template_label}
+                stacked
+              />
+            </div>
+          )}
+          <InstanceRenameFields
+            draft={draftNickname}
+            libraryName={libraryName}
+            placeholder={libraryName}
+            disabled={saveAll.isPending || staleRevision}
+            onDraftChange={(value) => {
+              setDraftNickname(value);
+              setMessage(null);
+            }}
+            onUseLibraryName={() => {
+              setDraftNickname("");
+              setMessage(null);
+            }}
+          />
+          {sharedPinout && (
+            <p className="mt-2 text-xs text-tesla-muted">
+              Name and pinout changes apply to every connector instance sharing this node or
+              enclosure slot.
+            </p>
+          )}
         </div>
 
         {connectorTemplateId && (
           <div className="space-y-2 border-b border-tesla-border px-4 py-3">
-            {sharedPinout && (
-              <p className="text-xs text-tesla-muted">
-                This connector shares its pinout with every instance of the same node or enclosure
-                slot. Name changes apply to all of them.
-              </p>
-            )}
             <PinTemplatePicker
               vehicleId={vehicleId}
               connectorTemplateId={connectorTemplateId}
@@ -370,17 +401,17 @@ function PinoutEditorModal({
             <button
               type="button"
               onClick={onClose}
-              className="rounded border border-tesla-border px-3 py-1.5 text-sm text-tesla-muted transition hover:border-tesla-accent hover:text-tesla-text"
+              className="whitespace-nowrap rounded border border-tesla-border px-3 py-1.5 text-sm text-tesla-muted transition hover:border-tesla-accent hover:text-tesla-text"
             >
-              Cancel
+              Close
             </button>
             <button
               type="button"
-              disabled={!hasChanges || saveAll.isPending || sortedPins.length === 0 || staleRevision}
+              disabled={!hasChanges || saveAll.isPending || staleRevision}
               onClick={() => saveAll.mutate()}
-              className="rounded bg-tesla-accent px-3 py-1.5 text-sm text-white transition hover:bg-tesla-accent/90 disabled:opacity-40"
+              className="whitespace-nowrap rounded bg-tesla-accent px-3 py-1.5 text-sm text-white transition hover:bg-tesla-accent/90 disabled:opacity-40"
             >
-              {saveAll.isPending ? "Saving…" : "Save pinout"}
+              {saveAll.isPending ? "Saving…" : "Save"}
             </button>
           </div>
         </footer>

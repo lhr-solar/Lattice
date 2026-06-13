@@ -97,6 +97,11 @@
   .nav-float-backdrop {
     animation: none;
   }
+
+  .topbar-search-expand,
+  .topbar-library-collapse {
+    transition: none !important;
+  }
 }
 
 .react-flow__background {
@@ -105,6 +110,16 @@
 
 .react-flow__minimap {
   background-color: #141414 !important;
+}
+
+.viewport-summary-chrome .react-flow__controls {
+  position: static !important;
+  box-shadow: none !important;
+}
+
+.viewport-summary-chrome .react-flow__minimap {
+  position: static !important;
+  margin: 0 !important;
 }
 
 /* Custom deletable edges use a narrow hit path; disable the default wide interaction stroke. */

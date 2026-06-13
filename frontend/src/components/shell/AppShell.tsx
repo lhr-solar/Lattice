@@ -1,7 +1,6 @@
 import { HierarchyNav } from "@/components/shell/HierarchyNav";
 import { HelpModal } from "@/components/shell/HelpModal";
-import { ModeToggle } from "@/components/shell/ModeToggle";
-import { PropertyPanel } from "@/components/shell/PropertyPanel";
+import { FloatingToolbar } from "@/components/shell/FloatingToolbar";
 import { TopBar } from "@/components/shell/TopBar";
 import { TopologyCanvas } from "@/components/graph/TopologyCanvas";
 import { ManufacturingPanel } from "@/features/manufacturing/ManufacturingPanel";
@@ -9,6 +8,8 @@ import { NetManager } from "@/features/nets/NetManager";
 import { PinTemplatesModal } from "@/features/pins/PinTemplatesModal";
 import { ConnectionTable } from "@/features/connections/ConnectionTable";
 import { LibraryBuilders } from "@/features/library/LibraryBuilders";
+import { DesignAddProvider } from "@/features/design/DesignAddContext";
+import { DesignAddModals } from "@/features/design/DesignAddModals";
 import { useAutoSelectVehicle } from "@/hooks/useAutoSelectVehicle";
 import { useSyncVehicleRevision } from "@/hooks/useSyncVehicleRevision";
 import { useRevisionSync } from "@/hooks/useRevisionSync";
@@ -25,24 +26,24 @@ export function AppShell({ onOpenAdmin }: AppShellProps) {
   useRevisionSync();
 
   return (
-    <div className="flex h-screen flex-col">
-      <HelpModal />
-      <NetManager />
-      <PinTemplatesModal />
-      <ConnectionTable />
-      <LibraryBuilders />
-      <TopBar onOpenAdmin={onOpenAdmin} />
-      <div className="relative flex min-h-0 flex-1">
-        <HierarchyNav />
-        <main className="relative min-h-0 flex-1 overflow-hidden">
-          <TopologyCanvas />
-          {mode === "manufacturing" && <ManufacturingPanel />}
-        </main>
-        <aside className="flex w-72 flex-col border-l border-tesla-border bg-tesla-surface">
-          <ModeToggle />
-          <PropertyPanel />
-        </aside>
+    <DesignAddProvider>
+      <div className="flex h-screen flex-col">
+        <HelpModal />
+        <NetManager />
+        <PinTemplatesModal />
+        <ConnectionTable />
+        <LibraryBuilders />
+        <DesignAddModals />
+        <TopBar onOpenAdmin={onOpenAdmin} />
+        <div className="relative flex min-h-0 flex-1">
+          <HierarchyNav />
+          <main className="relative min-h-0 flex-1 overflow-hidden">
+            <TopologyCanvas />
+            {mode === "manufacturing" && <ManufacturingPanel />}
+            <FloatingToolbar />
+          </main>
+        </div>
       </div>
-    </div>
+    </DesignAddProvider>
   );
 }

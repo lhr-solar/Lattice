@@ -11,7 +11,6 @@ import {
   type Node,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import clsx from "clsx";
 import { fetchDesignProjection } from "@/api/projections";
 import { pairPins } from "@/api/nets";
 import { disconnectEdge } from "@/api/connections";
@@ -25,6 +24,7 @@ import { useAppStore } from "@/stores/appStore";
 import { useRevisionSyncStore } from "@/stores/revisionSyncStore";
 import { CONTAINER_KINDS, nodeTypes } from "./nodes";
 import { edgeTypes } from "./edges/DeletableEdge";
+import { SelectionInfoBox } from "@/components/shell/SelectionInfoBox";
 import {
   CONTAINER_PAD_X,
   FLOW_ORIGIN_X,
@@ -150,6 +150,7 @@ export function TopologyCanvas() {
   const setPairingPinA = useAppStore((s) => s.setPairingPinA);
   const clearPairing = useAppStore((s) => s.clearPairing);
   const editSequence = useRevisionSyncStore((s) => s.editSequence);
+  const syncStatus = useRevisionSyncStore((s) => s.syncStatus);
   const queryClient = useQueryClient();
   const [wireError, setWireError] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
@@ -167,6 +168,7 @@ export function TopologyCanvas() {
       "shorts",
     ]);
   }
+  const shouldFallbackInvalidate = syncStatus !== "connected";
 
   const quickPairMutation = useMutation({
     mutationFn: ({ pinAId, pinBId }: { pinAId: string; pinBId: string }) =>
@@ -179,7 +181,9 @@ export function TopologyCanvas() {
     onSuccess: () => {
       clearPairing();
       setWireError(null);
-      invalidateWiring();
+      if (shouldFallbackInvalidate) {
+        invalidateWiring();
+      }
     },
     onError: (error) => setWireError(handleMutationError(error, "Failed to create wire.")),
   });
@@ -191,13 +195,17 @@ export function TopologyCanvas() {
     },
     onSuccess: () => {
       setWireError(null);
-      invalidateWiring();
+      if (shouldFallbackInvalidate) {
+        invalidateWiring();
+      }
     },
     onError: (error) => {
       if (error instanceof ApiError && error.status === 404) {
         // Another user already deleted this edge. Sync UI and suppress the error.
         setWireError(null);
-        invalidateWiring();
+        if (shouldFallbackInvalidate) {
+          invalidateWiring();
+        }
         return;
       }
       setWireError(handleMutationError(error, "Failed to remove wire."));
@@ -227,12 +235,16 @@ export function TopologyCanvas() {
     },
     onSuccess: () => {
       setWireError(null);
-      invalidateWiring();
+      if (shouldFallbackInvalidate) {
+        invalidateWiring();
+      }
     },
     onError: (error) => {
       if (error instanceof ApiError && error.status === 404) {
         setWireError(null);
-        invalidateWiring();
+        if (shouldFallbackInvalidate) {
+          invalidateWiring();
+        }
         return;
       }
       setWireError(handleMutationError(error, "Failed to remove short."));
@@ -368,7 +380,9 @@ export function TopologyCanvas() {
 
   return (
     <div className="absolute inset-0">
-      <CanvasControls />
+      <div className="absolute right-3 top-3 z-10">
+        <SelectionInfoBox />
+      </div>
       {wireMode ? (
         <div className="pointer-events-none absolute left-3 top-3 z-10 max-w-md rounded border border-tesla-accent/40 bg-tesla-bg/90 px-2 py-1 text-xs text-tesla-muted">
           Wire mode: {pairingPinAId ? "pick pin B (or drag) to finish" : "pick pin A or drag between pins"}
@@ -453,74 +467,9 @@ export function TopologyCanvas() {
         }}
       >
         <Background gap={20} color="#1f1f1f" />
-        <Controls />
-        <MiniMap nodeColor="#2a2a2a" maskColor="rgba(10,10,10,0.8)" />
+        <Controls position="bottom-left" />
+        <MiniMap position="bottom-right" nodeColor="#2a2a2a" maskColor="rgba(10,10,10,0.8)" />
       </ReactFlow>
-    </div>
-  );
-}
-
-function OpenTableIcon() {
-  return (
-    <svg aria-hidden className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <path d="M3 13h10V3H7" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M9 3h4v4" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M13 3L7 9" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-/** Floating top-right cluster: open table + wiring toggle. */
-function CanvasControls() {
-  const level = useAppStore((s) => s.projectionLevel);
-  const focusId = useAppStore((s) => s.focusId);
-  const selectedNodeKind = useAppStore((s) => s.selectedNodeKind);
-  const openConnectionTable = useAppStore((s) => s.openConnectionTable);
-  const wireMode = useAppStore((s) => s.wireMode);
-  const setWireMode = useAppStore((s) => s.setWireMode);
-
-  function scopeForLevel(): {
-    kind: "all" | "vehicle" | "enclosure" | "node" | "connector";
-    id: string | null;
-  } {
-    if (focusId) {
-      if (level === "enclosure") return { kind: "enclosure", id: focusId };
-      if (level === "node") return { kind: "node", id: focusId };
-      if (
-        level === "connector" ||
-        selectedNodeKind === "connector" ||
-        selectedNodeKind === "inlineConnector" ||
-        selectedNodeKind === "panelMount" ||
-        selectedNodeKind === "group"
-      )
-        return { kind: "connector", id: focusId };
-    }
-    // Vehicle flow level maps to the vehicle-level harnessing scope (not all pins).
-    return { kind: "vehicle", id: null };
-  }
-
-  return (
-    <div className="absolute right-3 top-3 z-10 flex items-center gap-2">
-      <button
-        type="button"
-        onClick={() => openConnectionTable(scopeForLevel())}
-        className="flex items-center gap-1.5 rounded-md border border-tesla-border bg-tesla-bg/90 px-2 py-1 text-xs text-tesla-muted backdrop-blur transition hover:border-tesla-accent hover:text-tesla-text"
-      >
-        Open table
-        <OpenTableIcon />
-      </button>
-      <button
-        type="button"
-        onClick={() => setWireMode(!wireMode)}
-        className={clsx(
-          "rounded-md px-2 py-1 text-xs transition",
-          wireMode
-            ? "bg-tesla-accent text-white"
-            : "border border-tesla-border bg-tesla-bg/90 text-tesla-muted backdrop-blur hover:text-tesla-text",
-        )}
-      >
-        {wireMode ? "Wiring active" : "Wire"}
-      </button>
     </div>
   );
 }

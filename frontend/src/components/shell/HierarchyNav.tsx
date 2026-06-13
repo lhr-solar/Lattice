@@ -10,6 +10,11 @@ import type { ProjectionLevel } from "@/api/types";
 import { ConfirmModal } from "@/components/ui/Modal";
 import { ConnectorInstanceLabel, connectorNodeTitle } from "@/components/library/ConnectorInstanceLabel";
 import { HierarchyIcon } from "@/components/shell/HierarchyIcons";
+import {
+  RenameInstanceModal,
+  type RenameInstanceKind,
+} from "@/features/design/RenameInstanceModal";
+import { PinoutEditorModal } from "@/features/nets/PinoutEditorPanel";
 
 function TreeNode({
   node,
@@ -19,6 +24,7 @@ function TreeNode({
   onSelect,
   selectedId,
   onRequestDelete,
+  onRequestEdit,
 }: {
   node: HierarchyNode;
   depth?: number;
@@ -27,6 +33,7 @@ function TreeNode({
   onSelect: (id: string, kind: string, level: ProjectionLevel) => void;
   selectedId: string | null;
   onRequestDelete: (node: HierarchyNode) => void;
+  onRequestEdit: (node: HierarchyNode) => void;
 }) {
   const levelMap: Record<string, ProjectionLevel> = {
     vehicle: "vehicle",
@@ -42,6 +49,13 @@ function TreeNode({
   const isCollapsed = !isVehicle && collapsedIds.has(node.id);
   const canDelete = !isVehicle;
   const canCollapse = hasChildren && !isVehicle;
+  const canEdit =
+    node.kind === "enclosure" ||
+    node.kind === "node" ||
+    node.kind === "pcb" ||
+    node.kind === "connector" ||
+    node.kind === "inlineConnector" ||
+    node.kind === "panelMount";
 
   const hasTemplateLabel = Boolean(node.template_label);
   const isConnector =
@@ -51,6 +65,10 @@ function TreeNode({
   const title = hasTemplateLabel || isConnector
     ? connectorNodeTitle(node.label, node.template_label)
     : node.label;
+  const editTitle =
+    node.kind === "enclosure" || node.kind === "node" || node.kind === "pcb"
+      ? `Rename ${title}`
+      : `Edit pinout for ${title}`;
 
   return (
     <li>
@@ -108,6 +126,21 @@ function TreeNode({
             <span className="truncate">{node.label}</span>
           )}
         </button>
+        {canEdit ? (
+          <button
+            type="button"
+            title={editTitle}
+            className="shrink-0 rounded px-1 py-0.5 text-xs text-tesla-muted transition hover:bg-tesla-border hover:text-tesla-text"
+            onClick={(e) => {
+              e.stopPropagation();
+              onRequestEdit(node);
+            }}
+          >
+            <PencilIcon />
+          </button>
+        ) : (
+          <span className="w-[22px] shrink-0" aria-hidden />
+        )}
         {canDelete ? (
           <button
             type="button"
@@ -136,6 +169,7 @@ function TreeNode({
               onSelect={onSelect}
               selectedId={selectedId}
               onRequestDelete={onRequestDelete}
+              onRequestEdit={onRequestEdit}
             />
           ))}
         </ul>
@@ -281,6 +315,14 @@ function collectCollapsibleIds(node: HierarchyNode, ids: Set<string>) {
   }
 }
 
+function PencilIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width={14} height={14} aria-hidden fill="currentColor">
+      <path d="M11.7 1.3a1 1 0 0 1 1.4 0l1.6 1.6a1 1 0 0 1 0 1.4L5.8 12.6 2.4 13l.4-3.4L11.7 1.3zM4.3 12.1l-.2 1.5 1.5-.2 7.1-7.1-1.3-1.3-7.1 7.1z" />
+    </svg>
+  );
+}
+
 function ChevronIcon({ expanded }: { expanded: boolean }) {
   return (
     <svg
@@ -312,6 +354,11 @@ export function HierarchyNav() {
   const setProjectionLevel = useAppStore((s) => s.setProjectionLevel);
   const searchQuery = useAppStore((s) => s.searchQuery).toLowerCase();
   const [deleteTopologyTarget, setDeleteTopologyTarget] = useState<HierarchyNode | null>(null);
+  const [renameTarget, setRenameTarget] = useState<{
+    id: string;
+    kind: RenameInstanceKind;
+  } | null>(null);
+  const [pinoutConnectorId, setPinoutConnectorId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const [collapseKey, setCollapseKey] = useState<string | null>(null);
@@ -390,6 +437,24 @@ export function HierarchyNav() {
     },
     onError: (error) => setDeleteError(handleMutationError(error, "Failed to delete.")),
   });
+
+  function handleNodeEdit(node: HierarchyNode) {
+    if (node.kind === "enclosure") {
+      setRenameTarget({ id: node.id, kind: "enclosure" });
+      return;
+    }
+    if (node.kind === "node" || node.kind === "pcb") {
+      setRenameTarget({ id: node.id, kind: "node" });
+      return;
+    }
+    if (
+      node.kind === "connector" ||
+      node.kind === "inlineConnector" ||
+      node.kind === "panelMount"
+    ) {
+      setPinoutConnectorId(node.id);
+    }
+  }
 
   function handleNodeSelect(id: string, kind: string, level: ProjectionLevel) {
     if (kind === "vehicle") {
@@ -529,6 +594,7 @@ export function HierarchyNav() {
                 onSelect={handleNodeSelect}
                 selectedId={selectedNodeId}
                 onRequestDelete={setDeleteTopologyTarget}
+                onRequestEdit={handleNodeEdit}
               />
             </ul>
           )}
@@ -554,6 +620,19 @@ export function HierarchyNav() {
           deleteTopologyMutation.mutate(deleteTopologyTarget);
         }}
       />
+      <RenameInstanceModal
+        open={renameTarget !== null}
+        instanceId={renameTarget?.id ?? null}
+        kind={renameTarget?.kind ?? null}
+        onClose={() => setRenameTarget(null)}
+      />
+      {pinoutConnectorId && (
+        <PinoutEditorModal
+          open
+          connectorId={pinoutConnectorId}
+          onClose={() => setPinoutConnectorId(null)}
+        />
+      )}
     </>
   );
 }

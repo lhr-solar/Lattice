@@ -1,3 +1,4 @@
+import clsx from "clsx";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { isRevisionPublishedError } from "@/api/client";
@@ -13,7 +14,7 @@ function formatRevisionLabel(number: number, label?: string | null): string {
   return trimmed ? `R${number} | ${trimmed}` : `R${number}`;
 }
 
-export function PublishRevisionSection() {
+export function PublishRevisionButton({ className }: { className?: string }) {
   const queryClient = useQueryClient();
   const vehicleId = useAppStore((s) => s.selectedVehicleId);
   const revisionId = useAppStore((s) => s.selectedRevisionId);
@@ -87,36 +88,53 @@ export function PublishRevisionSection() {
   }
 
   return (
-    <div className="border-t border-tesla-border p-3">
-      {publish.isError && isRevisionPublishedError(publish.error) && (
-        <p className="mb-2 text-xs text-amber-200">
-          This revision was already published. Switched to the current draft.
-        </p>
-      )}
+    <>
       <button
         type="button"
         disabled={!vehicleId || !activeRevisionId || publish.isPending}
         onClick={openConfirm}
-        className="flex w-full items-center justify-center gap-2 rounded-md bg-tesla-accent px-2 py-2 text-xs text-white transition hover:bg-tesla-accent/90 disabled:opacity-40"
-      >
-        {publish.isPending ? (
-          "Publishing…"
-        ) : (
-          <>
-            <span>Publish revision</span>
-            {revisionNumber != null && nextNumber != null ? (
-              <span className="flex items-center gap-1">
-                <span className="rounded border border-white/40 bg-white/10 px-1.5 py-px font-medium leading-snug shadow-sm">
-                  R{revisionNumber}
-                </span>
-                <span className="text-white/80">→</span>
-                <span className="rounded border border-white/40 bg-white/10 px-1.5 py-px font-medium leading-snug shadow-sm">
-                  R{nextNumber}
-                </span>
-              </span>
-            ) : null}
-          </>
+        className={clsx(
+          "relative inline-flex h-7 items-center justify-center whitespace-nowrap rounded-md bg-tesla-accent px-3 text-xs text-white transition hover:bg-tesla-accent/90 disabled:opacity-40",
+          className,
         )}
+      >
+        <span className="invisible inline-flex items-center gap-2" aria-hidden>
+          <span>Publish revision</span>
+          {revisionNumber != null && nextNumber != null ? (
+            <span className="flex items-center gap-1">
+              <span className="rounded border border-white/40 px-1.5 py-px">R{revisionNumber}</span>
+              <span>→</span>
+              <span className="rounded border border-white/40 px-1.5 py-px">R{nextNumber}</span>
+            </span>
+          ) : null}
+        </span>
+        <span
+          className={clsx(
+            "absolute inset-0 flex items-center justify-center gap-2 px-3",
+            publish.isPending ? "opacity-100" : "opacity-0",
+          )}
+        >
+          Publishing…
+        </span>
+        <span
+          className={clsx(
+            "absolute inset-0 flex items-center justify-center gap-2 px-3",
+            publish.isPending ? "opacity-0" : "opacity-100",
+          )}
+        >
+          <span>Publish revision</span>
+          {revisionNumber != null && nextNumber != null ? (
+            <span className="flex shrink-0 items-center gap-1">
+              <span className="rounded border border-white/40 bg-white/10 px-1.5 py-px font-medium leading-snug shadow-sm">
+                R{revisionNumber}
+              </span>
+              <span className="text-white/80">→</span>
+              <span className="rounded border border-white/40 bg-white/10 px-1.5 py-px font-medium leading-snug shadow-sm">
+                R{nextNumber}
+              </span>
+            </span>
+          ) : null}
+        </span>
       </button>
 
       <Modal
@@ -180,6 +198,6 @@ export function PublishRevisionSection() {
           <p className="text-xs text-tesla-muted">Required. Shown in the revision timeline.</p>
         </div>
       </Modal>
-    </div>
+    </>
   );
 }

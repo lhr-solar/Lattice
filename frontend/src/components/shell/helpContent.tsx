@@ -282,7 +282,7 @@ export const USER_HELP_SECTIONS: HelpSection[] = [
     content: [
       {
         type: "p",
-        text: "In {{Design}} mode, the Properties panel lists Add from library actions scoped to your current selection.",
+        text: "In {{Design}} mode, use the floating bottom toolbar to add instances scoped to your current selection.",
       },
       {
         type: "ul",
@@ -295,7 +295,7 @@ export const USER_HELP_SECTIONS: HelpSection[] = [
       },
       {
         type: "p",
-        text: "After placement, select the instance in the hierarchy to nickname it or open connector-specific tools in the property panel.",
+        text: "After placement, use the pencil icon in the topology tree to rename enclosures and nodes, or edit connector pinouts.",
       },
     ],
   },
@@ -305,7 +305,7 @@ export const USER_HELP_SECTIONS: HelpSection[] = [
     content: [
       {
         type: "p",
-        text: "Select any connector (inline, panel mount, or on a node) and click {{Edit pinout}} in the Properties panel.",
+        text: "Select any connector (inline, panel mount, or on a node) and click the pencil icon in the topology tree to edit its pinout.",
       },
       {
         type: "ul",
@@ -351,21 +351,21 @@ export const USER_HELP_SECTIONS: HelpSection[] = [
     content: [
       {
         type: "p",
-        text: "Wire mode changes pin clicks from navigation to pairing. Toggle it with the {{Wire}} button on the graph canvas (top right).",
+        text: "Wire mode changes pin clicks from navigation to pairing. Toggle it with the {{Wire}} button in the bottom toolbar.",
       },
       {
         type: "ol",
         items: [
           "Click {{Wire}} — the button shows {{Wiring active}} when enabled.",
-          "First pin click selects pin A (highlighted in the pairing panel).",
+          "First pin click selects pin A.",
           "Second pin click on another pin creates a wire edge and assigns both pins to a net.",
-          "Choose an existing net, create a new named net, or leave naming automatic.",
-          "Optional wire color applies to the new connection.",
+          "Drag between pin ports on the graph when Wire mode is on.",
+          "Click an existing wire edge to select it, then × or Delete to remove.",
         ],
       },
       {
         type: "p",
-        text: "You can also drag between pin ports on the graph when Wire mode is on. Click an existing wire edge to disconnect it.",
+        text: "You can also drag between pin ports on the graph when Wire mode is on.",
       },
     ],
   },
@@ -413,9 +413,9 @@ export const USER_HELP_SECTIONS: HelpSection[] = [
       {
         type: "ul",
         items: [
-          "Available in Wire mode when a connector is selected.",
+          "Available in Wire mode when viewing a connector on the graph.",
           "Shown as dashed edges on the graph, distinct from solid harness wires.",
-          "Use the {{Pin shorts}} section in the Properties panel to add or remove shorts.",
+          "Select a short edge on the graph and delete it with × or Delete.",
         ],
       },
     ],
@@ -431,8 +431,7 @@ export const USER_HELP_SECTIONS: HelpSection[] = [
       {
         type: "ul",
         items: [
-          "Open from the graph via {{Open table}} or from Properties — scope follows your current selection.",
-          "{{Open selection in connection table}} scopes to your hierarchy selection.",
+          "Open from the bottom toolbar via {{Open table}} — scope follows your current graph selection.",
           "Scopes include entire vehicle, enclosure, node, or single connector.",
           "Review source and destination connectors, pins, signal names, and wire colors.",
           "Useful for bulk review, export-oriented workflows, and finding gaps before manufacturing.",
@@ -452,10 +451,9 @@ export const USER_HELP_SECTIONS: HelpSection[] = [
         type: "ul",
         items: [
           "Containers represent enclosures and nodes; connector groups show pins on the right edge.",
-          "Zoom and pan with React Flow controls; minimap helps orientation on large designs.",
-          "Projection level in Properties reflects how deep you are (vehicle → enclosure → connector → pin).",
+          "Zoom and pan with React Flow controls in the top-right viewport cluster; minimap helps orientation on large designs.",
+          "The info box below the minimap shows projection level, current selection, and topology counts.",
           "Selecting in the hierarchy and clicking on the graph stay in sync.",
-          "Topology summary in Properties shows enclosure, node, edge, and net counts.",
         ],
       },
     ],
@@ -476,7 +474,7 @@ export const USER_HELP_SECTIONS: HelpSection[] = [
     content: [
       {
         type: "p",
-        text: "Switch mode in the right sidebar: {{Design}} / {{Manufacturing}}. Manufacturing focuses on building harnesses, not editing topology.",
+        text: "Switch mode with the {{Design}} / {{Manufacturing}} toggle in the top bar. Manufacturing focuses on building harnesses, not editing topology.",
       },
       {
         type: "ul",
@@ -500,7 +498,7 @@ export const USER_HELP_SECTIONS: HelpSection[] = [
       {
         type: "ul",
         items: [
-          "{{Publish revision}} at the bottom of Properties in Design mode snapshots the current draft as immutable.",
+          "{{Publish revision}} in the bottom toolbar in Design mode snapshots the current draft as immutable.",
           "Publishing creates a new draft revision automatically so you can keep working.",
           "If a revision was already published elsewhere, Lattice switches you to the current draft.",
           "Stale revision banners appear when another session changed data — refresh or reload before saving.",

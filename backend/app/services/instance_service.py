@@ -591,23 +591,51 @@ class InstanceService:
             raise HTTPException(status_code=404, detail="Connector instance not found")
 
         template = await self.db.get(ConnectorTemplate, conn.connector_template_id)
-        if (
-            payload.nickname is not None
-            and (
-                conn.pcb_instance_id is not None
-                or conn.is_panel_mount
-                or not (template and is_inline_connector_template(template))
-            )
-        ):
-            raise HTTPException(
-                status_code=400,
-                detail="Only inline connector instances can be renamed",
-            )
-
         if payload.nickname is not None:
             nickname = payload.nickname.strip() or None
-            conn.nickname = nickname
-            conn.use_template_name = nickname is None
+            targets: list[ConnectorInstance] = [conn]
+            if conn.pcb_template_slot_id:
+                targets = list(
+                    (
+                        await self.db.execute(
+                            select(ConnectorInstance).where(
+                                ConnectorInstance.revision_id == revision_id,
+                                ConnectorInstance.pcb_template_slot_id == conn.pcb_template_slot_id,
+                            )
+                        )
+                    ).scalars().all()
+                )
+            elif conn.enclosure_panel_slot_id:
+                targets = list(
+                    (
+                        await self.db.execute(
+                            select(ConnectorInstance).where(
+                                ConnectorInstance.revision_id == revision_id,
+                                ConnectorInstance.enclosure_panel_slot_id == conn.enclosure_panel_slot_id,
+                            )
+                        )
+                    ).scalars().all()
+                )
+            elif conn.source_pcb_template_slot_id:
+                targets = list(
+                    (
+                        await self.db.execute(
+                            select(ConnectorInstance).where(
+                                ConnectorInstance.revision_id == revision_id,
+                                ConnectorInstance.source_pcb_template_slot_id == conn.source_pcb_template_slot_id,
+                            )
+                        )
+                    ).scalars().all()
+                )
+            elif not (template and is_inline_connector_template(template)):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Only inline connector instances can be renamed",
+                )
+
+            for target in targets:
+                target.nickname = nickname
+                target.use_template_name = nickname is None
 
         await self.db.flush()
         pin_ids_result = await self.db.execute(
