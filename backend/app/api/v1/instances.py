@@ -9,6 +9,8 @@ from app.schemas.instances import (
     ConnectorInstanceCreate,
     ConnectorInstanceResponse,
     ConnectorInstanceUpdate,
+    ConnectorPinoutResponse,
+    ConnectorPinoutUpdate,
     EnclosureInstanceCreate,
     EnclosureInstanceUpdate,
     EnclosureInstanceResponse,
@@ -127,6 +129,27 @@ async def update_pin(
         revision_id,
         connector_instance_id,
         pin_id,
+        payload,
+        changed_by=user.username,
+    )
+
+
+@router.put(
+    "/connectors/{connector_instance_id}/pinout",
+    response_model=ConnectorPinoutResponse,
+)
+async def update_connector_pinout(
+    vehicle_id: UUID,
+    revision_id: UUID,
+    connector_instance_id: UUID,
+    payload: ConnectorPinoutUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> ConnectorPinoutResponse:
+    return await InstanceService(db).update_connector_pinout(
+        vehicle_id,
+        revision_id,
+        connector_instance_id,
         payload,
         changed_by=user.username,
     )

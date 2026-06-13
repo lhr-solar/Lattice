@@ -6,7 +6,7 @@ import { TopBar } from "@/components/shell/TopBar";
 import { TopologyCanvas } from "@/components/graph/TopologyCanvas";
 import { ManufacturingPanel } from "@/features/manufacturing/ManufacturingPanel";
 import { NetManager } from "@/features/nets/NetManager";
-import { PinNameLibraryModal } from "@/features/pins/PinNameLibraryModal";
+import { PinTemplatesModal } from "@/features/pins/PinTemplatesModal";
 import { ConnectionTable } from "@/features/connections/ConnectionTable";
 import { LibraryBuilders } from "@/features/library/LibraryBuilders";
 import { useAutoSelectVehicle } from "@/hooks/useAutoSelectVehicle";
@@ -26,7 +26,7 @@ export function AppShell({ onOpenAdmin }: AppShellProps) {
     <div className="flex h-screen flex-col">
       <HelpModal />
       <NetManager />
-      <PinNameLibraryModal />
+      <PinTemplatesModal />
       <ConnectionTable />
       <LibraryBuilders />
       <TopBar onOpenAdmin={onOpenAdmin} />

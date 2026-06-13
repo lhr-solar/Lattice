@@ -3,6 +3,7 @@ import { useState } from "react";
 import clsx from "clsx";
 import {
   clearVehicleData,
+  clearVehicleWires,
   createUser,
   createUsersBulk,
   createVehicle,
@@ -29,6 +30,8 @@ import { useSessionStore } from "@/stores/sessionStore";
 interface AdminPageProps {
   onBack: () => void;
 }
+
+type VehicleClearAction = "all" | "wires";
 
 export function AdminPage({ onBack }: AdminPageProps) {
   const queryClient = useQueryClient();
@@ -67,9 +70,11 @@ export function AdminPage({ onBack }: AdminPageProps) {
   const [deleteVehicleTarget, setDeleteVehicleTarget] = useState<{ id: string; name: string } | null>(
     null,
   );
-  const [clearVehicleTarget, setClearVehicleTarget] = useState<{ id: string; name: string } | null>(
-    null,
-  );
+  const [clearVehicleTarget, setClearVehicleTarget] = useState<{
+    id: string;
+    name: string;
+    action: VehicleClearAction;
+  } | null>(null);
   const [vehicleError, setVehicleError] = useState<string | null>(null);
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
 
@@ -309,7 +314,16 @@ export function AdminPage({ onBack }: AdminPageProps) {
   });
 
   const clearVehicleMutation = useMutation({
-    mutationFn: (vehicleId: string) => clearVehicleData(vehicleId),
+    mutationFn: ({
+      vehicleId,
+      action,
+    }: {
+      vehicleId: string;
+      action: VehicleClearAction;
+    }) => {
+      if (action === "wires") return clearVehicleWires(vehicleId);
+      return clearVehicleData(vehicleId);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["vehicles"] });
       setClearVehicleTarget(null);
@@ -616,23 +630,42 @@ export function AdminPage({ onBack }: AdminPageProps) {
         <section className="rounded-lg border border-tesla-border bg-tesla-surface p-5">
           <h2 className="mb-1 text-lg font-medium text-tesla-text">Database management</h2>
           <p className="mb-4 text-sm text-tesla-muted">
-            Permanently delete all data for a vehicle, including revisions, topology, and library
-            items.
+            Clear wire topology for a vehicle while keeping instances and libraries, or wipe
+            everything including revisions.
           </p>
           <ul className="divide-y divide-tesla-border rounded border border-tesla-border">
             {vehicles.map((vehicle) => (
-              <li key={vehicle.id} className="flex items-center justify-between px-3 py-2 text-sm">
+              <li
+                key={vehicle.id}
+                className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm"
+              >
                 <span className="text-tesla-text">{vehicle.name}</span>
-                <button
-                  type="button"
-                  onClick={() => setClearVehicleTarget({ id: vehicle.id, name: vehicle.name })}
-                  className={clsx(
-                    "rounded border border-red-500/50 px-2 py-0.5 text-xs text-red-300",
-                    "hover:bg-red-500/10",
-                  )}
-                >
-                  Clear all data
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setClearVehicleTarget({ id: vehicle.id, name: vehicle.name, action: "wires" })
+                    }
+                    className={clsx(
+                      "rounded border border-amber-500/50 px-2 py-0.5 text-xs text-amber-200",
+                      "hover:bg-amber-500/10",
+                    )}
+                  >
+                    Clear wires only
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setClearVehicleTarget({ id: vehicle.id, name: vehicle.name, action: "all" })
+                    }
+                    className={clsx(
+                      "rounded border border-red-500/50 px-2 py-0.5 text-xs text-red-300",
+                      "hover:bg-red-500/10",
+                    )}
+                  >
+                    Clear all data
+                  </button>
+                </div>
               </li>
             ))}
             {vehicles.length === 0 && (
@@ -822,19 +855,32 @@ export function AdminPage({ onBack }: AdminPageProps) {
       />
       <ConfirmModal
         open={Boolean(clearVehicleTarget)}
-        title="Clear vehicle data"
+        title={
+          clearVehicleTarget?.action === "wires" ? "Clear vehicle wires" : "Clear vehicle data"
+        }
         message={
           clearVehicleTarget
-            ? `Delete all design data and library items tied to vehicle "${clearVehicleTarget.name}"? This cannot be undone.`
+            ? clearVehicleTarget.action === "wires"
+              ? `Delete all wires, signals, splices, and harness data for vehicle "${clearVehicleTarget.name}"? Placed instances and library templates will be kept. This cannot be undone.`
+              : `Delete all design data and library items tied to vehicle "${clearVehicleTarget.name}"? This resets revisions and cannot be undone.`
             : ""
         }
-        confirmLabel={clearVehicleMutation.isPending ? "Clearing…" : "Clear vehicle"}
+        confirmLabel={
+          clearVehicleMutation.isPending
+            ? "Clearing…"
+            : clearVehicleTarget?.action === "wires"
+              ? "Clear wires"
+              : "Clear vehicle"
+        }
         destructive
         disabled={clearVehicleMutation.isPending}
         onCancel={() => setClearVehicleTarget(null)}
         onConfirm={() => {
           if (!clearVehicleTarget) return;
-          clearVehicleMutation.mutate(clearVehicleTarget.id);
+          clearVehicleMutation.mutate({
+            vehicleId: clearVehicleTarget.id,
+            action: clearVehicleTarget.action,
+          });
         }}
       />
     </div>

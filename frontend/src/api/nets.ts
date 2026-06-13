@@ -14,9 +14,11 @@ export interface NetPinInfo {
   pin_number: number;
   pin_name: string;
   connector_instance_id: string;
+  connector_template_id: string;
   connector_label: string;
   primary_net_id: string | null;
   primary_net_name: string | null;
+  shared_pinout?: boolean;
 }
 
 export interface NetDetail extends NetSummary {

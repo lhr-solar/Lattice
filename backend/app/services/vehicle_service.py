@@ -15,6 +15,8 @@ from app.infra.db.models.manufacturing import (
 )
 from app.infra.db.models.revision import RevisionChange, RevisionSnapshot
 from app.infra.db.models.shorts import ConnectorInstancePinShort
+from app.infra.db.models.pin_names import PinNameLibraryEntry
+from app.infra.db.models.pin_templates import PinTemplate
 from app.infra.db.models.templates import (
     EnclosureTemplate,
     EnclosureTemplatePcbSlot,
@@ -114,21 +116,27 @@ class VehicleService:
         await self.db.flush()
         return await self.get_vehicle(vehicle_id)  # type: ignore[return-value]
 
+    async def clear_vehicle_wires(self, vehicle_id: UUID) -> None:
+        vehicle = await self.db.get(Vehicle, vehicle_id)
+        if not vehicle:
+            raise HTTPException(status_code=404, detail="Vehicle not found")
+
+        revision_ids = await self._revision_ids_for_vehicle(vehicle_id)
+        if revision_ids:
+            await self._delete_revision_wire_data(revision_ids)
+        await self.db.flush()
+
     async def clear_vehicle_data(self, vehicle_id: UUID, *, created_by: str | None = None) -> None:
         vehicle = await self.db.get(Vehicle, vehicle_id)
         if not vehicle:
             raise HTTPException(status_code=404, detail="Vehicle not found")
 
-        revision_ids = list(
-            (
-                await self.db.execute(select(Revision.id).where(Revision.vehicle_id == vehicle_id))
-            ).scalars()
-        )
+        revision_ids = await self._revision_ids_for_vehicle(vehicle_id)
         if revision_ids:
             await self._delete_revision_scoped_data(revision_ids)
 
         await self.db.execute(delete(VehicleHead).where(VehicleHead.vehicle_id == vehicle_id))
-        await self._delete_vehicle_templates(vehicle_id)
+        await self._delete_vehicle_libraries(vehicle_id)
         await self.db.execute(delete(Revision).where(Revision.vehicle_id == vehicle_id))
 
         revision = Revision(
@@ -149,23 +157,31 @@ class VehicleService:
         vehicle = await self.db.get(Vehicle, vehicle_id)
         if not vehicle:
             raise HTTPException(status_code=404, detail="Vehicle not found")
-        revision_ids = list(
-            (
-                await self.db.execute(select(Revision.id).where(Revision.vehicle_id == vehicle_id))
-            ).scalars()
-        )
+        revision_ids = await self._revision_ids_for_vehicle(vehicle_id)
 
         if revision_ids:
             await self._delete_revision_scoped_data(revision_ids)
 
         await self.db.execute(delete(VehicleHead).where(VehicleHead.vehicle_id == vehicle_id))
-        await self._delete_vehicle_templates(vehicle_id)
+        await self._delete_vehicle_libraries(vehicle_id)
         await self.db.execute(delete(Revision).where(Revision.vehicle_id == vehicle_id))
         await self.db.execute(delete(Vehicle).where(Vehicle.id == vehicle_id))
         await self.db.flush()
 
+    async def _revision_ids_for_vehicle(self, vehicle_id: UUID) -> list[UUID]:
+        return list(
+            (
+                await self.db.execute(select(Revision.id).where(Revision.vehicle_id == vehicle_id))
+            ).scalars()
+        )
+
     async def _delete_revision_scoped_data(self, revision_ids: list[UUID]) -> None:
-        # Delete revision-scoped rows first because many FK columns do not use DB-level cascade.
+        await self._delete_revision_wire_data(revision_ids)
+        await self._delete_revision_instances(revision_ids)
+        await self._delete_revision_metadata(revision_ids)
+
+    async def _delete_revision_wire_data(self, revision_ids: list[UUID]) -> None:
+        # Delete wire/topology rows first because many FK columns do not use DB-level cascade.
         await self.db.execute(
             delete(HarnessGroupEdge).where(
                 HarnessGroupEdge.connection_edge_id.in_(
@@ -207,6 +223,8 @@ class VehicleService:
         await self.db.execute(delete(ConnectionEdge).where(ConnectionEdge.revision_id.in_(revision_ids)))
         await self.db.execute(delete(SpliceNode).where(SpliceNode.revision_id.in_(revision_ids)))
         await self.db.execute(delete(Signal).where(Signal.revision_id.in_(revision_ids)))
+
+    async def _delete_revision_instances(self, revision_ids: list[UUID]) -> None:
         await self.db.execute(delete(Pin).where(Pin.revision_id.in_(revision_ids)))
         await self.db.execute(
             delete(ConnectorInstance).where(ConnectorInstance.revision_id.in_(revision_ids))
@@ -216,11 +234,20 @@ class VehicleService:
             delete(EnclosureInstance).where(EnclosureInstance.revision_id.in_(revision_ids))
         )
         await self.db.execute(delete(NodeLayout).where(NodeLayout.revision_id.in_(revision_ids)))
+
+    async def _delete_revision_metadata(self, revision_ids: list[UUID]) -> None:
         await self.db.execute(delete(SavedView).where(SavedView.revision_id.in_(revision_ids)))
         await self.db.execute(
             delete(RevisionSnapshot).where(RevisionSnapshot.revision_id.in_(revision_ids))
         )
         await self.db.execute(delete(RevisionChange).where(RevisionChange.revision_id.in_(revision_ids)))
+
+    async def _delete_vehicle_libraries(self, vehicle_id: UUID) -> None:
+        await self._delete_vehicle_templates(vehicle_id)
+        await self.db.execute(delete(PinTemplate).where(PinTemplate.vehicle_id == vehicle_id))
+        await self.db.execute(
+            delete(PinNameLibraryEntry).where(PinNameLibraryEntry.vehicle_id == vehicle_id)
+        )
 
     async def _delete_vehicle_templates(self, vehicle_id: UUID) -> None:
         await self.db.execute(

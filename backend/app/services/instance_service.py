@@ -9,6 +9,8 @@ from app.core.display import resolve_display_name
 from app.core.time import utc_now
 from app.core.revision_guard import ensure_mutable_revision
 from app.domains.connectors.export import is_inline_connector_template, should_export_from_node_slot
+from app.domains.connectors.pin_mapping import pin_mapping_from_names
+from app.services.connector_reconcile_service import ConnectorReconcileService
 from app.infra.db.models.catalog import ConnectorTemplate, ConnectorTemplatePin
 from app.infra.db.models.instances import (
     ConnectorInstance,
@@ -36,6 +38,8 @@ from app.schemas.instances import (
     ConnectorInstanceCreate,
     ConnectorInstanceUpdate,
     ConnectorInstanceResponse,
+    ConnectorPinoutResponse,
+    ConnectorPinoutUpdate,
     EnclosureInstanceCreate,
     EnclosureInstanceUpdate,
     EnclosureInstanceResponse,
@@ -390,6 +394,94 @@ class InstanceService:
         )
         await self._sync(vehicle_id, revision_id, changed_by=changed_by)
         return response
+
+    async def update_connector_pinout(
+        self,
+        vehicle_id: UUID,
+        revision_id: UUID,
+        connector_instance_id: UUID,
+        payload: ConnectorPinoutUpdate,
+        *,
+        changed_by: str | None = None,
+    ) -> ConnectorPinoutResponse:
+        await ensure_mutable_revision(self.db, revision_id, vehicle_id)
+        await RevisionSyncService(self.db).check_expected_sequence(
+            revision_id, payload.expected_edit_sequence, vehicle_id
+        )
+        conn = await self.db.get(ConnectorInstance, connector_instance_id)
+        if not conn or conn.revision_id != revision_id or conn.vehicle_id != vehicle_id:
+            raise HTTPException(status_code=404, detail="Connector instance not found")
+
+        template_pins = (
+            await self.db.execute(
+                select(ConnectorTemplatePin)
+                .where(ConnectorTemplatePin.connector_template_id == conn.connector_template_id)
+                .order_by(ConnectorTemplatePin.pin_number)
+            )
+        ).scalars().all()
+        template_defaults = {tp.pin_number: tp.name for tp in template_pins}
+        pin_mapping = pin_mapping_from_names(
+            [{"pin_number": p.pin_number, "name": p.name.strip()} for p in payload.pins],
+            template_defaults=template_defaults,
+        )
+
+        reconcile = ConnectorReconcileService(self.db)
+        shared = False
+        if conn.pcb_template_slot_id:
+            await reconcile.apply_pin_mapping_to_pcb_slot(
+                conn.pcb_template_slot_id, pin_mapping, changed_by=changed_by
+            )
+            shared = True
+        elif conn.source_pcb_template_slot_id:
+            await reconcile.apply_pin_mapping_to_pcb_slot(
+                conn.source_pcb_template_slot_id, pin_mapping, changed_by=changed_by
+            )
+            shared = True
+        elif conn.enclosure_panel_slot_id:
+            await reconcile.apply_pin_mapping_to_enclosure_panel_slot(
+                conn.enclosure_panel_slot_id, pin_mapping, changed_by=changed_by
+            )
+            shared = True
+        else:
+            pins_by_number = {p.pin_number: p.name.strip() for p in payload.pins}
+            existing = (
+                await self.db.execute(
+                    select(Pin).where(
+                        Pin.revision_id == revision_id,
+                        Pin.connector_instance_id == connector_instance_id,
+                    )
+                )
+            ).scalars().all()
+            for pin in existing:
+                if pin.pin_number in pins_by_number:
+                    pin.name = pins_by_number[pin.pin_number]
+            await self.db.flush()
+            await self._sync(vehicle_id, revision_id, changed_by=changed_by)
+
+        result_pins = (
+            await self.db.execute(
+                select(Pin)
+                .where(
+                    Pin.revision_id == revision_id,
+                    Pin.connector_instance_id == connector_instance_id,
+                )
+                .order_by(Pin.pin_number)
+            )
+        ).scalars().all()
+        return ConnectorPinoutResponse(
+            connector_instance_id=connector_instance_id,
+            shared_pinout=shared,
+            pins=[
+                PinResponse(
+                    id=p.id,
+                    connector_instance_id=p.connector_instance_id,
+                    pin_number=p.pin_number,
+                    name=p.name,
+                    role=p.role,
+                )
+                for p in result_pins
+            ],
+        )
 
     async def update_enclosure(
         self,

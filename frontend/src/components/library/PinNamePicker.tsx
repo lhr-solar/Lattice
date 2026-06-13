@@ -44,11 +44,13 @@ export function PinNamePicker({
         onChange={(e) => onChange(e.target.value)}
         onFocus={() => setOpen(true)}
         placeholder={placeholder}
-        className="min-w-0 flex-1 rounded-l border border-tesla-border bg-tesla-bg px-2 py-1 text-sm outline-none focus:border-tesla-accent"
+        className={`min-w-0 flex-1 rounded-l border border-tesla-border bg-tesla-bg px-2 py-1 text-sm outline-none focus:border-tesla-accent ${
+          value.trim() ? "text-tesla-text" : "text-tesla-muted"
+        }`}
       />
       <button
         type="button"
-        title="Pick from pin name library"
+        title="Pick saved pin name"
         onClick={() => setOpen((prev) => !prev)}
         className="shrink-0 rounded-r border border-l-0 border-tesla-border bg-tesla-bg px-2 text-xs text-tesla-muted transition hover:border-tesla-accent hover:text-tesla-text"
       >
@@ -58,7 +60,7 @@ export function PinNamePicker({
         <div className="absolute left-0 right-0 top-full z-30 mt-1 rounded-md border border-tesla-border bg-tesla-surface shadow-xl">
           <ul className="max-h-44 overflow-y-auto py-1">
             {filtered.length === 0 ? (
-              <li className="px-3 py-2 text-sm text-tesla-muted">No library names match</li>
+              <li className="px-3 py-2 text-sm text-tesla-muted">No saved names match</li>
             ) : (
               filtered.map((entry) => (
                 <li key={entry.id}>
@@ -91,7 +93,7 @@ export function PinNamePicker({
                 }}
                 className="w-full rounded border border-tesla-border px-2 py-1.5 text-left text-sm text-tesla-muted transition hover:border-tesla-accent hover:text-tesla-text"
               >
-                Manage pin name library…
+                Manage saved names…
               </button>
             </div>
           )}

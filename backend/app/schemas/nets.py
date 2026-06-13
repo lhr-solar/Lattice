@@ -13,6 +13,8 @@ class NetPinInfo(BaseModel):
     pin_number: int
     pin_name: str
     connector_instance_id: UUID
+    connector_template_id: UUID
+    shared_pinout: bool = False
     connector_label: str
     primary_net_id: UUID | None = None
     primary_net_name: str | None = None

@@ -1,0 +1,34 @@
+---
+description: Obsidian agent vault — memory, second-brain, and token-efficient retrieval for Lattice
+alwaysApply: true
+---
+
+# Obsidian vault (Cursor)
+
+Personal agent vault: `lattice-agent-vault/` (gitignored — not part of Lattice repo history).
+
+## Split responsibilities
+
+| Need | Tool | Do NOT |
+|------|------|--------|
+| Codebase architecture, symbols, deps | `graphify query/path/explain` | Read vault or grep the whole repo |
+| Session memory, decisions, project context | Vault (`brain/`, `work/`, `wiki/`) | Dump vault into context |
+| Obsidian syntax (wikilinks, bases, canvas) | obsidian-skills in `.cursor/skills/` | Guess Obsidian format |
+
+## Token rules
+
+1. Read `lattice-agent-vault/CRITICAL_FACTS.md` (~120 tokens) before any vault work.
+2. Read note `description` frontmatter before full note bodies.
+3. Use QMD when installed: `qmd --index lattice-agent-vault query "<question>"`.
+4. For second-brain commands, read only the one command file from `lattice-agent-vault/.second-brain/commands/`.
+5. Skip `lattice-agent-vault/_vendor/` unless upgrading submodules.
+
+## Skills
+
+- **obsidian-mind** — om-* workflows, brain/, work/, perf/
+- **obsidian-second-brain** — save, ingest, architect, reconcile, research
+- **obsidian-markdown/cli/bases/json-canvas** — format reference
+
+## Lattice codebase docs
+
+Store maintained architecture in `lattice-agent-vault/reference/lattice/` and `wiki/projects/`. Refresh with `/obsidian-architect` (second-brain) after major refactors. Cross-link to `brain/Key Decisions.md` for ADRs.

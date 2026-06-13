@@ -5,6 +5,7 @@ from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domains.connectors.export import should_export_from_node_slot
+from app.domains.connectors.pin_mapping import normalize_pin_mapping, pin_mapping_from_names, resolve_pin_name
 from app.infra.db.models.catalog import ConnectorTemplate, ConnectorTemplatePin
 from app.infra.db.models.instances import ConnectorInstance, EnclosureInstance, PcbInstance, Pin
 from app.infra.db.models.layout import NodeLayout
@@ -172,7 +173,7 @@ class ConnectorReconcileService:
                 await self._apply_enclosure_panel_slot(conn, slot)
 
     async def sync_instance_pins_from_template(
-        self, conn: ConnectorInstance, template_id: UUID
+        self, conn: ConnectorInstance, template_id: UUID, *, pin_mapping=None
     ) -> bool:
         template_pins = (
             await self.db.execute(
@@ -198,12 +199,13 @@ class ConnectorReconcileService:
         for template_pin in template_pins:
             current = existing_by_number.get(template_pin.pin_number)
             if current:
+                resolved_name = resolve_pin_name(template_pin.pin_number, template_pin.name, pin_mapping)
                 if (
-                    current.name != template_pin.name
+                    current.name != resolved_name
                     or current.role != template_pin.role
                     or current.connector_template_pin_id != template_pin.id
                 ):
-                    current.name = template_pin.name
+                    current.name = resolved_name
                     current.role = template_pin.role
                     current.connector_template_pin_id = template_pin.id
                     changed = True
@@ -214,7 +216,7 @@ class ConnectorReconcileService:
                     connector_instance_id=conn.id,
                     connector_template_pin_id=template_pin.id,
                     pin_number=template_pin.pin_number,
-                    name=template_pin.name,
+                    name=resolve_pin_name(template_pin.pin_number, template_pin.name, pin_mapping),
                     role=template_pin.role,
                 )
             )
@@ -243,9 +245,13 @@ class ConnectorReconcileService:
             return
 
         if conn.connector_template_id != slot.connector_template_id:
-            await self._replace_connector_template(conn, slot.connector_template_id)
+            await self._replace_connector_template(
+                conn, slot.connector_template_id, pin_mapping=slot.pin_mapping
+            )
         else:
-            await self.sync_instance_pins_from_template(conn, slot.connector_template_id)
+            await self.sync_instance_pins_from_template(
+                conn, slot.connector_template_id, pin_mapping=slot.pin_mapping
+            )
 
         export = should_export_from_node_slot(tmpl, slot, pcb.enclosure_instance_id)
         nickname = slot.nickname
@@ -270,12 +276,16 @@ class ConnectorReconcileService:
         slot: EnclosureTemplatePanelSlot,
     ) -> None:
         if conn.connector_template_id != slot.connector_template_id:
-            await self._replace_connector_template(conn, slot.connector_template_id)
+            await self._replace_connector_template(
+                conn, slot.connector_template_id, pin_mapping=slot.pin_mapping
+            )
         else:
-            await self.sync_instance_pins_from_template(conn, slot.connector_template_id)
+            await self.sync_instance_pins_from_template(
+                conn, slot.connector_template_id, pin_mapping=slot.pin_mapping
+            )
 
     async def _replace_connector_template(
-        self, conn: ConnectorInstance, new_template_id: UUID
+        self, conn: ConnectorInstance, new_template_id: UUID, *, pin_mapping=None
     ) -> None:
         pin_ids = list(
             (
@@ -292,7 +302,7 @@ class ConnectorReconcileService:
 
         conn.connector_template_id = new_template_id
         await self.db.flush()
-        await self._spawn_pins(conn.revision_id, conn.id, new_template_id)
+        await self._spawn_pins(conn.revision_id, conn.id, new_template_id, pin_mapping=pin_mapping)
         await ShortService(self.db).apply_template_shorts_to_instance(
             conn.revision_id,
             conn.id,
@@ -328,7 +338,9 @@ class ConnectorReconcileService:
         )
         self.db.add(connector)
         await self.db.flush()
-        await self._spawn_pins(pcb.revision_id, connector.id, slot.connector_template_id)
+        await self._spawn_pins(
+            pcb.revision_id, connector.id, slot.connector_template_id, pin_mapping=slot.pin_mapping
+        )
         await ShortService(self.db).apply_template_shorts_to_instance(
             pcb.revision_id,
             connector.id,
@@ -354,7 +366,7 @@ class ConnectorReconcileService:
         self.db.add(connector)
         await self.db.flush()
         await self._spawn_pins(
-            enclosure.revision_id, connector.id, slot.connector_template_id
+            enclosure.revision_id, connector.id, slot.connector_template_id, pin_mapping=slot.pin_mapping
         )
         await ShortService(self.db).apply_template_shorts_to_instance(
             enclosure.revision_id,
@@ -364,7 +376,12 @@ class ConnectorReconcileService:
         )
 
     async def _spawn_pins(
-        self, revision_id: UUID, connector_instance_id: UUID, template_id: UUID
+        self,
+        revision_id: UUID,
+        connector_instance_id: UUID,
+        template_id: UUID,
+        *,
+        pin_mapping=None,
     ) -> None:
         template_pins = (
             await self.db.execute(
@@ -380,11 +397,123 @@ class ConnectorReconcileService:
                     connector_instance_id=connector_instance_id,
                     connector_template_pin_id=template_pin.id,
                     pin_number=template_pin.pin_number,
-                    name=template_pin.name,
+                    name=resolve_pin_name(template_pin.pin_number, template_pin.name, pin_mapping),
                     role=template_pin.role,
                 )
             )
         await self.db.flush()
+
+    async def apply_pin_mapping_to_pcb_slot(
+        self,
+        slot_id: UUID,
+        pin_mapping: list[dict],
+        *,
+        changed_by: str | None = None,
+    ) -> None:
+        slot = await self.db.get(PcbTemplateConnectorSlot, slot_id)
+        if not slot:
+            raise HTTPException(status_code=404, detail="PCB connector slot not found")
+        slot.pin_mapping = normalize_pin_mapping(pin_mapping)
+        await self.db.flush()
+        await self.sync_all_instances_for_pcb_slot(slot_id, changed_by=changed_by)
+
+    async def apply_pin_mapping_to_enclosure_panel_slot(
+        self,
+        slot_id: UUID,
+        pin_mapping: list[dict],
+        *,
+        changed_by: str | None = None,
+    ) -> None:
+        slot = await self.db.get(EnclosureTemplatePanelSlot, slot_id)
+        if not slot:
+            raise HTTPException(status_code=404, detail="Enclosure panel slot not found")
+        slot.pin_mapping = normalize_pin_mapping(pin_mapping)
+        await self.db.flush()
+        await self.sync_all_instances_for_enclosure_panel_slot(slot_id, changed_by=changed_by)
+
+    async def sync_all_instances_for_pcb_slot(
+        self, slot_id: UUID, *, changed_by: str | None = None
+    ) -> None:
+        slot = await self.db.get(PcbTemplateConnectorSlot, slot_id)
+        if not slot:
+            return
+        rows = (
+            await self.db.execute(
+                select(ConnectorInstance)
+                .join(Revision, ConnectorInstance.revision_id == Revision.id)
+                .where(
+                    or_(
+                        ConnectorInstance.pcb_template_slot_id == slot_id,
+                        ConnectorInstance.source_pcb_template_slot_id == slot_id,
+                    ),
+                    Revision.is_immutable.is_(False),
+                )
+            )
+        ).scalars().all()
+        touched_revisions: set[UUID] = set()
+        vehicle_id: UUID | None = None
+        for conn in rows:
+            vehicle_id = conn.vehicle_id
+            await self.sync_instance_pins_from_template(
+                conn, slot.connector_template_id, pin_mapping=slot.pin_mapping
+            )
+            touched_revisions.add(conn.revision_id)
+        await self._notify_pinout_revisions(touched_revisions, vehicle_id, changed_by=changed_by)
+
+    async def sync_all_instances_for_enclosure_panel_slot(
+        self, slot_id: UUID, *, changed_by: str | None = None
+    ) -> None:
+        slot = await self.db.get(EnclosureTemplatePanelSlot, slot_id)
+        if not slot:
+            return
+        rows = (
+            await self.db.execute(
+                select(ConnectorInstance)
+                .join(Revision, ConnectorInstance.revision_id == Revision.id)
+                .where(
+                    ConnectorInstance.enclosure_panel_slot_id == slot_id,
+                    Revision.is_immutable.is_(False),
+                )
+            )
+        ).scalars().all()
+        touched_revisions: set[UUID] = set()
+        vehicle_id: UUID | None = None
+        for conn in rows:
+            vehicle_id = conn.vehicle_id
+            await self.sync_instance_pins_from_template(
+                conn, slot.connector_template_id, pin_mapping=slot.pin_mapping
+            )
+            touched_revisions.add(conn.revision_id)
+        await self._notify_pinout_revisions(touched_revisions, vehicle_id, changed_by=changed_by)
+
+    async def _notify_pinout_revisions(
+        self,
+        revision_ids: set[UUID],
+        vehicle_id: UUID | None,
+        *,
+        changed_by: str | None = None,
+    ) -> None:
+        if not revision_ids or vehicle_id is None:
+            return
+        from app.services.revision_sync_service import RevisionSyncService
+
+        sync = RevisionSyncService(self.db)
+        domains = [
+            "hierarchy",
+            "design-projection",
+            "connection-table",
+            "topology-summary",
+            "pins",
+            "nets",
+            "shorts",
+        ]
+        for revision_id in revision_ids:
+            await sync.notify_domains(
+                vehicle_id=vehicle_id,
+                revision_id=revision_id,
+                domains=domains,
+                changed_by=changed_by,
+            )
 
     async def _delete_connector_instance(self, conn: ConnectorInstance) -> None:
         pin_ids = list(

@@ -8,6 +8,7 @@ from app.domains.connectors.export import (
     supports_enclosure_panel_template,
     supports_node_slot_template,
 )
+from app.domains.connectors.pin_mapping import normalize_pin_mapping
 from app.infra.db.models.catalog import ConnectorTemplate
 from app.infra.db.models.instances import EnclosureInstance, PcbInstance
 from app.infra.db.models.vehicle import Revision
@@ -28,6 +29,7 @@ from app.schemas.templates import (
     PcbTemplateCreate,
     PcbTemplateUpdate,
     PcbTemplateResponse,
+    PinMappingEntry,
 )
 from app.services.connector_reconcile_service import ConnectorReconcileService
 from app.services.revision_sync_service import RevisionSyncService
@@ -53,6 +55,7 @@ class TemplateService:
                     export_to_enclosure=slot.export_to_enclosure,
                     nickname=slot.nickname,
                     description=slot.description,
+                    pin_mapping=normalize_pin_mapping(slot.pin_mapping),
                 )
             )
         await self.db.flush()
@@ -84,6 +87,7 @@ class TemplateService:
                 current.export_to_enclosure = slot.export_to_enclosure
                 current.nickname = slot.nickname
                 current.description = slot.description
+                current.pin_mapping = normalize_pin_mapping(slot.pin_mapping)
                 continue
             self.db.add(
                 PcbTemplateConnectorSlot(
@@ -95,6 +99,7 @@ class TemplateService:
                     export_to_enclosure=slot.export_to_enclosure,
                     nickname=slot.nickname,
                     description=slot.description,
+                    pin_mapping=normalize_pin_mapping(slot.pin_mapping),
                 )
             )
 
@@ -155,6 +160,9 @@ class TemplateService:
                     export_to_enclosure=s.export_to_enclosure,
                     nickname=s.nickname,
                     description=s.description,
+                    pin_mapping=[
+                        PinMappingEntry(**row) for row in normalize_pin_mapping(s.pin_mapping)
+                    ],
                 )
                 for s in slots_map.values()
             ],
@@ -180,6 +188,7 @@ class TemplateService:
                     slot_key=slot.slot_key,
                     connector_template_id=slot.connector_template_id,
                     panel_side=slot.panel_side,
+                    pin_mapping=normalize_pin_mapping(slot.pin_mapping),
                 )
             )
         for pcb_slot in payload.pcb_slots:
@@ -231,6 +240,7 @@ class TemplateService:
             if current:
                 current.connector_template_id = slot.connector_template_id
                 current.panel_side = slot.panel_side
+                current.pin_mapping = normalize_pin_mapping(slot.pin_mapping)
                 continue
             self.db.add(
                 EnclosureTemplatePanelSlot(
@@ -238,6 +248,7 @@ class TemplateService:
                     slot_key=slot.slot_key,
                     connector_template_id=slot.connector_template_id,
                     panel_side=slot.panel_side,
+                    pin_mapping=normalize_pin_mapping(slot.pin_mapping),
                 )
             )
         for pcb_slot in payload.pcb_slots:
@@ -321,6 +332,9 @@ class TemplateService:
                     slot_key=s.slot_key,
                     connector_template_id=s.connector_template_id,
                     panel_side=s.panel_side,
+                    pin_mapping=[
+                        PinMappingEntry(**row) for row in normalize_pin_mapping(s.pin_mapping)
+                    ],
                 )
                 for s in slots.values()
             ],

@@ -19,6 +19,7 @@ from app.infra.db.models.manufacturing import (
     ManufacturingRecord,
 )
 from app.infra.db.models.pin_names import PinNameLibraryEntry
+from app.infra.db.models.pin_templates import PinTemplate, PinTemplateConnector, PinTemplatePin
 from app.infra.db.models.templates import (
     EnclosureTemplate,
     EnclosureTemplatePcbSlot,
@@ -73,4 +74,7 @@ __all__ = [
     "NodeLayout",
     "SavedView",
     "PinNameLibraryEntry",
+    "PinTemplate",
+    "PinTemplateConnector",
+    "PinTemplatePin",
 ]

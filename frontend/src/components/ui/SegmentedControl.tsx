@@ -51,7 +51,9 @@ export function SegmentedControl<T extends string>({
           onClick={() => onChange(option.value)}
           className={clsx(
             "relative z-10 flex flex-1 items-center justify-center rounded px-2 text-xs transition-colors",
-            value === option.value ? "text-white" : "text-tesla-muted hover:text-tesla-text",
+            value === option.value
+              ? "text-white"
+              : "text-tesla-muted hover:bg-tesla-accent/20 hover:text-tesla-accent",
           )}
         >
           {option.label}

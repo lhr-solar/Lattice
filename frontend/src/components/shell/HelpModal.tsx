@@ -19,7 +19,7 @@ export function HelpModal() {
           <ol className="list-decimal space-y-1 pl-5">
             <li>Add enclosure, node, and inline connectors from library panels.</li>
             <li>Select a connector and use Edit pinout to define pin names and net assignments.</li>
-            <li>Build a Pin Name Library for reusable labels — picking a name copies it, it is not linked.</li>
+            <li>Use Pin templates for saved pin names and reusable connector pin templates.</li>
             <li>Enable Wire mode, then click pin A and pin B to create a wire/net.</li>
             <li>Use Nets to inspect naming and make any net-level cleanup edits.</li>
             <li>Use Pin shorts for internal continuity inside the same connector.</li>

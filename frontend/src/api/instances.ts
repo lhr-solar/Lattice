@@ -143,6 +143,22 @@ export function updateConnectorPin(
   );
 }
 
+export function updateConnectorPinout(
+  vehicleId: string,
+  revisionId: string,
+  connectorInstanceId: string,
+  body: { pins: Array<{ pin_number: number; name: string }>; expected_edit_sequence?: number },
+) {
+  return apiFetch<{
+    connector_instance_id: string;
+    shared_pinout: boolean;
+    pins: PinInstance[];
+  }>(
+    `/vehicles/${vehicleId}/revisions/${revisionId}/instances/connectors/${connectorInstanceId}/pinout`,
+    { method: "PUT", body: JSON.stringify(body) },
+  );
+}
+
 export function deleteEnclosure(vehicleId: string, revisionId: string, enclosureInstanceId: string) {
   return apiFetch<void>(
     `/vehicles/${vehicleId}/revisions/${revisionId}/instances/enclosures/${enclosureInstanceId}`,

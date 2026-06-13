@@ -32,3 +32,7 @@ htmlcov/
 
 # Database
 *.db
+
+# Obsidian agent vault (personal notes + upstream submodules — separate git repo)
+lattice-agent-vault/
+Lattice-Agent-Vault/

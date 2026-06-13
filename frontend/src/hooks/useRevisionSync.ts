@@ -111,19 +111,20 @@ export function useRevisionSync(): void {
   const markStale = useRevisionSyncStore((s) => s.markStale);
   const clearStale = useRevisionSyncStore((s) => s.clearStale);
   const dirtyFormCount = useRevisionSyncStore((s) => s.dirtyFormCount);
+  const ownSaveInFlight = useRevisionSyncStore((s) => s.ownSaveInFlight);
   const editSequence = useRevisionSyncStore((s) => s.editSequence);
   const setSyncStatus = useRevisionSyncStore((s) => s.setSyncStatus);
   const syncStatus = useRevisionSyncStore((s) => s.syncStatus);
   const reset = useRevisionSyncStore((s) => s.reset);
   const username = useSessionStore((s) => s.username);
 
-  const username = useSessionStore((s) => s.username);
-
   const dirtyRef = useRef(dirtyFormCount);
+  const ownSaveInFlightRef = useRef(ownSaveInFlight);
   const sequenceRef = useRef(editSequence);
   const usernameRef = useRef(username);
   const patchCoverageBySequenceRef = useRef<Map<number, Set<string>>>(new Map());
   dirtyRef.current = dirtyFormCount;
+  ownSaveInFlightRef.current = ownSaveInFlight;
   sequenceRef.current = editSequence;
   usernameRef.current = username;
 
@@ -279,7 +280,7 @@ export function useRevisionSync(): void {
         const isOwnEdit = Boolean(
           event.changed_by && usernameRef.current && event.changed_by === usernameRef.current,
         );
-        if (dirtyRef.current > 0 && !isOwnEdit) {
+        if (dirtyRef.current > 0 && !isOwnEdit && ownSaveInFlightRef.current === 0) {
           markStale(event.changed_by);
           return;
         }
@@ -308,12 +309,12 @@ export function useRevisionSync(): void {
         if (remainingDomains.length > 0) {
           invalidateRevisionDomains(queryClient, remainingDomains);
         }
-        if (dirtyRef.current > 0 && isOwnEdit) return;
+        if (dirtyRef.current > 0 && (isOwnEdit || ownSaveInFlightRef.current > 0)) return;
         return;
       }
 
       if (dirtyRef.current > 0) {
-        if (isOwnEdit) return;
+        if (isOwnEdit || ownSaveInFlightRef.current > 0) return;
         markStale(event.changed_by);
         return;
       }

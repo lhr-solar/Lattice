@@ -1,5 +1,9 @@
 import { create } from "zustand";
+import type { PinTemplate } from "@/api/pinTemplates";
 import type { ProjectionLevel } from "@/api/types";
+
+export type PinTemplatesMode = "manage" | "pick";
+export type PinTemplatesTab = "names" | "templates";
 
 export type AppMode = "design" | "manufacturing";
 export type LibraryTab = "connector" | "node" | "enclosure";
@@ -18,7 +22,11 @@ interface AppState {
   showConnectionTable: boolean;
   connectionScope: { kind: "all" | "vehicle" | "enclosure" | "node" | "connector"; id: string | null };
   showLibraryManager: boolean;
-  showPinNameLibrary: boolean;
+  showPinTemplates: boolean;
+  pinTemplatesMode: PinTemplatesMode;
+  pinTemplatePickConnectorId: string | null;
+  pinTemplatesInitialTab: PinTemplatesTab;
+  pickedPinTemplate: PinTemplate | null;
   showHelpModal: boolean;
   libraryTab: LibraryTab;
   searchQuery: string;
@@ -36,7 +44,12 @@ interface AppState {
   openConnectionTable: (scope?: AppState["connectionScope"]) => void;
   setConnectionScope: (scope: AppState["connectionScope"]) => void;
   setShowLibraryManager: (show: boolean) => void;
-  setShowPinNameLibrary: (show: boolean) => void;
+  setShowPinTemplates: (show: boolean) => void;
+  openPinTemplatesManage: (tab?: PinTemplatesTab) => void;
+  openPinTemplatesPick: (connectorTemplateId: string) => void;
+  closePinTemplates: () => void;
+  pickPinTemplate: (template: PinTemplate) => void;
+  clearPickedPinTemplate: () => void;
   setShowHelpModal: (show: boolean) => void;
   setLibraryTab: (tab: LibraryTab) => void;
   clearPairing: () => void;
@@ -57,7 +70,11 @@ export const useAppStore = create<AppState>((set) => ({
   showConnectionTable: false,
   connectionScope: { kind: "all", id: null },
   showLibraryManager: false,
-  showPinNameLibrary: false,
+  showPinTemplates: false,
+  pinTemplatesMode: "manage",
+  pinTemplatePickConnectorId: null,
+  pinTemplatesInitialTab: "templates",
+  pickedPinTemplate: null,
   showHelpModal: false,
   libraryTab: "connector",
   searchQuery: "",
@@ -86,7 +103,47 @@ export const useAppStore = create<AppState>((set) => ({
     set(scope ? { showConnectionTable: true, connectionScope: scope } : { showConnectionTable: true }),
   setConnectionScope: (connectionScope) => set({ connectionScope }),
   setShowLibraryManager: (showLibraryManager) => set({ showLibraryManager }),
-  setShowPinNameLibrary: (showPinNameLibrary) => set({ showPinNameLibrary }),
+  setShowPinTemplates: (showPinTemplates) =>
+    set(
+      showPinTemplates
+        ? { showPinTemplates: true }
+        : {
+            showPinTemplates: false,
+            pinTemplatesMode: "manage",
+            pinTemplatePickConnectorId: null,
+            pickedPinTemplate: null,
+          },
+    ),
+  openPinTemplatesManage: (tab = "templates") =>
+    set({
+      showPinTemplates: true,
+      pinTemplatesMode: "manage",
+      pinTemplatePickConnectorId: null,
+      pinTemplatesInitialTab: tab,
+      pickedPinTemplate: null,
+    }),
+  openPinTemplatesPick: (connectorTemplateId) =>
+    set({
+      showPinTemplates: true,
+      pinTemplatesMode: "pick",
+      pinTemplatePickConnectorId: connectorTemplateId,
+      pickedPinTemplate: null,
+    }),
+  closePinTemplates: () =>
+    set({
+      showPinTemplates: false,
+      pinTemplatesMode: "manage",
+      pinTemplatePickConnectorId: null,
+      pickedPinTemplate: null,
+    }),
+  pickPinTemplate: (template) =>
+    set({
+      pickedPinTemplate: template,
+      showPinTemplates: false,
+      pinTemplatesMode: "manage",
+      pinTemplatePickConnectorId: null,
+    }),
+  clearPickedPinTemplate: () => set({ pickedPinTemplate: null }),
   setShowHelpModal: (showHelpModal) => set({ showHelpModal }),
   setLibraryTab: (libraryTab) => set({ libraryTab }),
   clearPairing: () => set({ pairingPinAId: null }),

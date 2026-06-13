@@ -6,6 +6,11 @@ from app.infra.db.enums import ConnectorRole
 from app.schemas.common import SchemaBase, TimestampSchema
 
 
+class PinMappingEntry(BaseModel):
+    pin_number: int = Field(ge=1)
+    name: str = Field(min_length=1, max_length=128)
+
+
 class PcbSlotCreate(BaseModel):
     slot_key: str = Field(min_length=1, max_length=128)
     connector_template_id: UUID
@@ -14,6 +19,7 @@ class PcbSlotCreate(BaseModel):
     export_to_enclosure: bool = False
     nickname: str | None = None
     description: str | None = None
+    pin_mapping: list[PinMappingEntry] = []
 
 
 class PcbTemplateCreate(BaseModel):
@@ -35,6 +41,7 @@ class PcbSlotResponse(SchemaBase):
     export_to_enclosure: bool
     nickname: str | None = None
     description: str | None = None
+    pin_mapping: list[PinMappingEntry] = []
 
 
 class PcbTemplateResponse(TimestampSchema):
@@ -49,6 +56,7 @@ class PanelSlotCreate(BaseModel):
     slot_key: str = Field(min_length=1, max_length=128)
     connector_template_id: UUID
     panel_side: str | None = None
+    pin_mapping: list[PinMappingEntry] = []
 
 
 class EnclosurePcbSlotCreate(BaseModel):
@@ -72,6 +80,7 @@ class PanelSlotResponse(SchemaBase):
     slot_key: str
     connector_template_id: UUID
     panel_side: str | None
+    pin_mapping: list[PinMappingEntry] = []
 
 
 class EnclosurePcbSlotResponse(SchemaBase):

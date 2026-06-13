@@ -487,6 +487,12 @@ class NetService:
                     pin_number=pin.pin_number,
                     pin_name=pin.name,
                     connector_instance_id=conn.id,
+                    connector_template_id=conn.connector_template_id,
+                    shared_pinout=bool(
+                        conn.pcb_template_slot_id
+                        or conn.enclosure_panel_slot_id
+                        or conn.source_pcb_template_slot_id
+                    ),
                     connector_label=resolve_display_name(
                         template_name=tmpl.name,
                         nickname=conn.nickname,

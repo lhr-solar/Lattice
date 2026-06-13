@@ -80,6 +80,22 @@ class PinUpdate(BaseModel):
     expected_edit_sequence: int | None = None
 
 
+class PinoutPinUpdate(BaseModel):
+    pin_number: int = Field(ge=1)
+    name: str = Field(min_length=1, max_length=128)
+
+
+class ConnectorPinoutUpdate(BaseModel):
+    pins: list[PinoutPinUpdate] = Field(min_length=1)
+    expected_edit_sequence: int | None = None
+
+
+class ConnectorPinoutResponse(BaseModel):
+    connector_instance_id: UUID
+    shared_pinout: bool
+    pins: list[PinResponse]
+
+
 class ConnectorInstanceUpdate(BaseModel):
     nickname: str | None = Field(default=None, max_length=255)
     expected_edit_sequence: int | None = None

@@ -13,6 +13,7 @@ from app.api.v1 import (
     manufacturing,
     nets,
     pin_names,
+    pin_templates,
     projections,
     revisions,
     shorts,
@@ -38,6 +39,7 @@ protected_router.include_router(hierarchy.router)
 protected_router.include_router(topology.router)
 protected_router.include_router(nets.router)
 protected_router.include_router(pin_names.router)
+protected_router.include_router(pin_templates.router)
 protected_router.include_router(connections.router)
 protected_router.include_router(shorts.router)
 protected_router.include_router(graph.router)

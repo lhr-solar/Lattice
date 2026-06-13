@@ -66,6 +66,7 @@ class EnclosureTemplatePanelSlot(Base):
         UUID(as_uuid=True), ForeignKey("connector_templates.id"), nullable=False
     )
     panel_side: Mapped[str | None] = mapped_column(String(64))
+    pin_mapping: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="[]")
 
 
 class EnclosureTemplatePcbSlot(Base):

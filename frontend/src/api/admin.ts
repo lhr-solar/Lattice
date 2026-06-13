@@ -86,3 +86,7 @@ export function deleteVehicle(vehicleId: string) {
 export function clearVehicleData(vehicleId: string) {
   return apiFetch<void>(`/admin/vehicles/${vehicleId}/clear-all`, { method: "POST" });
 }
+
+export function clearVehicleWires(vehicleId: string) {
+  return apiFetch<void>(`/admin/vehicles/${vehicleId}/clear-wires`, { method: "POST" });
+}

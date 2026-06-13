@@ -199,14 +199,14 @@ function UtilitiesButtons({
 }) {
   const setShowLibraryManager = useAppStore((s) => s.setShowLibraryManager);
   const setShowNetManager = useAppStore((s) => s.setShowNetManager);
-  const setShowPinNameLibrary = useAppStore((s) => s.setShowPinNameLibrary);
+  const openPinTemplatesManage = useAppStore((s) => s.openPinTemplatesManage);
   const setLibraryTab = useAppStore((s) => s.setLibraryTab);
 
   const items = [
     { label: compact ? "Nodes" : "Node Library", tab: "node" as const, action: () => { setLibraryTab("node"); setShowLibraryManager(true); } },
     { label: compact ? "Encls" : "Enclosure Library", tab: "enclosure" as const, action: () => { setLibraryTab("enclosure"); setShowLibraryManager(true); } },
     { label: compact ? "Nets" : "Net Manager", action: () => setShowNetManager(true) },
-    { label: compact ? "Pins" : "Pin Name Library", action: () => setShowPinNameLibrary(true) },
+    { label: "Pin templates", action: () => openPinTemplatesManage() },
   ];
 
   const btnCls = compact

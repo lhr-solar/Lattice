@@ -2,7 +2,15 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { assignPinNet, fetchNets, fetchPins } from "@/api/nets";
 import { fetchPinNameLibrary } from "@/api/pinNames";
-import { updateConnectorPin } from "@/api/instances";
+import { updateConnectorPin, updateConnectorPinout } from "@/api/instances";
+import { PinTemplatePicker } from "@/components/library/PinTemplatePicker";
+import {
+  applyPinTemplateNames,
+  findPinTemplateConflicts,
+  type PinConflictResolution,
+} from "@/lib/pinTemplateApply";
+import type { PinTemplate } from "@/api/pinTemplates";
+import { PinTemplateConflictModal } from "@/components/library/PinTemplateConflictModal";
 import { StaleRevisionBanner } from "@/components/shell/StaleRevisionBanner";
 import { handleMutationError } from "@/lib/mutationErrors";
 import { useAppStore } from "@/stores/appStore";
@@ -72,13 +80,19 @@ function PinoutEditorModal({
   const vehicleId = useAppStore((s) => s.selectedVehicleId);
   const revisionId = useAppStore((s) => s.selectedRevisionId);
   const setShowNetManager = useAppStore((s) => s.setShowNetManager);
-  const setShowPinNameLibrary = useAppStore((s) => s.setShowPinNameLibrary);
+  const openPinTemplatesManage = useAppStore((s) => s.openPinTemplatesManage);
   const staleRevision = useRevisionSyncStore((s) => s.staleRevision);
   const setDirtyForm = useRevisionSyncStore((s) => s.setDirtyForm);
+  const clearStale = useRevisionSyncStore((s) => s.clearStale);
+  const beginOwnSave = useRevisionSyncStore((s) => s.beginOwnSave);
+  const endOwnSave = useRevisionSyncStore((s) => s.endOwnSave);
 
   const [draftNetAssignments, setDraftNetAssignments] = useState<Record<string, string>>({});
   const [draftNames, setDraftNames] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<string | null>(null);
+  const [selectedPinTemplateId, setSelectedPinTemplateId] = useState("");
+  const [pendingTemplate, setPendingTemplate] = useState<PinTemplate | null>(null);
+  const [conflicts, setConflicts] = useState<ReturnType<typeof findPinTemplateConflicts>>([]);
 
   const { data: nets = [] } = useQuery({
     queryKey: ["nets", vehicleId, revisionId],
@@ -101,19 +115,25 @@ function PinoutEditorModal({
     enabled: Boolean(open && vehicleId && revisionId && connectorId),
   });
 
-  useEffect(() => {
-    if (!open) return;
-    setDraftNetAssignments({});
-    setDraftNames({});
-    setMessage(null);
-  }, [open, connectorId]);
-
   const sortedPins = useMemo(
     () => [...pins].sort((a, b) => a.pin_number - b.pin_number),
     [pins],
   );
 
+  const connectorTemplateId = sortedPins[0]?.connector_template_id ?? "";
+
+  useEffect(() => {
+    if (!open) return;
+    setDraftNetAssignments({});
+    setDraftNames({});
+    setMessage(null);
+    setSelectedPinTemplateId("");
+    setPendingTemplate(null);
+    setConflicts([]);
+  }, [open, connectorId]);
+
   const connectorLabel = sortedPins[0]?.connector_label ?? "Connector";
+  const sharedPinout = sortedPins[0]?.shared_pinout ?? false;
 
   const hasChanges = useMemo(
     () =>
@@ -135,6 +155,13 @@ function PinoutEditorModal({
   const saveAll = useMutation({
     mutationFn: async () => {
       const tasks: Promise<unknown>[] = [];
+      const nameUpdates = sortedPins
+        .map((pin) => ({
+          pin,
+          name: (draftNames[pin.pin_id] ?? pin.pin_name).trim(),
+        }))
+        .filter(({ pin, name }) => name && name !== pin.pin_name);
+
       for (const pin of sortedPins) {
         const netValue = draftNetAssignments[pin.pin_id] ?? pin.primary_net_id ?? "__unassigned__";
         if (netValue !== (pin.primary_net_id ?? "__unassigned__")) {
@@ -147,21 +174,42 @@ function PinoutEditorModal({
             ),
           );
         }
-        const name = (draftNames[pin.pin_id] ?? pin.pin_name).trim();
-        if (name && name !== pin.pin_name) {
+      }
+
+      if (nameUpdates.length > 0) {
+        if (sharedPinout) {
           tasks.push(
-            updateConnectorPin(vehicleId!, revisionId!, connectorId, pin.pin_id, {
-              name,
+            updateConnectorPinout(vehicleId!, revisionId!, connectorId, {
+              pins: sortedPins.map((pin) => ({
+                pin_number: pin.pin_number,
+                name: (draftNames[pin.pin_id] ?? pin.pin_name).trim(),
+              })),
             }),
           );
+        } else {
+          for (const { pin, name } of nameUpdates) {
+            tasks.push(
+              updateConnectorPin(vehicleId!, revisionId!, connectorId, pin.pin_id, { name }),
+            );
+          }
         }
       }
+
       await Promise.all(tasks);
     },
+    onMutate: () => {
+      beginOwnSave();
+      clearStale();
+    },
     onSuccess: async () => {
-      setMessage("Pinout saved.");
+      setMessage(
+        sharedPinout
+          ? "Pinout saved. Pin names updated on all instances of this node or enclosure slot."
+          : "Pinout saved.",
+      );
       setDraftNetAssignments({});
       setDraftNames({});
+      clearStale();
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["pins"] }),
         queryClient.invalidateQueries({ queryKey: ["design-projection"] }),
@@ -172,7 +220,47 @@ function PinoutEditorModal({
       ]);
     },
     onError: (error) => setMessage(handleMutationError(error, "Failed to save pinout.")),
+    onSettled: () => {
+      endOwnSave();
+    },
   });
+
+  const applyTemplateToDraft = (
+    template: PinTemplate,
+    resolutions: Record<number, PinConflictResolution> = {},
+  ) => {
+    const currentStates = sortedPins.map((pin) => ({
+      pin_number: pin.pin_number,
+      name: draftNames[pin.pin_id] ?? pin.pin_name,
+    }));
+    const nextStates = applyPinTemplateNames(currentStates, template, resolutions);
+    const nextDraft: Record<string, string> = { ...draftNames };
+    for (const pin of sortedPins) {
+      const next = nextStates.find((row) => row.pin_number === pin.pin_number);
+      if (next) nextDraft[pin.pin_id] = next.name;
+    }
+    setDraftNames(nextDraft);
+    setSelectedPinTemplateId("");
+    setPendingTemplate(null);
+    setConflicts([]);
+    setMessage("Pin template applied. Save pinout to persist changes.");
+  };
+
+  const handlePinTemplateSelect = (templateId: string, template: PinTemplate | null) => {
+    setSelectedPinTemplateId(templateId);
+    if (!template) return;
+    const currentStates = sortedPins.map((pin) => ({
+      pin_number: pin.pin_number,
+      name: draftNames[pin.pin_id] ?? pin.pin_name,
+    }));
+    const foundConflicts = findPinTemplateConflicts(currentStates, template);
+    if (foundConflicts.length > 0) {
+      setPendingTemplate(template);
+      setConflicts(foundConflicts);
+      return;
+    }
+    applyTemplateToDraft(template);
+  };
 
   if (!open) return null;
 
@@ -196,6 +284,24 @@ function PinoutEditorModal({
         <div className="border-b border-tesla-border px-4 py-2">
           <StaleRevisionBanner />
         </div>
+
+        {connectorTemplateId && (
+          <div className="space-y-2 border-b border-tesla-border px-4 py-3">
+            {sharedPinout && (
+              <p className="text-xs text-tesla-muted">
+                This connector shares its pinout with every instance of the same node or enclosure
+                slot. Name changes apply to all of them.
+              </p>
+            )}
+            <PinTemplatePicker
+              vehicleId={vehicleId}
+              connectorTemplateId={connectorTemplateId}
+              value={selectedPinTemplateId}
+              onChange={handlePinTemplateSelect}
+              disabled={staleRevision || sortedPins.length === 0}
+            />
+          </div>
+        )}
 
         <div className="min-h-0 flex-1 overflow-auto p-4">
           {isLoading && <p className="text-sm text-tesla-muted">Loading pins…</p>}
@@ -224,7 +330,7 @@ function PinoutEditorModal({
                             setDraftNames((prev) => ({ ...prev, [pin.pin_id]: name }))
                           }
                           entries={pinNameLibrary}
-                          onManageLibrary={() => setShowPinNameLibrary(true)}
+                          onManageLibrary={() => openPinTemplatesManage("names")}
                         />
                       </td>
                       <td className="py-2">
@@ -273,6 +379,18 @@ function PinoutEditorModal({
           </div>
         </footer>
       </div>
+      <PinTemplateConflictModal
+        open={Boolean(pendingTemplate && conflicts.length > 0)}
+        conflicts={conflicts}
+        onClose={() => {
+          setPendingTemplate(null);
+          setConflicts([]);
+          setSelectedPinTemplateId("");
+        }}
+        onConfirm={(resolutions) => {
+          if (pendingTemplate) applyTemplateToDraft(pendingTemplate, resolutions);
+        }}
+      />
     </div>
   );
 }

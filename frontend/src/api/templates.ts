@@ -1,5 +1,10 @@
 import { apiFetch } from "./client";
 
+export interface PinMappingEntry {
+  pin_number: number;
+  name: string;
+}
+
 export interface PcbSlotCreate {
   slot_key: string;
   connector_template_id: string;
@@ -7,6 +12,7 @@ export interface PcbSlotCreate {
   export_to_enclosure?: boolean;
   nickname?: string;
   description?: string;
+  pin_mapping?: PinMappingEntry[];
 }
 
 export interface PcbTemplate {
@@ -21,6 +27,7 @@ export interface PcbTemplate {
     export_to_enclosure?: boolean;
     nickname?: string | null;
     description?: string | null;
+    pin_mapping?: PinMappingEntry[];
   }>;
 }
 
@@ -28,7 +35,12 @@ export interface EnclosureTemplate {
   id: string;
   vehicle_id: string;
   name: string;
-  slots: Array<{ id: string; slot_key: string; connector_template_id: string }>;
+  slots: Array<{
+    id: string;
+    slot_key: string;
+    connector_template_id: string;
+    pin_mapping?: PinMappingEntry[];
+  }>;
   pcb_slots?: Array<{ id: string; slot_key: string; pcb_template_id: string }>;
 }
 
@@ -71,7 +83,7 @@ export function createEnclosureTemplate(
   vehicleId: string,
   body: {
     name: string;
-    slots: Array<{ slot_key: string; connector_template_id: string }>;
+    slots: Array<{ slot_key: string; connector_template_id: string; pin_mapping?: PinMappingEntry[] }>;
     pcb_slots?: Array<{ slot_key: string; pcb_template_id: string }>;
   },
 ) {

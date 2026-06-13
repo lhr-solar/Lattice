@@ -33,6 +33,8 @@ import {
 import { ApiError } from "@/api/client";
 import { useAppStore } from "@/stores/appStore";
 import { ConfirmModal, Modal } from "@/components/ui/Modal";
+import { SlotPinoutEditorModal } from "@/components/library/SlotPinoutEditorModal";
+import type { PinMappingEntry } from "@/api/templates";
 
 type Tab = "connector" | "node" | "enclosure";
 type DeletionTarget =
@@ -83,7 +85,6 @@ export function LibraryBuilders() {
     queryFn: () => fetchEnclosureTemplates(vehicleId!),
     enabled: Boolean(vehicleId),
   });
-
   const connectorCreate = useMutation({
     mutationFn: createConnectorTemplate,
     onSuccess: () => {
@@ -848,6 +849,7 @@ function PcbBuilderModal({
 }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [pinoutRowIdx, setPinoutRowIdx] = useState<number | null>(null);
   const [rows, setRows] = useState<
     Array<{
       slot_key: string;
@@ -855,6 +857,7 @@ function PcbBuilderModal({
       export_to_enclosure: boolean;
       nickname: string;
       description: string;
+      pin_mapping: PinMappingEntry[];
     }>
   >([]);
 
@@ -870,6 +873,7 @@ function PcbBuilderModal({
           export_to_enclosure: Boolean(s.export_to_enclosure),
           nickname: s.nickname ?? "",
           description: s.description ?? "",
+          pin_mapping: s.pin_mapping ?? [],
         })),
       );
       return;
@@ -918,6 +922,7 @@ function PcbBuilderModal({
                     export_to_enclosure: r.export_to_enclosure,
                     nickname: r.nickname.trim() || undefined,
                     description: r.description.trim() || undefined,
+                    pin_mapping: r.pin_mapping,
                   })),
               })
             }
@@ -942,13 +947,18 @@ function PcbBuilderModal({
                 export_to_enclosure: false,
                 nickname: "",
                 description: "",
+                pin_mapping: [],
               },
             ])
           }
         >
           + Add connector slot
         </button>
-        {rows.map((row, idx) => (
+        {rows.map((row, idx) => {
+          const selectedConnector = row.connector_template_id
+            ? connectorById.get(row.connector_template_id)
+            : undefined;
+          return (
           <div key={`${row.slot_key}-${idx}`} className="space-y-2 rounded border border-tesla-border p-2">
             <div className="flex items-start gap-2">
               <div className="w-28 shrink-0">
@@ -976,6 +986,7 @@ function PcbBuilderModal({
                             tmpl && supportsNodeSlotPigtailOption(tmpl)
                               ? r.export_to_enclosure
                               : false,
+                          pin_mapping: connectorId === r.connector_template_id ? r.pin_mapping : [],
                         };
                       }),
                     )
@@ -1005,9 +1016,7 @@ function PcbBuilderModal({
               />
             </div>
             {(() => {
-              const selected = row.connector_template_id
-                ? connectorById.get(row.connector_template_id)
-                : undefined;
+              const selected = selectedConnector;
               if (!selected) return null;
               if (supportsNodeSlotPigtailOption(selected)) {
                 return (
@@ -1037,9 +1046,41 @@ function PcbBuilderModal({
               }
               return null;
             })()}
+            {row.connector_template_id && (
+              <button
+                type="button"
+                className="rounded border border-tesla-border px-2 py-1 text-xs text-tesla-muted transition hover:border-tesla-accent hover:text-tesla-text"
+                onClick={() => setPinoutRowIdx(idx)}
+              >
+                Edit pinout
+                {row.pin_mapping.length > 0 ? ` (${row.pin_mapping.length} named)` : ""}
+              </button>
+            )}
           </div>
-        ))}
+          );
+        })}
       </div>
+      <SlotPinoutEditorModal
+        open={pinoutRowIdx !== null}
+        slotLabel={
+          pinoutRowIdx !== null
+            ? `Slot ${rows[pinoutRowIdx]?.slot_key ?? ""}`
+            : "Connector slot"
+        }
+        connector={
+          pinoutRowIdx !== null && rows[pinoutRowIdx]?.connector_template_id
+            ? connectorById.get(rows[pinoutRowIdx].connector_template_id) ?? null
+            : null
+        }
+        pinMapping={pinoutRowIdx !== null ? rows[pinoutRowIdx]?.pin_mapping ?? [] : []}
+        onClose={() => setPinoutRowIdx(null)}
+        onSave={(mapping) => {
+          if (pinoutRowIdx === null) return;
+          setRows((prev) =>
+            prev.map((r, i) => (i === pinoutRowIdx ? { ...r, pin_mapping: mapping } : r)),
+          );
+        }}
+      />
     </Modal>
   );
 }
@@ -1068,10 +1109,17 @@ function EnclosureBuilderModal({
   pending: boolean;
 }) {
   const [name, setName] = useState("");
-  const [panelSlots, setPanelSlots] = useState<Array<{ slot_key: string; connector_template_id: string }>>([]);
+  const [pinoutRowIdx, setPinoutRowIdx] = useState<number | null>(null);
+  const [panelSlots, setPanelSlots] = useState<
+    Array<{ slot_key: string; connector_template_id: string; pin_mapping: PinMappingEntry[] }>
+  >([]);
   const [pcbSlots, setPcbSlots] = useState<Array<{ slot_key: string; pcb_template_id: string }>>([]);
   const panelMountConnectors = useMemo(
     () => connectors.filter((connector) => supportsEnclosurePanelTemplate(connector)),
+    [connectors],
+  );
+  const connectorById = useMemo(
+    () => new Map(connectors.map((connector) => [connector.id, connector])),
     [connectors],
   );
 
@@ -1083,6 +1131,7 @@ function EnclosureBuilderModal({
         (initial.slots ?? []).map((s) => ({
           slot_key: s.slot_key,
           connector_template_id: s.connector_template_id,
+          pin_mapping: s.pin_mapping ?? [],
         })),
       );
       setPcbSlots(
@@ -1138,6 +1187,7 @@ function EnclosureBuilderModal({
                 {
                   slot_key: `PM${prev.length + 1}`,
                   connector_template_id: "",
+                  pin_mapping: [],
                 },
               ])
             }
@@ -1145,7 +1195,8 @@ function EnclosureBuilderModal({
             + Add panel connector
           </button>
           {panelSlots.map((row, idx) => (
-            <div key={`${row.slot_key}-${idx}`} className="mt-2 flex items-start gap-2 rounded border border-tesla-border p-2">
+            <div key={`${row.slot_key}-${idx}`} className="mt-2 space-y-2 rounded border border-tesla-border p-2">
+              <div className="flex items-start gap-2">
               <div className="w-28 shrink-0">
                 <Field
                   label="Slot"
@@ -1163,7 +1214,14 @@ function EnclosureBuilderModal({
                   onChange={(connectorId) =>
                     setPanelSlots((prev) =>
                       prev.map((r, i) =>
-                        i === idx ? { ...r, connector_template_id: connectorId } : r,
+                        i === idx
+                          ? {
+                              ...r,
+                              connector_template_id: connectorId,
+                              pin_mapping:
+                                connectorId === r.connector_template_id ? r.pin_mapping : [],
+                            }
+                          : r,
                       ),
                     )
                   }
@@ -1174,9 +1232,41 @@ function EnclosureBuilderModal({
                 onClick={() => setPanelSlots((prev) => prev.filter((_, i) => i !== idx))}
                 label="Remove panel connector"
               />
+              </div>
+              {row.connector_template_id && (
+                <button
+                  type="button"
+                  className="rounded border border-tesla-border px-2 py-1 text-xs text-tesla-muted transition hover:border-tesla-accent hover:text-tesla-text"
+                  onClick={() => setPinoutRowIdx(idx)}
+                >
+                  Edit pinout
+                  {row.pin_mapping.length > 0 ? ` (${row.pin_mapping.length} named)` : ""}
+                </button>
+              )}
             </div>
           ))}
         </div>
+        <SlotPinoutEditorModal
+          open={pinoutRowIdx !== null}
+          slotLabel={
+            pinoutRowIdx !== null
+              ? `Panel ${panelSlots[pinoutRowIdx]?.slot_key ?? ""}`
+              : "Panel connector"
+          }
+          connector={
+            pinoutRowIdx !== null && panelSlots[pinoutRowIdx]?.connector_template_id
+              ? connectorById.get(panelSlots[pinoutRowIdx].connector_template_id) ?? null
+              : null
+          }
+          pinMapping={pinoutRowIdx !== null ? panelSlots[pinoutRowIdx]?.pin_mapping ?? [] : []}
+          onClose={() => setPinoutRowIdx(null)}
+          onSave={(mapping) => {
+            if (pinoutRowIdx === null) return;
+            setPanelSlots((prev) =>
+              prev.map((r, i) => (i === pinoutRowIdx ? { ...r, pin_mapping: mapping } : r)),
+            );
+          }}
+        />
         <div>
           <button
             type="button"
