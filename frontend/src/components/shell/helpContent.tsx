@@ -19,13 +19,13 @@ export const ADMIN_HELP_SECTIONS: HelpSection[] = [
     content: [
       {
         type: "p",
-        text: "Admins open the {{Admin}} panel from the top bar. It covers user accounts, vehicles, and destructive database operations. Regular designers use the main Lattice workspace only.",
+        text: "Admins open the admin panel via {{Admin Settings}} in the top bar. It covers user accounts, vehicles, and destructive database operations. Regular designers use the main Lattice workspace only.",
       },
       {
         type: "ul",
         items: [
           "{{Back to app}} returns to the design workspace without signing out.",
-          "Only admin accounts see the {{Admin}} button; other users cannot access these pages.",
+          "Only admin accounts see {{Admin Settings}}; other users cannot access these pages.",
         ],
       },
     ],
@@ -210,13 +210,32 @@ export const USER_HELP_SECTIONS: HelpSection[] = [
         items: [
           "Sign in and select a vehicle from the left hierarchy.",
           "Define or import templates in the libraries (connectors, nodes, enclosures).",
-          "Place instances on the vehicle: enclosures, nodes, and inline connectors.",
-          "Click {{Edit pinout}} — assign pin names and optional net pre-assignments.",
-          "Enable {{Wire}} mode and pair pins to create harness wires and nets.",
-          "Use {{Pin shorts}} for internal continuity inside one connector.",
-          "Review nets in {{Net Manager}} and the connection table.",
-          "Switch to {{Manufacturing}} mode to track wire builds.",
-          "Click {{Publish revision}} when the design is ready.",
+          "Place instances with {{+ Enclosure}}, {{+ Node}}, and {{+ Inline}} in the bottom toolbar.",
+          "Use the pencil icon in the topology tree to rename instances or edit connector pinouts.",
+          "Enable {{Wire}} mode and pair pins on the graph to create harness wires and nets.",
+          "Review nets in {{Net Manager}} and the {{Open table}} connection view.",
+          "Switch to {{Manufacturing}} with the top-bar mode switch to track wire builds.",
+          "Click {{Publish revision}} in the bottom toolbar when the design is ready.",
+        ],
+      },
+    ],
+  },
+  {
+    id: "workspace",
+    title: "Workspace layout",
+    content: [
+      {
+        type: "p",
+        text: "The top bar is split into three fixed zones so controls do not jump when you switch modes.",
+      },
+      {
+        type: "ul",
+        items: [
+          "Left: Lattice branding and {{Connector Library}} (Design mode only — the search bar expands smoothly when it hides).",
+          "Center: search field and the {{Design}} / {{Manufacturing}} mode switch.",
+          "Right: {{Admin Settings}} (admins), help (?), live sync status, username, and sign out.",
+          "Design mode adds a floating bottom toolbar for add actions, {{Open table}}, {{Wire}}, and {{Publish revision}}.",
+          "The graph uses the full width — there is no right properties sidebar.",
         ],
       },
     ],
@@ -234,7 +253,8 @@ export const USER_HELP_SECTIONS: HelpSection[] = [
         items: [
           "Click a vehicle name to load its current draft revision.",
           "The tree shows enclosures, nodes, and connectors nested under their parents.",
-          "Click any row to focus the graph and property panel on that instance.",
+          "Click any row to focus the graph on that instance.",
+          "The pencil icon renames enclosures and nodes, or opens the pinout editor for connectors.",
           "Chevrons collapse or expand branches; use {{Collapse all}} / {{Expand all}} when the tree is large.",
           "The trash icon removes an enclosure, node, or connector instance — not the underlying template.",
           "Utilities opens {{Node Library}}, {{Enclosure Library}}, {{Net Manager}}, and {{Pin templates}}.",
@@ -256,7 +276,7 @@ export const USER_HELP_SECTIONS: HelpSection[] = [
       },
       {
         type: "p",
-        text: "Opened from {{Connector Library}} in the top bar. Mating-pair connectors with unified pinouts, male/female part numbers, and images. Categories include inline harness connectors, node slot connectors, and enclosure panel mounts.",
+        text: "Opened from {{Connector Library}} beside the logo (Design mode). Mating-pair connectors with unified pinouts, male/female part numbers, and images. Categories include inline harness connectors, node slot connectors, and enclosure panel mounts.",
       },
       {
         type: "h4",
@@ -287,7 +307,7 @@ export const USER_HELP_SECTIONS: HelpSection[] = [
       {
         type: "ul",
         items: [
-          "With the vehicle selected: {{Add enclosure to…}}, {{Add node to…}}, or {{Add inline to…}} at the vehicle level.",
+          "With the vehicle selected: {{+ Enclosure}}, {{+ Node}}, or {{+ Inline}} at the vehicle level.",
           "With an enclosure selected: add nested enclosures, nodes, or inline connectors inside it.",
           "Each flow picks a template and optional custom nickname (instance label), then {{Add}}.",
           "If a template is missing, click {{Add}} in the picker to jump to the right library tab.",
@@ -295,7 +315,14 @@ export const USER_HELP_SECTIONS: HelpSection[] = [
       },
       {
         type: "p",
-        text: "After placement, use the pencil icon in the topology tree to rename enclosures and nodes, or edit connector pinouts.",
+        text: "After placement, use the pencil icon in the topology tree to rename enclosures and nodes, or edit connector pinouts. Renaming dialogs stay open after {{Save name}} so you can make several edits.",
+      },
+      {
+        type: "ul",
+        items: [
+          "{{Use library name → …}} at the bottom of the rename dialog reverts to the template label.",
+          "Connector pinout editing includes the same rename field; on shared node/enclosure slots the name updates every matching connector instance.",
+        ],
       },
     ],
   },
@@ -305,16 +332,18 @@ export const USER_HELP_SECTIONS: HelpSection[] = [
     content: [
       {
         type: "p",
-        text: "Select any connector (inline, panel mount, or on a node) and click the pencil icon in the topology tree to edit its pinout.",
+        text: "Select any connector (inline, panel mount, or on a node) and click the pencil icon in the topology tree.",
       },
       {
         type: "ul",
         items: [
+          "Rename the connector at the top of the editor; slot connectors share names across every instance on that node or enclosure slot.",
           "Assign human-readable pin names from the pin name library or type custom names.",
           "Pin names drive automatic net naming when you wire — define them before heavy wiring.",
           "Optionally assign pins to existing nets or create nets from the pinout editor.",
           "Apply a pin template to bulk-fill names for connectors that share the same template.",
           "Conflicts when applying templates can be resolved per pin before {{Save}}.",
+          "{{Use library name → …}} reverts the connector name to the template label.",
         ],
       },
     ],
@@ -356,16 +385,12 @@ export const USER_HELP_SECTIONS: HelpSection[] = [
       {
         type: "ol",
         items: [
-          "Click {{Wire}} — the button shows {{Wiring active}} when enabled.",
+          "Click {{Wire}} — the button turns green and shows {{Wiring active}}.",
           "First pin click selects pin A.",
           "Second pin click on another pin creates a wire edge and assigns both pins to a net.",
           "Drag between pin ports on the graph when Wire mode is on.",
           "Click an existing wire edge to select it, then × or Delete to remove.",
         ],
-      },
-      {
-        type: "p",
-        text: "You can also drag between pin ports on the graph when Wire mode is on.",
       },
     ],
   },
@@ -413,7 +438,7 @@ export const USER_HELP_SECTIONS: HelpSection[] = [
       {
         type: "ul",
         items: [
-          "Available in Wire mode when viewing a connector on the graph.",
+          "Add shorts from the connection table when scoped to a single connector — pick two pins in the Internal pin shorts section.",
           "Shown as dashed edges on the graph, distinct from solid harness wires.",
           "Select a short edge on the graph and delete it with × or Delete.",
         ],
@@ -434,6 +459,7 @@ export const USER_HELP_SECTIONS: HelpSection[] = [
           "Open from the bottom toolbar via {{Open table}} — scope follows your current graph selection.",
           "Scopes include entire vehicle, enclosure, node, or single connector.",
           "Review source and destination connectors, pins, signal names, and wire colors.",
+          "When scoped to one connector, use Internal pin shorts to bond pins inside that connector.",
           "Useful for bulk review, export-oriented workflows, and finding gaps before manufacturing.",
         ],
       },
@@ -451,8 +477,9 @@ export const USER_HELP_SECTIONS: HelpSection[] = [
         type: "ul",
         items: [
           "Containers represent enclosures and nodes; connector groups show pins on the right edge.",
-          "Zoom and pan with React Flow controls in the top-right viewport cluster; minimap helps orientation on large designs.",
-          "The info box below the minimap shows projection level, current selection, and topology counts.",
+          "Zoom and pan with the + / − / fit controls at the bottom-left of the canvas.",
+          "The minimap sits at the bottom-right for orientation on large designs.",
+          "The selection info panel at the top-right shows the focused instance (nickname and library name), projection level, type:id, and topology counts.",
           "Selecting in the hierarchy and clicking on the graph stay in sync.",
         ],
       },
@@ -464,7 +491,7 @@ export const USER_HELP_SECTIONS: HelpSection[] = [
     content: [
       {
         type: "p",
-        text: "The top-bar search field filters graph entities and hierarchy labels as you type. Use it to jump to connectors, nodes, or enclosures in large vehicles without scrolling the tree.",
+        text: "The center top-bar search field filters graph entities and hierarchy labels as you type. Use it to jump to connectors, nodes, or enclosures in large vehicles without scrolling the tree. In Design mode the field is slightly narrower to make room for {{Connector Library}}; switching to {{Manufacturing}} animates the search bar wider.",
       },
     ],
   },
@@ -474,11 +501,13 @@ export const USER_HELP_SECTIONS: HelpSection[] = [
     content: [
       {
         type: "p",
-        text: "Switch mode with the {{Design}} / {{Manufacturing}} toggle in the top bar. Manufacturing focuses on building harnesses, not editing topology.",
+        text: "Switch mode with the {{Design}} / {{Manufacturing}} switch beside the search bar. Manufacturing focuses on building harnesses, not editing topology.",
       },
       {
         type: "ul",
         items: [
+          "The wire table fills the workspace width with harness scope on the left.",
+          "Open the › tab on the left edge to slide out navigation for vehicles and utilities.",
           "Wire table lists every harness wire with signal, endpoints, color, gauge, and notes.",
           "Sort and group by section, signal, or flat list.",
           "Mark wires as manufactured and continuity-checked with timestamps.",
@@ -512,7 +541,7 @@ export const USER_HELP_SECTIONS: HelpSection[] = [
     content: [
       {
         type: "p",
-        text: "When a vehicle revision is open, the sync indicator in the top bar shows how updates arrive.",
+        text: "When a vehicle revision is open, the live sync indicator (left of your username) shows how updates arrive. Click the ? help button beside it to reopen this guide.",
       },
       {
         type: "ul",
@@ -540,7 +569,8 @@ export const USER_HELP_SECTIONS: HelpSection[] = [
           "Dashed graph edges are pin shorts; solid edges are harness wires.",
           "Use {{Net Manager}} to rename auto nets into stable signal names before manufacturing.",
           "Connection table + {{Manufacturing}} mode complement the graph for verification.",
-          "{{Connector Library}} in the top bar is the fastest path to global connector templates.",
+          "{{Connector Library}} beside the logo is the fastest path to global connector templates.",
+          "Check the top-right selection panel when you need instance nickname, library name, or topology counts.",
         ],
       },
     ],
