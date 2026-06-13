@@ -12,6 +12,7 @@ import {
 import type { PinTemplate } from "@/api/pinTemplates";
 import { PinTemplateConflictModal } from "@/components/library/PinTemplateConflictModal";
 import { StaleRevisionBanner } from "@/components/shell/StaleRevisionBanner";
+import { ModalOverlay } from "@/components/ui/Modal";
 import { handleMutationError } from "@/lib/mutationErrors";
 import { useAppStore } from "@/stores/appStore";
 import { useRevisionSyncStore } from "@/stores/revisionSyncStore";
@@ -265,9 +266,14 @@ function PinoutEditorModal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 panel-fade-in">
-      <div className="flex h-[min(720px,92vh)] w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-tesla-border bg-tesla-surface shadow-2xl">
-        <header className="flex items-center justify-between border-b border-tesla-border px-4 py-3">
+    <>
+    <ModalOverlay
+      open={open}
+      onClose={onClose}
+      ariaLabel="Edit pinout"
+      panelClassName="flex h-[min(720px,92vh)] max-w-3xl flex-col overflow-hidden"
+    >
+      <header className="flex items-center justify-between border-b border-tesla-border px-4 py-3">
           <div>
             <h2 className="text-lg font-semibold">Edit pinout</h2>
             <p className="text-xs text-tesla-muted">{connectorLabel}</p>
@@ -378,19 +384,19 @@ function PinoutEditorModal({
             </button>
           </div>
         </footer>
-      </div>
-      <PinTemplateConflictModal
-        open={Boolean(pendingTemplate && conflicts.length > 0)}
-        conflicts={conflicts}
-        onClose={() => {
-          setPendingTemplate(null);
-          setConflicts([]);
-          setSelectedPinTemplateId("");
-        }}
-        onConfirm={(resolutions) => {
-          if (pendingTemplate) applyTemplateToDraft(pendingTemplate, resolutions);
-        }}
-      />
-    </div>
+    </ModalOverlay>
+    <PinTemplateConflictModal
+      open={Boolean(pendingTemplate && conflicts.length > 0)}
+      conflicts={conflicts}
+      onClose={() => {
+        setPendingTemplate(null);
+        setConflicts([]);
+        setSelectedPinTemplateId("");
+      }}
+      onConfirm={(resolutions) => {
+        if (pendingTemplate) applyTemplateToDraft(pendingTemplate, resolutions);
+      }}
+    />
+  </>
   );
 }

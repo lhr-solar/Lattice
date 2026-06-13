@@ -25,7 +25,7 @@ import {
   pinTemplatesForConnectorQueryKey,
 } from "@/lib/pinTemplateQueries";
 import { useAppStore } from "@/stores/appStore";
-import { ConfirmModal } from "@/components/ui/Modal";
+import { ConfirmModal, ModalOverlay } from "@/components/ui/Modal";
 
 type Tab = "names" | "templates";
 
@@ -212,15 +212,12 @@ export function PinTemplatesModal() {
 
   return (
     <>
-      <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4 panel-fade-in">
-        <div
-          className="absolute inset-0"
-          onClick={() => closePinTemplates()}
-          role="button"
-          aria-label="Close dialog overlay"
-          tabIndex={-1}
-        />
-        <div className="relative z-10 flex h-[min(720px,92vh)] w-full max-w-4xl flex-col overflow-hidden rounded-lg border border-tesla-border bg-tesla-surface shadow-2xl">
+      <ModalOverlay
+        onClose={() => closePinTemplates()}
+        layer="manager"
+        ariaLabel={isPickMode ? "Select pin template" : "Pin templates"}
+        panelClassName="flex h-[min(720px,92vh)] max-w-4xl flex-col overflow-hidden"
+      >
           <header className="flex items-center justify-between border-b border-tesla-border px-4 py-3">
             <div>
               <h2 className="text-lg font-semibold">
@@ -489,8 +486,7 @@ export function PinTemplatesModal() {
               {message}
             </footer>
           )}
-        </div>
-      </div>
+      </ModalOverlay>
 
       <PinTemplateBuilderModal
         open={templateBuilderMode !== null}

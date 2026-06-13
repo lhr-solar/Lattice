@@ -9,6 +9,50 @@ const MODAL_LAYER_CLASS: Record<ModalLayer, string> = {
   stacked: "z-[80]",
 };
 
+interface ModalOverlayProps {
+  open?: boolean;
+  onClose: () => void;
+  layer?: ModalLayer;
+  panelClassName?: string;
+  ariaLabel?: string;
+  children: ReactNode;
+}
+
+export function ModalOverlay({
+  open = true,
+  onClose,
+  layer = "dialog",
+  panelClassName,
+  ariaLabel,
+  children,
+}: ModalOverlayProps) {
+  if (!open) return null;
+
+  return (
+    <div
+      className={`fixed inset-0 ${MODAL_LAYER_CLASS[layer]} flex items-center justify-center bg-black/60 p-4 panel-fade-in`}
+    >
+      <div
+        className="absolute inset-0"
+        onClick={onClose}
+        role="button"
+        aria-label="Close dialog overlay"
+        tabIndex={-1}
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={ariaLabel}
+        className={`relative z-10 w-full rounded-lg border border-tesla-border bg-tesla-surface shadow-2xl ${
+          panelClassName ?? ""
+        }`}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
 interface ModalProps {
   open: boolean;
   title: string;
@@ -32,46 +76,32 @@ export function Modal({
   showCloseButton = false,
   layer = "dialog",
 }: ModalProps) {
-  if (!open) return null;
-
   return (
-    <div
-      className={`fixed inset-0 ${MODAL_LAYER_CLASS[layer]} flex items-center justify-center bg-black/60 p-4 panel-fade-in`}
+    <ModalOverlay
+      open={open}
+      onClose={onClose}
+      layer={layer}
+      ariaLabel={title}
+      panelClassName={panelClassName ?? "max-w-md"}
     >
-      <div
-        className="absolute inset-0"
-        onClick={onClose}
-        role="button"
-        aria-label="Close dialog overlay"
-        tabIndex={-1}
-      />
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        className={`relative z-10 w-full rounded-lg border border-tesla-border bg-tesla-surface shadow-2xl ${
-          panelClassName ?? "max-w-md"
-        }`}
-      >
-        <header className="relative border-b border-tesla-border px-4 py-3">
-          <h2 className="pr-8 text-base font-semibold text-tesla-text">{title}</h2>
-          {showCloseButton && (
-            <button
-              type="button"
-              onClick={onClose}
-              className="absolute right-3 top-1/2 -translate-y-1/2 rounded p-1 text-lg leading-none text-tesla-muted transition hover:bg-tesla-border hover:text-tesla-text"
-              aria-label="Close"
-            >
-              ×
-            </button>
-          )}
-        </header>
-        {children && (
-          <div className={`px-4 py-3 text-sm text-tesla-muted ${bodyClassName ?? ""}`}>{children}</div>
+      <header className="relative border-b border-tesla-border px-4 py-3">
+        <h2 className="pr-8 text-base font-semibold text-tesla-text">{title}</h2>
+        {showCloseButton && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="absolute right-3 top-1/2 -translate-y-1/2 rounded p-1 text-lg leading-none text-tesla-muted transition hover:bg-tesla-border hover:text-tesla-text"
+            aria-label="Close"
+          >
+            ×
+          </button>
         )}
-        {footer && <footer className="flex justify-end gap-2 border-t border-tesla-border px-4 py-3">{footer}</footer>}
-      </div>
-    </div>
+      </header>
+      {children && (
+        <div className={`px-4 py-3 text-sm text-tesla-muted ${bodyClassName ?? ""}`}>{children}</div>
+      )}
+      {footer && <footer className="flex justify-end gap-2 border-t border-tesla-border px-4 py-3">{footer}</footer>}
+    </ModalOverlay>
   );
 }
 

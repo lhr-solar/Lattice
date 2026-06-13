@@ -14,7 +14,7 @@ import { handleMutationError } from "@/lib/mutationErrors";
 import { invalidateRevisionDomains } from "@/lib/revisionInvalidation";
 import { useAppStore } from "@/stores/appStore";
 import { useRevisionSyncStore } from "@/stores/revisionSyncStore";
-import { ConfirmModal } from "@/components/ui/Modal";
+import { ConfirmModal, ModalOverlay } from "@/components/ui/Modal";
 import { WireColorPresetButton } from "@/components/wiring/WireColorSwatch";
 import { WIRE_COLOR_PRESETS } from "@/lib/wireColors";
 
@@ -139,9 +139,14 @@ export function NetManager() {
   if (!showNetManager) return null;
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4 panel-fade-in">
-      <div className="flex h-[min(640px,90vh)] w-full max-w-4xl flex-col overflow-hidden rounded-lg border border-tesla-border bg-tesla-surface shadow-2xl">
-        <header className="flex items-center justify-between border-b border-tesla-border px-4 py-3">
+    <>
+    <ModalOverlay
+      onClose={() => setShowNetManager(false)}
+      layer="manager"
+      ariaLabel="Net manager"
+      panelClassName="flex h-[min(640px,90vh)] max-w-4xl flex-col overflow-hidden"
+    >
+      <header className="flex items-center justify-between border-b border-tesla-border px-4 py-3">
           <div>
             <h2 className="text-lg font-semibold">Net manager</h2>
             <p className="text-xs text-tesla-muted">
@@ -298,8 +303,8 @@ export function NetManager() {
             )}
           </div>
         </div>
-      </div>
-      <ConfirmModal
+    </ModalOverlay>
+    <ConfirmModal
         open={showDeleteConfirm}
         title="Delete net"
         message={
@@ -317,7 +322,7 @@ export function NetManager() {
           });
         }}
       />
-    </div>
+    </>
   );
 }
 

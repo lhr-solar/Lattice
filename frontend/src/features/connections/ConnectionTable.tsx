@@ -23,6 +23,7 @@ import {
   type PinShort,
 } from "@/api/shorts";
 import { useAppStore } from "@/stores/appStore";
+import { ModalOverlay } from "@/components/ui/Modal";
 import { ConnectorInstanceLabel } from "@/components/library/ConnectorInstanceLabel";
 import { WireColorPresetButton, WireColorSwatch } from "@/components/wiring/WireColorSwatch";
 import { WIRE_COLOR_PRESETS } from "@/lib/wireColors";
@@ -256,9 +257,12 @@ export function ConnectionTable() {
   if (!show) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 panel-fade-in">
-      <div className="flex h-[min(860px,94vh)] w-full max-w-[1400px] flex-col overflow-hidden rounded-lg border border-tesla-border bg-tesla-surface shadow-2xl">
-        <header className="flex items-center justify-between border-b border-tesla-border px-4 py-3">
+    <ModalOverlay
+      onClose={() => setShow(false)}
+      ariaLabel="Connection table"
+      panelClassName="flex h-[min(860px,94vh)] max-w-[1400px] flex-col overflow-hidden"
+    >
+      <header className="flex items-center justify-between border-b border-tesla-border px-4 py-3">
           <div>
             <h2 className="text-lg font-semibold">Connection table</h2>
             <p className="text-xs text-tesla-muted">
@@ -375,8 +379,7 @@ export function ConnectionTable() {
             </div>
           </div>
         </div>
-      </div>
-    </div>
+    </ModalOverlay>
   );
 }
 

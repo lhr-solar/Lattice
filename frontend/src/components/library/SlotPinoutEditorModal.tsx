@@ -6,6 +6,7 @@ import { fetchPinNameLibrary } from "@/api/pinNames";
 import { PinNamePicker } from "@/components/library/PinNamePicker";
 import { PinTemplateApplyControl } from "@/components/library/PinTemplateApplyControl";
 import { pinStatesFromMapping } from "@/lib/pinTemplateApply";
+import { ModalOverlay } from "@/components/ui/Modal";
 import { useAppStore } from "@/stores/appStore";
 
 export function SlotPinoutEditorModal({
@@ -64,9 +65,14 @@ export function SlotPinoutEditorModal({
       .map((row) => ({ pin_number: row.pin_number, name: row.name }));
 
   return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 p-4 panel-fade-in">
-      <div className="flex h-[min(640px,90vh)] w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-tesla-border bg-tesla-surface shadow-2xl">
-        <header className="flex items-center justify-between border-b border-tesla-border px-4 py-3">
+    <ModalOverlay
+      open={open}
+      onClose={onClose}
+      layer="stacked"
+      ariaLabel="Edit pinout"
+      panelClassName="flex h-[min(640px,90vh)] max-w-2xl flex-col overflow-hidden"
+    >
+      <header className="flex items-center justify-between border-b border-tesla-border px-4 py-3">
           <div>
             <h2 className="text-lg font-semibold">Edit pinout</h2>
             <p className="text-xs text-tesla-muted">
@@ -153,7 +159,6 @@ export function SlotPinoutEditorModal({
             Apply pinout
           </button>
         </footer>
-      </div>
-    </div>
+    </ModalOverlay>
   );
 }
