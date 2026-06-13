@@ -4,7 +4,8 @@ from datetime import datetime
 from uuid import UUID
 
 from fastapi import HTTPException
-from sqlalchemy import select, update
+from sqlalchemy import cast, func, inspect, or_, select, String, update
+from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.revision_guard import get_revision_or_404
@@ -14,8 +15,15 @@ from app.infra.db.models.instances import ConnectorInstance, EnclosureInstance, 
 from app.infra.db.models.revision import RevisionChange, RevisionSnapshot
 from app.infra.db.models.shorts import ConnectorInstancePinShort
 from app.infra.db.models.topology import ConnectionEdge, PinSignalAssignment, Signal
-from app.infra.db.models.vehicle import Revision, VehicleHead
-from app.schemas.revisions import RevisionDiffItem, RevisionPublishResponse
+from app.infra.db.models.vehicle import Revision, Vehicle, VehicleHead
+from app.schemas.revisions import (
+    AdminRevisionTimelineItem,
+    AdminRevisionTimelinePageResponse,
+    AdminRevisionTimelineResponse,
+    RevisionDiffItem,
+    RevisionPublishResponse,
+    RevisionRevertResponse,
+)
 from app.schemas.vehicles import RevisionResponse
 from app.services.revision_sync_service import RevisionSyncService
 
@@ -26,12 +34,165 @@ class RevisionService:
 
     async def list_revisions(self, vehicle_id: UUID) -> list[RevisionResponse]:
         result = await self.db.execute(
-            select(Revision).where(Revision.vehicle_id == vehicle_id).order_by(Revision.revision_number.desc())
+            select(Revision)
+            .where(Revision.vehicle_id == vehicle_id)
+            .order_by(Revision.revision_number.desc())
         )
         return [self._to_response(r) for r in result.scalars().all()]
 
+    async def list_admin_timeline(self, vehicle_id: UUID) -> AdminRevisionTimelineResponse:
+        page = await self.list_admin_timeline_page(vehicle_id, offset=0, limit=10_000)
+        return AdminRevisionTimelineResponse(
+            vehicle_id=page.vehicle_id,
+            current_revision_id=page.current_revision_id,
+            revisions=page.revisions,
+        )
+
+    async def list_admin_timeline_page(
+        self,
+        vehicle_id: UUID,
+        *,
+        search: str | None = None,
+        offset: int = 0,
+        limit: int = 20,
+    ) -> AdminRevisionTimelinePageResponse:
+        vehicle = await self.db.get(Vehicle, vehicle_id)
+        if not vehicle:
+            raise HTTPException(status_code=404, detail="Vehicle not found")
+
+        head = await self.db.get(VehicleHead, vehicle_id)
+        current_id = head.current_revision_id if head else None
+
+        parent_revision = aliased(Revision)
+        filters = [Revision.vehicle_id == vehicle_id]
+        trimmed_search = search.strip() if search else ""
+        if trimmed_search:
+            term = f"%{trimmed_search}%"
+            filters.append(
+                or_(
+                    Revision.label.ilike(term),
+                    Revision.created_by.ilike(term),
+                    cast(Revision.revision_number, String).ilike(term),
+                    cast(Revision.id, String).ilike(term),
+                )
+            )
+
+        count_stmt = select(func.count()).select_from(Revision).where(*filters)
+        total = int((await self.db.execute(count_stmt)).scalar_one())
+
+        stmt = (
+            select(Revision, parent_revision)
+            .outerjoin(parent_revision, Revision.parent_revision_id == parent_revision.id)
+            .where(*filters)
+            .order_by(Revision.revision_number.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        rows = (await self.db.execute(stmt)).all()
+
+        items = [
+            AdminRevisionTimelineItem(
+                **self._to_response(revision).model_dump(),
+                is_current=revision.id == current_id,
+                parent_revision_number=parent.revision_number if parent else None,
+                parent_created_at=parent.created_at if parent else None,
+                parent_snapshot_taken_at=parent.snapshot_taken_at if parent else None,
+            )
+            for revision, parent in rows
+        ]
+
+        return AdminRevisionTimelinePageResponse(
+            vehicle_id=vehicle_id,
+            current_revision_id=current_id,
+            revisions=items,
+            total=total,
+            offset=offset,
+            limit=limit,
+            has_more=offset + len(items) < total,
+        )
+
+    async def revert(
+        self, vehicle_id: UUID, source_revision_id: UUID, reverted_by: str | None
+    ) -> RevisionRevertResponse:
+        source = await get_revision_or_404(self.db, source_revision_id, vehicle_id)
+        head = await self.db.get(VehicleHead, vehicle_id)
+        if not head:
+            raise HTTPException(status_code=404, detail="Vehicle head not found")
+
+        previous_current_id = head.current_revision_id
+        if source_revision_id == previous_current_id:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "revision_already_current",
+                    "message": "This revision is already the current working revision",
+                },
+            )
+
+        max_number = (
+            await self.db.execute(
+                select(func.max(Revision.revision_number)).where(Revision.vehicle_id == vehicle_id)
+            )
+        ).scalar_one()
+        next_number = int(max_number or 0) + 1
+        now = utc_now()
+        source_time = source.snapshot_taken_at or source.created_at
+        source_time_label = source_time.strftime("%Y-%m-%d %H:%M UTC")
+
+        new_revision = Revision(
+            vehicle_id=vehicle_id,
+            revision_number=next_number,
+            status=RevisionStatus.DRAFT,
+            label=f"Reverted from R{source.revision_number} ({source_time_label})",
+            parent_revision_id=source_revision_id,
+            is_immutable=False,
+            created_by=reverted_by,
+            created_at=now,
+        )
+        self.db.add(new_revision)
+        await self.db.flush()
+
+        await self._clone_revision_data(source_revision_id, new_revision.id, vehicle_id)
+
+        self.db.add(
+            RevisionChange(
+                revision_id=new_revision.id,
+                entity_kind=EntityKind.VEHICLE,
+                entity_id=vehicle_id,
+                change_type="revert",
+                before={
+                    "source_revision_id": str(source_revision_id),
+                    "source_revision_number": source.revision_number,
+                    "previous_current_revision_id": str(previous_current_id),
+                },
+                after={"revision_id": str(new_revision.id), "revision_number": next_number},
+                changed_by=reverted_by,
+                changed_at=now,
+            )
+        )
+
+        head.current_revision_id = new_revision.id
+        await self.db.flush()
+
+        await RevisionSyncService(self.db).notify_published(
+            vehicle_id=vehicle_id,
+            old_revision_id=previous_current_id,
+            new_revision_id=new_revision.id,
+            changed_by=reverted_by,
+        )
+
+        return RevisionRevertResponse(
+            source_revision=self._to_response(source),
+            new_revision=self._to_response(new_revision),
+            previous_current_revision_id=previous_current_id,
+        )
+
     async def publish(
-        self, vehicle_id: UUID, revision_id: UUID, published_by: str | None
+        self,
+        vehicle_id: UUID,
+        revision_id: UUID,
+        published_by: str | None,
+        label: str | None = None,
     ) -> RevisionPublishResponse:
         revision = await get_revision_or_404(self.db, revision_id, vehicle_id)
         if revision.is_immutable:
@@ -50,6 +211,11 @@ class RevisionService:
         revision.is_immutable = True
         revision.snapshot_taken_at = now
         revision.status = RevisionStatus.RELEASED
+        trimmed_label = label.strip() if label else ""
+        if trimmed_label:
+            revision.label = trimmed_label
+        elif not revision.label:
+            revision.label = f"R{revision.revision_number}"
 
         self.db.add(
             RevisionSnapshot(revision_id=revision_id, snapshot_data=snapshot, checksum=checksum, created_at=now)
@@ -299,18 +465,22 @@ class RevisionService:
             is_immutable=revision.is_immutable,
             created_at=revision.created_at,
             edit_sequence=revision.edit_sequence,
+            created_by=revision.created_by,
+            parent_revision_id=revision.parent_revision_id,
+            snapshot_taken_at=revision.snapshot_taken_at,
         )
 
 
 def _serialize_row(row) -> dict:
     out = {}
-    for col in row.__table__.columns:
-        val = getattr(row, col.key)
+    mapper = inspect(row).mapper
+    for attr in mapper.column_attrs:
+        val = getattr(row, attr.key)
         if isinstance(val, UUID):
             val = str(val)
         elif hasattr(val, "value"):
             val = val.value
         elif isinstance(val, datetime):
             val = val.isoformat()
-        out[col.key] = val
+        out[attr.key] = val
     return out

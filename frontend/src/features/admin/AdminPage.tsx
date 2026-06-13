@@ -3,6 +3,7 @@ import { useState } from "react";
 import clsx from "clsx";
 import {
   clearVehicleData,
+  clearVehicleRevisions,
   clearVehicleWires,
   createUser,
   createUsersBulk,
@@ -23,15 +24,18 @@ import { ApiError } from "@/api/client";
 import { logout } from "@/api/auth";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { ConfirmModal, Modal, PromptModal } from "@/components/ui/Modal";
+import { GearIcon } from "@/components/ui/GearIcon";
+import { OpenArrowIcon } from "@/components/ui/OpenArrowIcon";
 import { PasswordModeField } from "@/components/ui/PasswordModeField";
 import { usePresenceStore } from "@/stores/presenceStore";
 import { useSessionStore } from "@/stores/sessionStore";
+import { AdminRevisionHistoryModal } from "@/features/admin/AdminRevisionHistoryModal";
 
 interface AdminPageProps {
   onBack: () => void;
 }
 
-type VehicleClearAction = "all" | "wires";
+type VehicleClearAction = "all" | "wires" | "revisions";
 
 export function AdminPage({ onBack }: AdminPageProps) {
   const queryClient = useQueryClient();
@@ -76,6 +80,10 @@ export function AdminPage({ onBack }: AdminPageProps) {
     action: VehicleClearAction;
   } | null>(null);
   const [vehicleError, setVehicleError] = useState<string | null>(null);
+  const [revisionHistoryTarget, setRevisionHistoryTarget] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
 
   const { data: users = [] } = useQuery({
@@ -322,10 +330,12 @@ export function AdminPage({ onBack }: AdminPageProps) {
       action: VehicleClearAction;
     }) => {
       if (action === "wires") return clearVehicleWires(vehicleId);
+      if (action === "revisions") return clearVehicleRevisions(vehicleId);
       return clearVehicleData(vehicleId);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["vehicles"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-revision-timeline"] });
       setClearVehicleTarget(null);
     },
   });
@@ -350,7 +360,10 @@ export function AdminPage({ onBack }: AdminPageProps) {
           >
             ← Back
           </button>
-          <span className="font-medium text-tesla-text">Admin</span>
+          <span className="flex items-center gap-1.5 font-medium text-tesla-text">
+            <GearIcon size="md" className="text-orange-300" />
+            Admin Settings
+          </span>
         </header>
         <div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto text-tesla-muted">
           Admin access required.
@@ -369,7 +382,10 @@ export function AdminPage({ onBack }: AdminPageProps) {
         >
           ← Back to app
         </button>
-        <span className="font-medium text-tesla-text">Admin</span>
+        <span className="flex items-center gap-1.5 font-medium text-tesla-text">
+          <GearIcon size="md" className="text-orange-300" />
+          Admin Settings
+        </span>
         <div className="ml-auto flex items-center gap-3 text-sm text-tesla-muted">
           <span>{username}</span>
           <button
@@ -602,6 +618,43 @@ export function AdminPage({ onBack }: AdminPageProps) {
             {vehicles.map((vehicle) => (
               <li key={vehicle.id} className="flex items-center gap-2 px-3 py-2 text-sm">
                 <span className="min-w-0 flex-1 truncate text-tesla-text">{vehicle.name}</span>
+                {vehicle.current_revision_id && vehicle.current_revision_number != null ? (
+                  <div className="flex min-w-0 max-w-[14rem] items-center gap-1.5">
+                    <span
+                      className="h-2 w-2 shrink-0 rounded-full bg-tesla-accent"
+                      title="Current revision"
+                      aria-hidden
+                    />
+                    <span className="min-w-0 truncate text-xs text-tesla-muted">
+                      R{vehicle.current_revision_number}
+                      {vehicle.current_revision_label
+                        ? ` | ${vehicle.current_revision_label}`
+                        : ""}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setRevisionHistoryTarget({ id: vehicle.id, name: vehicle.name })
+                      }
+                      className="flex shrink-0 items-center rounded-md border border-tesla-border px-1.5 py-1 text-tesla-muted transition hover:border-tesla-accent hover:text-tesla-text"
+                      aria-label={`Open revision history for ${vehicle.name}`}
+                      title="Open revision history"
+                    >
+                      <OpenArrowIcon />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setRevisionHistoryTarget({ id: vehicle.id, name: vehicle.name })
+                    }
+                    className="flex shrink-0 items-center gap-1.5 rounded-md border border-tesla-border px-2 py-1 text-xs text-tesla-muted transition hover:border-tesla-accent hover:text-tesla-text"
+                  >
+                    Revisions
+                    <OpenArrowIcon />
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => {
@@ -644,6 +697,22 @@ export function AdminPage({ onBack }: AdminPageProps) {
                   <button
                     type="button"
                     onClick={() =>
+                      setClearVehicleTarget({
+                        id: vehicle.id,
+                        name: vehicle.name,
+                        action: "revisions",
+                      })
+                    }
+                    className={clsx(
+                      "rounded border border-orange-500/50 px-2 py-0.5 text-xs text-orange-200",
+                      "hover:bg-orange-500/10",
+                    )}
+                  >
+                    Clear all revisions
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
                       setClearVehicleTarget({ id: vehicle.id, name: vehicle.name, action: "wires" })
                     }
                     className={clsx(
@@ -674,6 +743,13 @@ export function AdminPage({ onBack }: AdminPageProps) {
           </ul>
         </section>
       </main>
+
+      <AdminRevisionHistoryModal
+        open={Boolean(revisionHistoryTarget)}
+        vehicleId={revisionHistoryTarget?.id ?? ""}
+        vehicleName={revisionHistoryTarget?.name ?? ""}
+        onClose={() => setRevisionHistoryTarget(null)}
+      />
 
       <PromptModal
         open={Boolean(passwordEditTarget)}
@@ -856,13 +932,19 @@ export function AdminPage({ onBack }: AdminPageProps) {
       <ConfirmModal
         open={Boolean(clearVehicleTarget)}
         title={
-          clearVehicleTarget?.action === "wires" ? "Clear vehicle wires" : "Clear vehicle data"
+          clearVehicleTarget?.action === "wires"
+            ? "Clear vehicle wires"
+            : clearVehicleTarget?.action === "revisions"
+              ? "Clear all revisions"
+              : "Clear vehicle data"
         }
         message={
           clearVehicleTarget
             ? clearVehicleTarget.action === "wires"
               ? `Delete all wires, signals, splices, and harness data for vehicle "${clearVehicleTarget.name}"? Placed instances and library templates will be kept. This cannot be undone.`
-              : `Delete all design data and library items tied to vehicle "${clearVehicleTarget.name}"? This resets revisions and cannot be undone.`
+              : clearVehicleTarget.action === "revisions"
+                ? `Delete all revisions and design data for vehicle "${clearVehicleTarget.name}"? Library templates are kept. A new initial draft revision will be created. This cannot be undone.`
+                : `Delete all design data and library items tied to vehicle "${clearVehicleTarget.name}"? This resets revisions and cannot be undone.`
             : ""
         }
         confirmLabel={
@@ -870,7 +952,9 @@ export function AdminPage({ onBack }: AdminPageProps) {
             ? "Clearing…"
             : clearVehicleTarget?.action === "wires"
               ? "Clear wires"
-              : "Clear vehicle"
+              : clearVehicleTarget?.action === "revisions"
+                ? "Clear revisions"
+                : "Clear vehicle"
         }
         destructive
         disabled={clearVehicleMutation.isPending}

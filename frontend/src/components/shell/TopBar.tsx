@@ -3,6 +3,7 @@ import { logout } from "@/api/auth";
 import { latticeMarkLogo } from "@/assets/logos";
 import { SyncStatusIndicator } from "@/components/shell/SyncStatusIndicator";
 import { ConfirmModal } from "@/components/ui/Modal";
+import { GearIcon } from "@/components/ui/GearIcon";
 import { useSessionStore } from "@/stores/sessionStore";
 import { useAppStore } from "@/stores/appStore";
 
@@ -68,15 +69,6 @@ export function TopBar({ onOpenAdmin }: TopBarProps) {
             </button>
           </>
         )}
-        {isAdmin && onOpenAdmin && (
-          <button
-            type="button"
-            onClick={onOpenAdmin}
-            className="rounded-md border border-tesla-border px-2 py-1 text-xs text-tesla-muted transition hover:border-tesla-accent hover:text-tesla-text"
-          >
-            Admin
-          </button>
-        )}
       </div>
       <input
         value={searchQuery}
@@ -85,6 +77,16 @@ export function TopBar({ onOpenAdmin }: TopBarProps) {
         className="max-w-md flex-1 rounded-md border border-tesla-border bg-tesla-bg px-3 py-1.5 text-sm outline-none transition focus:border-tesla-accent"
       />
       <div className="ml-auto flex items-center gap-3 text-sm text-tesla-muted">
+        {isAdmin && onOpenAdmin && (
+          <button
+            type="button"
+            onClick={onOpenAdmin}
+            className="flex items-center gap-1.5 rounded-md border border-orange-500/60 px-2 py-1 text-xs font-medium text-orange-300 transition hover:border-orange-400 hover:bg-orange-500/10 hover:font-semibold hover:text-orange-200"
+          >
+            <GearIcon size="sm" />
+            Admin Settings
+          </button>
+        )}
         <SyncStatusIndicator />
         <span>{username}</span>
         <button

@@ -40,6 +40,24 @@ class VehicleService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
+    def _vehicle_response(
+        self,
+        vehicle: Vehicle,
+        current_revision_id: UUID | None,
+        revision_number: int | None = None,
+        revision_label: str | None = None,
+    ) -> VehicleResponse:
+        return VehicleResponse(
+            id=vehicle.id,
+            name=vehicle.name,
+            description=vehicle.description,
+            current_revision_id=current_revision_id,
+            current_revision_number=revision_number,
+            current_revision_label=revision_label,
+            created_at=vehicle.created_at,
+            updated_at=vehicle.updated_at,
+        )
+
     async def create_vehicle(self, payload: VehicleCreate, created_by: str | None) -> VehicleResponse:
         vehicle = Vehicle(name=payload.name, description=payload.description)
         self.db.add(vehicle)
@@ -61,52 +79,47 @@ class VehicleService:
         self.db.add(head)
         await self.db.flush()
 
-        return VehicleResponse(
-            id=vehicle.id,
-            name=vehicle.name,
-            description=vehicle.description,
-            current_revision_id=revision.id,
-            created_at=vehicle.created_at,
-            updated_at=vehicle.updated_at,
+        return self._vehicle_response(
+            vehicle,
+            revision.id,
+            revision.revision_number,
+            revision.label,
         )
 
     async def list_vehicles(self) -> list[VehicleResponse]:
         result = await self.db.execute(
-            select(Vehicle, VehicleHead.current_revision_id)
+            select(
+                Vehicle,
+                VehicleHead.current_revision_id,
+                Revision.revision_number,
+                Revision.label,
+            )
             .outerjoin(VehicleHead, VehicleHead.vehicle_id == Vehicle.id)
+            .outerjoin(Revision, Revision.id == VehicleHead.current_revision_id)
             .order_by(Vehicle.name)
         )
-        rows = result.all()
         return [
-            VehicleResponse(
-                id=v.id,
-                name=v.name,
-                description=v.description,
-                current_revision_id=rev_id,
-                created_at=v.created_at,
-                updated_at=v.updated_at,
-            )
-            for v, rev_id in rows
+            self._vehicle_response(v, rev_id, rev_num, rev_label)
+            for v, rev_id, rev_num, rev_label in result.all()
         ]
 
     async def get_vehicle(self, vehicle_id: UUID) -> VehicleResponse | None:
         result = await self.db.execute(
-            select(Vehicle, VehicleHead.current_revision_id)
+            select(
+                Vehicle,
+                VehicleHead.current_revision_id,
+                Revision.revision_number,
+                Revision.label,
+            )
             .outerjoin(VehicleHead, VehicleHead.vehicle_id == Vehicle.id)
+            .outerjoin(Revision, Revision.id == VehicleHead.current_revision_id)
             .where(Vehicle.id == vehicle_id)
         )
         row = result.one_or_none()
         if not row:
             return None
-        v, rev_id = row
-        return VehicleResponse(
-            id=v.id,
-            name=v.name,
-            description=v.description,
-            current_revision_id=rev_id,
-            created_at=v.created_at,
-            updated_at=v.updated_at,
-        )
+        v, rev_id, rev_num, rev_label = row
+        return self._vehicle_response(v, rev_id, rev_num, rev_label)
 
     async def update_vehicle(self, vehicle_id: UUID, payload: VehicleUpdate) -> VehicleResponse:
         vehicle = await self.db.get(Vehicle, vehicle_id)
@@ -124,6 +137,32 @@ class VehicleService:
         revision_ids = await self._revision_ids_for_vehicle(vehicle_id)
         if revision_ids:
             await self._delete_revision_wire_data(revision_ids)
+        await self.db.flush()
+
+    async def clear_vehicle_revisions(self, vehicle_id: UUID, *, created_by: str | None = None) -> None:
+        vehicle = await self.db.get(Vehicle, vehicle_id)
+        if not vehicle:
+            raise HTTPException(status_code=404, detail="Vehicle not found")
+
+        revision_ids = await self._revision_ids_for_vehicle(vehicle_id)
+        if revision_ids:
+            await self._delete_revision_scoped_data(revision_ids)
+
+        await self.db.execute(delete(VehicleHead).where(VehicleHead.vehicle_id == vehicle_id))
+        await self.db.execute(delete(Revision).where(Revision.vehicle_id == vehicle_id))
+
+        revision = Revision(
+            vehicle_id=vehicle.id,
+            revision_number=1,
+            status=RevisionStatus.DRAFT,
+            label="Initial draft",
+            is_immutable=False,
+            created_by=created_by,
+            created_at=utc_now(),
+        )
+        self.db.add(revision)
+        await self.db.flush()
+        self.db.add(VehicleHead(vehicle_id=vehicle.id, current_revision_id=revision.id))
         await self.db.flush()
 
     async def clear_vehicle_data(self, vehicle_id: UUID, *, created_by: str | None = None) -> None:

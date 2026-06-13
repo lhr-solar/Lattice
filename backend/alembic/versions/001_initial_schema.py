@@ -1,6 +1,6 @@
 """initial_schema
 
-Consolidated schema — creates all tables from SQLAlchemy models and seeds defaults.
+Single consolidated migration — creates full schema from SQLAlchemy models and seeds defaults.
 
 Revision ID: 001
 Revises:

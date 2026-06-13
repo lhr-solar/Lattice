@@ -39,6 +39,8 @@ export interface Vehicle {
   name: string;
   description: string | null;
   current_revision_id: string | null;
+  current_revision_number?: number | null;
+  current_revision_label?: string | null;
   created_at: string;
   updated_at: string | null;
 }

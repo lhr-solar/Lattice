@@ -90,3 +90,57 @@ export function clearVehicleData(vehicleId: string) {
 export function clearVehicleWires(vehicleId: string) {
   return apiFetch<void>(`/admin/vehicles/${vehicleId}/clear-wires`, { method: "POST" });
 }
+
+export function clearVehicleRevisions(vehicleId: string) {
+  return apiFetch<void>(`/admin/vehicles/${vehicleId}/clear-revisions`, { method: "POST" });
+}
+
+export interface AdminRevisionTimelineItem {
+  id: string;
+  vehicle_id: string;
+  revision_number: number;
+  status: string;
+  label: string | null;
+  is_immutable: boolean;
+  created_at: string;
+  edit_sequence: number;
+  created_by: string | null;
+  parent_revision_id: string | null;
+  snapshot_taken_at: string | null;
+  is_current: boolean;
+  parent_revision_number: number | null;
+  parent_created_at: string | null;
+  parent_snapshot_taken_at: string | null;
+}
+
+export interface AdminRevisionTimelinePage {
+  vehicle_id: string;
+  current_revision_id: string | null;
+  revisions: AdminRevisionTimelineItem[];
+  total: number;
+  offset: number;
+  limit: number;
+  has_more: boolean;
+}
+
+export function fetchVehicleRevisionTimeline(
+  vehicleId: string,
+  params?: { search?: string; offset?: number; limit?: number },
+) {
+  const qs = new URLSearchParams();
+  if (params?.search?.trim()) qs.set("search", params.search.trim());
+  if (params?.offset != null) qs.set("offset", String(params.offset));
+  if (params?.limit != null) qs.set("limit", String(params.limit));
+  const query = qs.toString();
+  return apiFetch<AdminRevisionTimelinePage>(
+    `/admin/vehicles/${vehicleId}/revisions${query ? `?${query}` : ""}`,
+  );
+}
+
+export function revertVehicleRevision(vehicleId: string, revisionId: string) {
+  return apiFetch<{
+    source_revision: AdminRevisionTimelineItem;
+    new_revision: AdminRevisionTimelineItem;
+    previous_current_revision_id: string | null;
+  }>(`/admin/vehicles/${vehicleId}/revisions/${revisionId}/revert`, { method: "POST" });
+}

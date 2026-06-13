@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
@@ -19,7 +19,12 @@ from app.schemas.auth import (
     UsersBulkPasswordUpdate,
 )
 from app.realtime.ws_hub import ws_hub
+from app.schemas.revisions import (
+    AdminRevisionTimelinePageResponse,
+    RevisionRevertResponse,
+)
 from app.schemas.vehicles import VehicleCreate, VehicleResponse, VehicleUpdate
+from app.services.revision_service import RevisionService
 from app.services.user_service import UserService
 from app.services.vehicle_service import VehicleService
 
@@ -174,3 +179,40 @@ async def clear_vehicle_data(
 ) -> None:
     await VehicleService(db).clear_vehicle_data(vehicle_id, created_by=admin.username)
     return None
+
+
+@router.post("/vehicles/{vehicle_id}/clear-revisions", status_code=204)
+async def clear_vehicle_revisions(
+    vehicle_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    admin: UserContext = Depends(get_admin_user),
+) -> None:
+    await VehicleService(db).clear_vehicle_revisions(vehicle_id, created_by=admin.username)
+    return None
+
+
+@router.get("/vehicles/{vehicle_id}/revisions", response_model=AdminRevisionTimelinePageResponse)
+async def list_vehicle_revision_timeline(
+    vehicle_id: UUID,
+    search: str | None = Query(default=None),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    _admin: UserContext = Depends(get_admin_user),
+) -> AdminRevisionTimelinePageResponse:
+    return await RevisionService(db).list_admin_timeline_page(
+        vehicle_id, search=search, offset=offset, limit=limit
+    )
+
+
+@router.post(
+    "/vehicles/{vehicle_id}/revisions/{revision_id}/revert",
+    response_model=RevisionRevertResponse,
+)
+async def revert_vehicle_revision(
+    vehicle_id: UUID,
+    revision_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    admin: UserContext = Depends(get_admin_user),
+) -> RevisionRevertResponse:
+    return await RevisionService(db).revert(vehicle_id, revision_id, admin.username)
