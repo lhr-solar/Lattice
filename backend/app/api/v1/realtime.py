@@ -29,12 +29,15 @@ async def _authenticate_ws(websocket: WebSocket) -> UserContext | None:
         user = await db.get(User, session.user_id)
         if not user:
             return None
+        user_id = user.id
+        username = user.username
+        is_admin = user.is_admin
         session.last_seen_at = utc_now()
         await db.commit()
         return UserContext(
-            user_id=user.id,
-            username=user.username,
-            is_admin=user.is_admin,
+            user_id=user_id,
+            username=username,
+            is_admin=is_admin,
             session_id=parsed_session,
         )
 

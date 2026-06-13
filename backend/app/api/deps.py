@@ -11,7 +11,10 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
         try:
             yield session
             await session.commit()
-            await flush_pending_broadcasts(session)
+            try:
+                await flush_pending_broadcasts(session)
+            except Exception:
+                pass
         except Exception:
             await session.rollback()
             raise

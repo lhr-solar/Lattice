@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Library/Frameworks/Python.framework/Versions/3.13/bin/graphify hook-check"
+            "command": "graphify hook-check"
           }
         ]
       }

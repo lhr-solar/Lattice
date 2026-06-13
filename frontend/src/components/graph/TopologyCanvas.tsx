@@ -206,6 +206,8 @@ export function TopologyCanvas() {
         if (shouldFallbackInvalidate) {
           invalidateWiring();
         }
+        // This is a definitive state correction, so we always invalidate to re-sync.
+        invalidateWiring();
         return;
       }
       setWireError(handleMutationError(error, "Failed to remove wire."));

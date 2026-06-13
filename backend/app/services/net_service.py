@@ -312,10 +312,6 @@ class NetService:
             raise HTTPException(status_code=400, detail="Cannot pair a pin with itself")
 
         pin_ids = sorted((payload.pin_a_id, payload.pin_b_id), key=str)
-        for pin_id in pin_ids:
-            pin = await self.db.get(Pin, pin_id)
-            if not pin or pin.revision_id != revision_id:
-                raise HTTPException(status_code=404, detail=f"Pin {pin_id} not found")
 
         locked_pins = (
             await self.db.execute(select(Pin).where(Pin.id.in_(pin_ids)).with_for_update())

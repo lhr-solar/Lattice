@@ -161,13 +161,17 @@ class UserService:
 
         for user_id in user_ids:
             try:
-                await self.delete_user(user_id, acting_user_id)
+                async with self.db.begin_nested():
+                    await self.delete_user(user_id, acting_user_id)
                 succeeded += 1
             except HTTPException as exc:
                 failed += 1
                 user = await self.db.get(User, user_id)
                 label = user.username if user else str(user_id)
                 errors.append(f"{label}: {exc.detail}")
+            except Exception as exc:
+                failed += 1
+                errors.append(f"{user_id}: {exc}")
 
         return BulkActionResponse(succeeded=succeeded, failed=failed, errors=errors)
 

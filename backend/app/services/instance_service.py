@@ -597,6 +597,7 @@ class InstanceService:
         revision_id: UUID,
         enclosure_instance_id: UUID,
         *,
+        sync: bool = True,
         changed_by: str | None = None,
     ) -> None:
         await ensure_mutable_revision(self.db, revision_id, vehicle_id)
@@ -615,7 +616,7 @@ class InstanceService:
         )
         for child_id in child_ids:
             await self.delete_enclosure(
-                vehicle_id, revision_id, child_id, changed_by=changed_by
+                vehicle_id, revision_id, child_id, sync=False, changed_by=changed_by
             )
 
         pcb_ids = await self._pcb_ids_for_enclosure(enclosure_instance_id)
@@ -638,7 +639,8 @@ class InstanceService:
         await self.db.delete(enc)
         await self.db.flush()
         await self._prune_orphan_signals(revision_id)
-        await self._sync(vehicle_id, revision_id, changed_by=changed_by)
+        if sync:
+            await self._sync(vehicle_id, revision_id, changed_by=changed_by)
 
     async def _pin_ids_for_connectors(self, connector_ids: list[UUID]) -> list[UUID]:
         if not connector_ids:
