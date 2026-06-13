@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from uuid import UUID
 
 from fastapi import HTTPException
-from sqlalchemy import String, cast, exists, func, or_, select, update
+from sqlalchemy import String, cast, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.display import (
@@ -12,6 +12,7 @@ from app.core.display import (
 )
 from app.core.revision_guard import ensure_mutable_revision
 from app.domains.connectors.export import connector_kind_for_instance
+from app.domains.topology.net_merge import absorb_net, get_primary_net, resolve_net_merge
 from app.domains.topology.net_naming import is_auto_named_signal
 from app.domains.topology.pin_shorts import load_short_indexes_for_connectors
 from app.domains.topology.wire_defaults import (
@@ -653,8 +654,8 @@ class ConnectionService:
             edge = await self.db.get(ConnectionEdge, created.id)
             created_edge = True
 
-        net_a = await self._primary_net(revision_id, payload.pin_a_id)
-        net_b = await self._primary_net(revision_id, payload.pin_b_id)
+        net_a = await get_primary_net(self.db, revision_id, payload.pin_a_id)
+        net_b = await get_primary_net(self.db, revision_id, payload.pin_b_id)
 
         action = "none"
         result_net: Signal | None = None
@@ -666,7 +667,7 @@ class ConnectionService:
                 action, result_net = "already_same", net_a
                 message = f"Wire created on net {net_a.name}."
             else:
-                target, loser = self._resolve_merge(net_a, net_b, payload.merge_target_net_id)
+                target, loser = resolve_net_merge(net_a, net_b, payload.merge_target_net_id)
                 if target is None:
                     # Both pins are on different user-named nets: leave them
                     # untouched and ask the caller to pick which name survives.
@@ -677,7 +678,7 @@ class ConnectionService:
                         "nets. Pick which net to keep."
                     )
                 else:
-                    await self._absorb_net(revision_id, loser.id, target.id)
+                    await absorb_net(self.db, revision_id, loser.id, target.id)
                     action, result_net = "merged", target
                     message = f"Wire created — merged onto net {target.name}."
         elif net_a and not net_b:
@@ -696,6 +697,9 @@ class ConnectionService:
         if result_net is not None:
             edge.signal_id = result_net.id
         await self.db.flush()
+        await self._net.prune_stale_auto_nets(
+            vehicle_id, revision_id, sync=False, changed_by=changed_by
+        )
 
         result = ConnectPinsResult(
             edge=self._topology._edge_response(edge),
@@ -731,77 +735,6 @@ class ConnectionService:
                 },
             )
         return result
-
-    @staticmethod
-    def _resolve_merge(
-        net_a: Signal, net_b: Signal, merge_target_net_id: UUID | None
-    ) -> tuple[Signal | None, Signal | None]:
-        """Decide which of two distinct nets survives when joining their pins.
-
-        Returns (target, loser). (None, None) means an unresolved conflict that
-        needs the caller to choose (both nets are user-named).
-        """
-        if merge_target_net_id is not None:
-            if merge_target_net_id == net_a.id:
-                return net_a, net_b
-            if merge_target_net_id == net_b.id:
-                return net_b, net_a
-            raise HTTPException(
-                status_code=400, detail="merge_target_net_id must be one of the two pins' nets"
-            )
-
-        a_auto = is_auto_named_signal(net_a.metadata_, net_a.name)
-        b_auto = is_auto_named_signal(net_b.metadata_, net_b.name)
-        if a_auto and not b_auto:
-            return net_b, net_a  # named net wins
-        if b_auto and not a_auto:
-            return net_a, net_b
-        if a_auto and b_auto:
-            return net_a, net_b  # both auto-named: collapse onto one silently
-        return None, None  # both user-named and different: needs a choice
-
-    async def _absorb_net(self, revision_id: UUID, loser_id: UUID, target_id: UUID) -> None:
-        """Move every pin and edge off ``loser`` onto ``target`` and delete loser."""
-        target_pins = set(
-            (
-                await self.db.execute(
-                    select(PinSignalAssignment.pin_id).where(
-                        PinSignalAssignment.revision_id == revision_id,
-                        PinSignalAssignment.signal_id == target_id,
-                        PinSignalAssignment.assignment_role == "primary",
-                    )
-                )
-            ).scalars().all()
-        )
-        loser_assignments = (
-            await self.db.execute(
-                select(PinSignalAssignment).where(
-                    PinSignalAssignment.revision_id == revision_id,
-                    PinSignalAssignment.signal_id == loser_id,
-                    PinSignalAssignment.assignment_role == "primary",
-                )
-            )
-        ).scalars().all()
-        for assignment in loser_assignments:
-            if assignment.pin_id in target_pins:
-                await self.db.delete(assignment)
-            else:
-                assignment.signal_id = target_id
-                target_pins.add(assignment.pin_id)
-
-        await self.db.execute(
-            update(ConnectionEdge)
-            .where(
-                ConnectionEdge.revision_id == revision_id,
-                ConnectionEdge.signal_id == loser_id,
-            )
-            .values(signal_id=target_id)
-        )
-
-        loser = await self.db.get(Signal, loser_id)
-        if loser is not None:
-            await self.db.delete(loser)
-        await self.db.flush()
 
     async def disconnect(
         self,
@@ -907,19 +840,6 @@ class ConnectionService:
             pin_id: (net_id, net_name, metadata_ or {})
             for pin_id, net_id, net_name, metadata_ in rows
         }
-
-    async def _primary_net(self, revision_id: UUID, pin_id: UUID) -> Signal | None:
-        return (
-            await self.db.execute(
-                select(Signal)
-                .join(PinSignalAssignment, PinSignalAssignment.signal_id == Signal.id)
-                .where(
-                    PinSignalAssignment.revision_id == revision_id,
-                    PinSignalAssignment.pin_id == pin_id,
-                    PinSignalAssignment.assignment_role == "primary",
-                )
-            )
-        ).scalars().first()
 
     async def _short_partners(
         self,

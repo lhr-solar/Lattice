@@ -6,8 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.display import resolve_display_name
 from app.core.revision_guard import ensure_mutable_revision
+from app.domains.topology.net_merge import absorb_net, get_primary_net, resolve_net_merge
 from app.domains.topology.net_naming import (
-    derive_lone_pin_net_name,
     derive_pair_net_name_for_pins,
     ensure_unique_net_name,
     is_auto_named_signal,
@@ -160,17 +160,6 @@ class NetService:
         signal = await self._get_net_or_404(revision_id, net_id)
         net_name = signal.name
 
-        assignments = (
-            await self.db.execute(
-                select(PinSignalAssignment).where(
-                    PinSignalAssignment.revision_id == revision_id,
-                    PinSignalAssignment.signal_id == net_id,
-                )
-            )
-        ).scalars().all()
-
-        affected_pin_ids = list({a.pin_id for a in assignments})
-
         await self.db.execute(
             delete(PinSignalAssignment).where(
                 PinSignalAssignment.revision_id == revision_id,
@@ -192,58 +181,15 @@ class NetService:
         await self.db.delete(signal)
         await self.db.flush()
 
-        created_auto: list[str] = []
-        for pin_id in affected_pin_ids:
-            remaining = await self.db.execute(
-                select(PinSignalAssignment).where(
-                    PinSignalAssignment.revision_id == revision_id,
-                    PinSignalAssignment.pin_id == pin_id,
-                    PinSignalAssignment.assignment_role == "primary",
-                )
-            )
-            if remaining.scalars().first():
-                continue
+        await self.prune_stale_auto_nets(
+            vehicle_id, revision_id, sync=False, changed_by=changed_by
+        )
 
-            has_destination = await self.db.execute(
-                select(ConnectionEdge.id).where(
-                    ConnectionEdge.revision_id == revision_id,
-                    or_(
-                        ConnectionEdge.pin_a_id == pin_id,
-                        ConnectionEdge.pin_b_id == pin_id,
-                    ),
-                ).limit(1)
-            )
-            if not has_destination.scalar_one_or_none():
-                continue
-
-            auto_name = await ensure_unique_net_name(
-                self.db, revision_id, await derive_lone_pin_net_name(self.db, pin_id)
-            )
-            auto_net = Signal(
-                revision_id=revision_id,
-                vehicle_id=vehicle_id,
-                name=auto_name,
-                signal_kind=SignalKind.CUSTOM,
-                metadata_={"auto_created": True, "reason": "net_deleted"},
-            )
-            self.db.add(auto_net)
-            await self.db.flush()
-            self.db.add(
-                PinSignalAssignment(
-                    revision_id=revision_id,
-                    pin_id=pin_id,
-                    signal_id=auto_net.id,
-                    assignment_role="primary",
-                )
-            )
-            created_auto.append(auto_name)
-
-        await self.db.flush()
         result = NetDeleteResult(
             deleted_net_id=net_id,
             deleted_net_name=net_name,
-            pins_reassigned=len(created_auto),
-            created_auto_nets=created_auto,
+            pins_reassigned=0,
+            created_auto_nets=[],
         )
         await self._sync(vehicle_id, revision_id, changed_by=changed_by)
         return result
@@ -283,10 +229,10 @@ class NetService:
                     )
                 )
         await self.db.flush()
+        await self.prune_stale_auto_nets(
+            vehicle_id, revision_id, sync=False, changed_by=changed_by
+        )
         if net_id is None:
-            await self.prune_stale_auto_nets(
-                vehicle_id, revision_id, sync=False, changed_by=changed_by
-            )
             if sync:
                 await self._sync(vehicle_id, revision_id, changed_by=changed_by)
             return None
@@ -341,17 +287,41 @@ class NetService:
             self.db.add(signal)
             await self.db.flush()
         else:
-            base = await derive_pair_net_name_for_pins(self.db, payload.pin_a_id, payload.pin_b_id)
-            name = await ensure_unique_net_name(self.db, revision_id, base)
-            signal = Signal(
-                revision_id=revision_id,
-                vehicle_id=vehicle_id,
-                name=name,
-                signal_kind=payload.signal_kind,
-                metadata_={"auto_created": True, "reason": "pin_pair"},
-            )
-            self.db.add(signal)
-            await self.db.flush()
+            net_a = await get_primary_net(self.db, revision_id, payload.pin_a_id)
+            net_b = await get_primary_net(self.db, revision_id, payload.pin_b_id)
+            if net_a and net_b:
+                if net_a.id == net_b.id:
+                    signal = net_a
+                else:
+                    target, loser = resolve_net_merge(net_a, net_b, None)
+                    if target is None:
+                        raise HTTPException(
+                            status_code=409,
+                            detail=(
+                                f"Pins are on different named nets ({net_a.name} and "
+                                f"{net_b.name}). Resolve the conflict in the connection table."
+                            ),
+                        )
+                    await absorb_net(self.db, revision_id, loser.id, target.id)
+                    signal = target
+            elif net_a:
+                signal = net_a
+            elif net_b:
+                signal = net_b
+            else:
+                base = await derive_pair_net_name_for_pins(
+                    self.db, payload.pin_a_id, payload.pin_b_id
+                )
+                name = await ensure_unique_net_name(self.db, revision_id, base)
+                signal = Signal(
+                    revision_id=revision_id,
+                    vehicle_id=vehicle_id,
+                    name=name,
+                    signal_kind=payload.signal_kind,
+                    metadata_={"auto_created": True, "reason": "pin_pair"},
+                )
+                self.db.add(signal)
+                await self.db.flush()
 
         pin_targets = await expand_pins_with_shorts(
             self.db, revision_id, [payload.pin_a_id, payload.pin_b_id]
@@ -410,6 +380,9 @@ class NetService:
             )
 
         detail = await self._build_net_detail(signal)
+        await self.prune_stale_auto_nets(
+            vehicle_id, revision_id, sync=False, changed_by=changed_by
+        )
         response = PinPairResponse(
             net=detail,
             edge=edge_response,
@@ -542,7 +515,7 @@ class NetService:
         sync: bool = True,
         changed_by: str | None = None,
     ) -> int:
-        """Delete auto-created nets when none of their pins have wire destinations."""
+        """Delete auto-created nets that are not a full connection (≥2 pins and ≥1 wire)."""
         signals = (
             await self.db.execute(select(Signal).where(Signal.revision_id == revision_id))
         ).scalars().all()
@@ -571,40 +544,44 @@ class NetService:
                 deleted += 1
                 continue
 
-            has_destination = await self.db.execute(
-                select(ConnectionEdge.id).where(
-                    ConnectionEdge.revision_id == revision_id,
-                    or_(
-                        ConnectionEdge.pin_a_id.in_(pin_ids),
-                        ConnectionEdge.pin_b_id.in_(pin_ids),
-                    ),
-                ).limit(1)
-            )
-            if has_destination.scalar_one_or_none():
+            if len(pin_ids) < 2:
+                await self._delete_orphan_auto_net(revision_id, signal)
+                deleted += 1
                 continue
 
-            await self.db.execute(
-                delete(PinSignalAssignment).where(
-                    PinSignalAssignment.revision_id == revision_id,
-                    PinSignalAssignment.signal_id == signal.id,
-                )
-            )
-            await self.db.execute(
-                update(ConnectionEdge)
-                .where(
+            has_wire = await self.db.execute(
+                select(ConnectionEdge.id).where(
                     ConnectionEdge.revision_id == revision_id,
-                    ConnectionEdge.signal_id == signal.id,
-                )
-                .values(signal_id=None)
+                    ConnectionEdge.pin_a_id.in_(pin_ids),
+                    ConnectionEdge.pin_b_id.in_(pin_ids),
+                ).limit(1)
             )
-            await self.db.delete(signal)
-            deleted += 1
+            if not has_wire.scalar_one_or_none():
+                await self._delete_orphan_auto_net(revision_id, signal)
+                deleted += 1
 
         if deleted:
             await self.db.flush()
             if sync:
                 await self._sync(vehicle_id, revision_id, changed_by=changed_by)
         return deleted
+
+    async def _delete_orphan_auto_net(self, revision_id: UUID, signal: Signal) -> None:
+        await self.db.execute(
+            delete(PinSignalAssignment).where(
+                PinSignalAssignment.revision_id == revision_id,
+                PinSignalAssignment.signal_id == signal.id,
+            )
+        )
+        await self.db.execute(
+            update(ConnectionEdge)
+            .where(
+                ConnectionEdge.revision_id == revision_id,
+                ConnectionEdge.signal_id == signal.id,
+            )
+            .values(signal_id=None)
+        )
+        await self.db.delete(signal)
 
     async def _get_net_or_404(self, revision_id: UUID, net_id: UUID) -> Signal:
         signal = await self.db.get(Signal, net_id)
