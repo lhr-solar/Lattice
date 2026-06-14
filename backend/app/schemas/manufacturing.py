@@ -3,8 +3,36 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from app.infrastructure.db.enums import HarnessScope
+from app.infra.db.enums import ConnectorCategory, ConnectorRole, HarnessScope
 from app.schemas.common import SchemaBase
+
+
+class BomRow(BaseModel):
+    connector_template_id: UUID
+    name: str | None
+    manufacturer: str | None
+    pin_count: int | None
+    wire_gauge_awg: float | None
+    connector_category: ConnectorCategory | None
+    default_role: ConnectorRole | None
+    male_part_number: str | None
+    female_part_number: str | None
+    male_crimp_part_number: str | None
+    female_crimp_part_number: str | None
+    key_code: str | None
+    is_inline_template: bool | None
+    default_is_panel_mount: bool | None
+    inline_part_number: str | None  # sourced from ConnectorTemplate.part_number
+    quantity: int
+
+
+class ManufacturerGroup(BaseModel):
+    manufacturer: str | None  # canonical trimmed label, or None for Unassigned
+    rows: list[BomRow]
+
+
+class ConnectorBomResponse(BaseModel):
+    groups: list[ManufacturerGroup]
 
 
 class HarnessGroupResponse(SchemaBase):
@@ -62,3 +90,63 @@ class ManufacturingProjectionResponse(BaseModel):
     internal_groups: list[HarnessGroupResponse]
     external_groups: list[HarnessGroupResponse]
     records: list[ManufacturingRecordResponse]
+
+
+class WireManufacturingUserInfo(SchemaBase):
+    user_id: UUID
+    username: str
+
+
+class WireRow(SchemaBase):
+    edge_id: UUID
+    signal_name: str | None
+    source_node: str | None
+    source_slot_id: str | None
+    source_connector: str
+    source_pin: str
+    source_pin_number: int
+    source_pin_name: str
+    destination_node: str | None
+    destination_enclosure: str | None
+    destination_slot_id: str | None
+    destination_connector_kind: str | None = None
+    destination_connector: str
+    destination_pin: str
+    destination_pin_number: int
+    destination_pin_name: str
+    wire_color: str | None
+    effective_wire_color: str | None
+    gauge_label: str
+    notes: str | None
+    harness_scope: HarnessScope | None
+    section_key: str
+    section_title: str | None
+    manufactured: bool
+    manufactured_by: WireManufacturingUserInfo | None
+    manufactured_at: datetime | None
+    manufactured_stale: bool = False
+    continuity_checked: bool
+    continuity_checked_by: WireManufacturingUserInfo | None
+    continuity_checked_at: datetime | None
+    continuity_checked_stale: bool = False
+
+
+class WireTableResponse(BaseModel):
+    revision_id: UUID
+    edit_sequence: int
+    rows: list[WireRow]
+
+
+class EdgeManufacturingUpdate(BaseModel):
+    manufactured: bool | None = None
+    continuity_checked: bool | None = None
+
+
+class EdgeManufacturingAuditResponse(SchemaBase):
+    id: UUID
+    connection_edge_id: UUID
+    field: str
+    previous_value: dict | None
+    new_value: dict
+    changed_by: WireManufacturingUserInfo | None
+    changed_at: datetime

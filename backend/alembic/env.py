@@ -4,8 +4,8 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from app.infrastructure.db.base import Base
-from app.infrastructure.db import models  # noqa: F401
+from app.infra.db.base import Base
+from app.infra.db import models  # noqa: F401
 
 config = context.config
 if config.config_file_name is not None:
@@ -15,7 +15,7 @@ target_metadata = Base.metadata
 
 database_url = os.getenv(
     "DATABASE_URL",
-    "postgresql+psycopg2://crimpassist:crimpassist@localhost:5432/crimpassist",
+    "postgresql+psycopg2://lattice:lattice@localhost:5432/lattice",
 ).replace("postgresql+asyncpg://", "postgresql+psycopg2://")
 
 config.set_main_option("sqlalchemy.url", database_url)

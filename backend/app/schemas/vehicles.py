@@ -3,7 +3,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from app.infrastructure.db.enums import RevisionStatus
+from app.infra.db.enums import RevisionStatus
 from app.schemas.common import SchemaBase, TimestampSchema
 
 
@@ -21,6 +21,8 @@ class VehicleResponse(TimestampSchema):
     name: str
     description: str | None
     current_revision_id: UUID | None = None
+    current_revision_number: int | None = None
+    current_revision_label: str | None = None
 
 
 class RevisionResponse(SchemaBase):
@@ -31,3 +33,7 @@ class RevisionResponse(SchemaBase):
     label: str | None
     is_immutable: bool
     created_at: datetime
+    edit_sequence: int = 0
+    created_by: str | None = None
+    parent_revision_id: UUID | None = None
+    snapshot_taken_at: datetime | None = None

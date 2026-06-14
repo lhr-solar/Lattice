@@ -7,6 +7,7 @@ class HierarchyNode(BaseModel):
     id: UUID
     kind: str
     label: str
+    template_label: str | None = None
     children: list["HierarchyNode"] = []
 
 

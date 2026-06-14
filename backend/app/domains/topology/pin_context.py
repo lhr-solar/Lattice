@@ -4,7 +4,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.infrastructure.db.models.instances import ConnectorInstance, EnclosureInstance, PcbInstance, Pin
+from app.infra.db.models.instances import ConnectorInstance, EnclosureInstance, PcbInstance, Pin
 
 
 @dataclass

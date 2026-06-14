@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import {
@@ -9,8 +9,14 @@ import {
   updateNet,
   type NetSummary,
 } from "@/api/nets";
+import { StaleRevisionBanner } from "@/components/shell/StaleRevisionBanner";
+import { handleMutationError } from "@/lib/mutationErrors";
+import { invalidateRevisionDomains } from "@/lib/revisionInvalidation";
 import { useAppStore } from "@/stores/appStore";
-import { ConfirmModal } from "@/components/ui/Modal";
+import { useRevisionSyncStore } from "@/stores/revisionSyncStore";
+import { ConfirmModal, ModalOverlay } from "@/components/ui/Modal";
+import { WireColorPresetButton } from "@/components/wiring/WireColorSwatch";
+import { WIRE_COLOR_PRESETS } from "@/lib/wireColors";
 
 type FilterTab = "all" | "named" | "auto";
 
@@ -25,8 +31,13 @@ export function NetManager() {
   const [filter, setFilter] = useState<FilterTab>("all");
   const [selectedNetId, setSelectedNetId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
+  const [editWireColor, setEditWireColor] = useState("");
   const [newNetName, setNewNetName] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const editSequence = useRevisionSyncStore((s) => s.editSequence);
+  const staleRevision = useRevisionSyncStore((s) => s.staleRevision);
+  const setDirtyForm = useRevisionSyncStore((s) => s.setDirtyForm);
 
   const autoNamedOnly = filter === "auto" ? true : filter === "named" ? false : undefined;
 
@@ -47,12 +58,35 @@ export function NetManager() {
   });
 
   const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: ["nets"] });
-    queryClient.invalidateQueries({ queryKey: ["net-detail"] });
-    queryClient.invalidateQueries({ queryKey: ["pins"] });
-    queryClient.invalidateQueries({ queryKey: ["design-projection"] });
-    queryClient.invalidateQueries({ queryKey: ["topology-summary"] });
+    invalidateRevisionDomains(queryClient, [
+      "nets",
+      "net-detail",
+      "pins",
+      "design-projection",
+      "topology-summary",
+      "connection-table",
+    ]);
   };
+
+  const nameDirty = Boolean(
+    selectedNetId && netDetail && editName.trim() !== netDetail.name,
+  );
+  const wireColorDirty = Boolean(
+    selectedNetId &&
+      netDetail &&
+      editWireColor.trim() !== (netDetail.default_wire_color ?? ""),
+  );
+  const formDirty = nameDirty || wireColorDirty;
+
+  useEffect(() => {
+    if (netDetail) setEditWireColor(netDetail.default_wire_color ?? "");
+  }, [netDetail]);
+
+  useEffect(() => {
+    if (!showNetManager) return;
+    setDirtyForm(formDirty);
+    return () => setDirtyForm(false);
+  }, [showNetManager, formDirty, setDirtyForm]);
 
   const createMutation = useMutation({
     mutationFn: (name: string) => createNet(vehicleId!, revisionId!, { name }),
@@ -60,24 +94,41 @@ export function NetManager() {
       setNewNetName("");
       setSelectedNetId(net.id);
       setEditName(net.name);
+      setErrorMessage(null);
       invalidate();
     },
+    onError: (error) => setErrorMessage(handleMutationError(error, "Failed to create net.")),
   });
 
   const updateMutation = useMutation({
-    mutationFn: () => updateNet(vehicleId!, revisionId!, selectedNetId!, { name: editName }),
-    onSuccess: invalidate,
+    mutationFn: () => {
+      const body: {
+        name?: string;
+        default_wire_color?: string | null;
+        expected_edit_sequence?: number;
+      } = { expected_edit_sequence: editSequence };
+      if (nameDirty) body.name = editName.trim();
+      if (wireColorDirty) body.default_wire_color = editWireColor.trim() || null;
+      return updateNet(vehicleId!, revisionId!, selectedNetId!, body);
+    },
+    onSuccess: () => {
+      setErrorMessage(null);
+      invalidate();
+    },
+    onError: (error) => setErrorMessage(handleMutationError(error, "Failed to rename net.")),
   });
 
   const deleteMutation = useMutation({
     mutationFn: () => deleteNet(vehicleId!, revisionId!, selectedNetId!),
     onSuccess: (result) => {
       setSelectedNetId(null);
+      setErrorMessage(null);
       invalidate();
-      if (result.created_auto_nets.length) {
-        setFilter("auto");
+      if (result.created_auto_nets.length > 0) {
+        setFilter((current) => (current === "named" ? "auto" : current));
       }
     },
+    onError: (error) => setErrorMessage(handleMutationError(error, "Failed to delete net.")),
   });
 
   const sortedNets = useMemo(
@@ -88,9 +139,14 @@ export function NetManager() {
   if (!showNetManager) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 panel-fade-in">
-      <div className="flex h-[min(640px,90vh)] w-full max-w-4xl flex-col overflow-hidden rounded-lg border border-tesla-border bg-tesla-surface shadow-2xl">
-        <header className="flex items-center justify-between border-b border-tesla-border px-4 py-3">
+    <>
+    <ModalOverlay
+      onClose={() => setShowNetManager(false)}
+      layer="manager"
+      ariaLabel="Net manager"
+      panelClassName="flex h-[min(640px,90vh)] max-w-4xl flex-col overflow-hidden"
+    >
+      <header className="flex items-center justify-between border-b border-tesla-border px-4 py-3">
           <div>
             <h2 className="text-lg font-semibold">Net manager</h2>
             <p className="text-xs text-tesla-muted">
@@ -105,6 +161,11 @@ export function NetManager() {
             ✕
           </button>
         </header>
+
+        <div className="space-y-2 border-b border-tesla-border px-4 py-2">
+          <StaleRevisionBanner />
+          {errorMessage && <p className="text-xs text-amber-200">{errorMessage}</p>}
+        </div>
 
         <div className="flex min-h-0 flex-1">
           <div className="flex w-1/2 flex-col border-r border-tesla-border">
@@ -159,6 +220,7 @@ export function NetManager() {
                   onSelect={() => {
                     setSelectedNetId(net.id);
                     setEditName(net.name);
+                    setEditWireColor(net.default_wire_color ?? "");
                   }}
                 />
               ))}
@@ -183,12 +245,32 @@ export function NetManager() {
                   />
                   <button
                     type="button"
-                    disabled={updateMutation.isPending || editName === netDetail.name}
+                    disabled={
+                      updateMutation.isPending ||
+                      !formDirty ||
+                      staleRevision ||
+                      !editName.trim()
+                    }
                     onClick={() => updateMutation.mutate()}
                     className="rounded border border-tesla-border px-2 py-1 text-sm hover:border-tesla-accent"
                   >
                     Save
                   </button>
+                </div>
+                <label className="text-xs text-tesla-muted">Default wire color</label>
+                <p className="mb-1 text-[11px] text-tesla-muted">
+                  Applied to wires on this net unless a wire has its own color override.
+                </p>
+                <input
+                  value={editWireColor}
+                  onChange={(e) => setEditWireColor(e.target.value)}
+                  placeholder="e.g. RED, BLU, BLK/WHT"
+                  className="mb-2 w-full rounded-md border border-tesla-border bg-tesla-bg px-2 py-1.5 text-sm"
+                />
+                <div className="mb-3 flex flex-wrap gap-1">
+                  {WIRE_COLOR_PRESETS.map((c) => (
+                    <WireColorPresetButton key={c} code={c} onClick={() => setEditWireColor(c)} />
+                  ))}
                 </div>
                 <p className="mb-2 text-xs text-tesla-muted">
                   {netDetail.is_auto_named ? "Auto-named" : netDetail.signal_kind} ·{" "}
@@ -221,8 +303,8 @@ export function NetManager() {
             )}
           </div>
         </div>
-      </div>
-      <ConfirmModal
+    </ModalOverlay>
+    <ConfirmModal
         open={showDeleteConfirm}
         title="Delete net"
         message={
@@ -240,7 +322,7 @@ export function NetManager() {
           });
         }}
       />
-    </div>
+    </>
   );
 }
 

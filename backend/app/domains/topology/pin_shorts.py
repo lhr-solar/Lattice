@@ -3,7 +3,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.infrastructure.db.models.shorts import ConnectorInstancePinShort
+from app.infra.db.models.shorts import ConnectorInstancePinShort
 
 
 class PinShortIndex:
@@ -43,16 +43,28 @@ class PinShortIndex:
 async def load_short_index(
     db: AsyncSession, revision_id: UUID, connector_instance_id: UUID
 ) -> PinShortIndex:
-    index = PinShortIndex()
+    indexes = await load_short_indexes_for_connectors(db, revision_id, [connector_instance_id])
+    return indexes.get(connector_instance_id, PinShortIndex())
+
+
+async def load_short_indexes_for_connectors(
+    db: AsyncSession,
+    revision_id: UUID,
+    connector_instance_ids: list[UUID],
+) -> dict[UUID, PinShortIndex]:
+    indexes = {cid: PinShortIndex() for cid in connector_instance_ids}
+    if not connector_instance_ids:
+        return indexes
     result = await db.execute(
         select(ConnectorInstancePinShort).where(
             ConnectorInstancePinShort.revision_id == revision_id,
-            ConnectorInstancePinShort.connector_instance_id == connector_instance_id,
+            ConnectorInstancePinShort.connector_instance_id.in_(connector_instance_ids),
         )
     )
     for short in result.scalars().all():
+        index = indexes.setdefault(short.connector_instance_id, PinShortIndex())
         index.union(short.pin_a_id, short.pin_b_id)
-    return index
+    return indexes
 
 
 async def expand_pins_with_shorts(
@@ -60,7 +72,7 @@ async def expand_pins_with_shorts(
 ) -> list[UUID]:
     if not pin_ids:
         return []
-    from app.infrastructure.db.models.instances import Pin
+    from app.infra.db.models.instances import Pin
 
     first_pin = await db.get(Pin, pin_ids[0])
     if not first_pin:

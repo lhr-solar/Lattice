@@ -2,15 +2,15 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-crimpassist}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-crimpassist}
-      POSTGRES_DB: ${POSTGRES_DB:-crimpassist}
+      POSTGRES_USER: ${POSTGRES_USER:-lattice}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lattice}
+      POSTGRES_DB: ${POSTGRES_DB:-lattice}
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-crimpassist}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lattice}"]
       interval: 5s
       timeout: 5s
       retries: 5

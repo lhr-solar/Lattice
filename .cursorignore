@@ -1,0 +1,38 @@
+# Obsidian vault — personal notes + large upstream submodules
+lattice-agent-vault/_vendor/
+lattice-agent-vault/.second-brain/scripts/
+lattice-agent-vault/.claude/
+lattice-agent-vault/.github/
+lattice-agent-vault/.shardmind/
+
+# Graphify generated output (use graphify CLI instead of indexing)
+graphify-out/
+
+# Dependencies and build artifacts
+node_modules/
+.venv/
+venv/
+frontend/dist/
+dist/
+build/
+
+# Caches and coverage
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# Lock files (low signal)
+package-lock.json
+
+# Large/binary assets
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.ico
+*.svg
+*.woff
+*.woff2

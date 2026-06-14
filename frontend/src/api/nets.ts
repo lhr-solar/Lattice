@@ -6,6 +6,7 @@ export interface NetSummary {
   signal_kind: string;
   is_auto_named: boolean;
   pin_count: number;
+  default_wire_color: string | null;
 }
 
 export interface NetPinInfo {
@@ -13,9 +14,11 @@ export interface NetPinInfo {
   pin_number: number;
   pin_name: string;
   connector_instance_id: string;
+  connector_template_id: string;
   connector_label: string;
   primary_net_id: string | null;
   primary_net_name: string | null;
+  shared_pinout?: boolean;
 }
 
 export interface NetDetail extends NetSummary {
@@ -51,7 +54,7 @@ export function fetchNet(vehicleId: string, revisionId: string, netId: string) {
 export function createNet(
   vehicleId: string,
   revisionId: string,
-  body: { name: string; signal_kind?: string },
+  body: { name: string; signal_kind?: string; default_wire_color?: string | null },
 ) {
   return apiFetch<NetDetail>(`/vehicles/${vehicleId}/revisions/${revisionId}/nets`, {
     method: "POST",
@@ -63,7 +66,12 @@ export function updateNet(
   vehicleId: string,
   revisionId: string,
   netId: string,
-  body: { name?: string; signal_kind?: string },
+  body: {
+    name?: string;
+    signal_kind?: string;
+    default_wire_color?: string | null;
+    expected_edit_sequence?: number;
+  },
 ) {
   return apiFetch<NetDetail>(`/vehicles/${vehicleId}/revisions/${revisionId}/nets/${netId}`, {
     method: "PATCH",
@@ -103,10 +111,23 @@ export function pairPins(
     create_edge?: boolean;
     wire_color?: string;
     replace_existing_primary?: boolean;
+    expected_edit_sequence?: number;
   },
 ) {
   return apiFetch<{ net: NetDetail; edge: unknown | null; assignments_created: number }>(
     `/vehicles/${vehicleId}/revisions/${revisionId}/nets/pair`,
     { method: "POST", body: JSON.stringify(body) },
+  );
+}
+
+export function assignPinNet(
+  vehicleId: string,
+  revisionId: string,
+  pinId: string,
+  netId: string | null,
+) {
+  return apiFetch<NetDetail | { unassigned: boolean }>(
+    `/vehicles/${vehicleId}/revisions/${revisionId}/nets/pins/${pinId}/assignment`,
+    { method: "PUT", body: JSON.stringify({ net_id: netId }) },
   );
 }

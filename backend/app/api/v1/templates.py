@@ -7,8 +7,10 @@ from app.api.deps import get_db
 from app.schemas.templates import (
     EnclosureTemplateCreate,
     EnclosureTemplateResponse,
+    EnclosureTemplateUpdate,
     PcbTemplateCreate,
     PcbTemplateResponse,
+    PcbTemplateUpdate,
 )
 from app.services.template_service import TemplateService
 
@@ -39,6 +41,26 @@ async def get_pcb_template(
     return await TemplateService(db).get_pcb_template(template_id)
 
 
+@router.patch("/pcb-templates/{template_id}", response_model=PcbTemplateResponse)
+async def update_pcb_template(
+    vehicle_id: UUID,
+    template_id: UUID,
+    payload: PcbTemplateUpdate,
+    db: AsyncSession = Depends(get_db),
+) -> PcbTemplateResponse:
+    return await TemplateService(db).update_pcb_template(vehicle_id, template_id, payload)
+
+
+@router.delete("/pcb-templates/{template_id}", status_code=204)
+async def delete_pcb_template(
+    vehicle_id: UUID,
+    template_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    await TemplateService(db).delete_pcb_template(vehicle_id, template_id)
+    return None
+
+
 @router.get("/enclosure-templates", response_model=list[EnclosureTemplateResponse])
 async def list_enclosure_templates(
     vehicle_id: UUID, db: AsyncSession = Depends(get_db)
@@ -63,3 +85,23 @@ async def get_enclosure_template(
 ) -> EnclosureTemplateResponse:
     _ = vehicle_id
     return await TemplateService(db).get_enclosure_template(template_id)
+
+
+@router.patch("/enclosure-templates/{template_id}", response_model=EnclosureTemplateResponse)
+async def update_enclosure_template(
+    vehicle_id: UUID,
+    template_id: UUID,
+    payload: EnclosureTemplateUpdate,
+    db: AsyncSession = Depends(get_db),
+) -> EnclosureTemplateResponse:
+    return await TemplateService(db).update_enclosure_template(vehicle_id, template_id, payload)
+
+
+@router.delete("/enclosure-templates/{template_id}", status_code=204)
+async def delete_enclosure_template(
+    vehicle_id: UUID,
+    template_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    await TemplateService(db).delete_enclosure_template(vehicle_id, template_id)
+    return None

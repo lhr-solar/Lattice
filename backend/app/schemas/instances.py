@@ -3,7 +3,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from app.infrastructure.db.enums import ConnectorRole
+from app.infra.db.enums import ConnectorGender, ConnectorRole
 from app.schemas.common import SchemaBase
 
 
@@ -19,6 +19,7 @@ class PcbInstanceCreate(InstanceCreateBase):
 
 class EnclosureInstanceCreate(InstanceCreateBase):
     enclosure_template_id: UUID
+    parent_enclosure_instance_id: UUID | None = None
 
 
 class ConnectorInstanceCreate(InstanceCreateBase):
@@ -26,6 +27,7 @@ class ConnectorInstanceCreate(InstanceCreateBase):
     enclosure_instance_id: UUID | None = None
     pcb_instance_id: UUID | None = None
     is_panel_mount: bool = False
+    inline_gender: ConnectorGender | None = None
     role: ConnectorRole | None = None
 
 
@@ -47,6 +49,7 @@ class PcbInstanceResponse(InstanceResponse):
 
 class EnclosureInstanceResponse(InstanceResponse):
     enclosure_template_id: UUID
+    parent_enclosure_instance_id: UUID | None = None
     connector_instance_ids: list[UUID] = []
     pcb_instance_ids: list[UUID] = []
 
@@ -55,7 +58,11 @@ class ConnectorInstanceResponse(InstanceResponse):
     connector_template_id: UUID
     pcb_instance_id: UUID | None
     enclosure_instance_id: UUID | None
+    source_pcb_template_slot_id: UUID | None = None
+    source_pcb_instance_id: UUID | None = None
+    pin_origin_note: str | None = None
     is_panel_mount: bool
+    inline_gender: ConnectorGender | None = None
     role: ConnectorRole | None
     pin_ids: list[UUID] = []
 
@@ -66,3 +73,39 @@ class PinResponse(SchemaBase):
     pin_number: int
     name: str
     role: ConnectorRole | None
+
+
+class PinUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=128)
+    expected_edit_sequence: int | None = None
+
+
+class PinoutPinUpdate(BaseModel):
+    pin_number: int = Field(ge=1)
+    name: str = Field(min_length=1, max_length=128)
+
+
+class ConnectorPinoutUpdate(BaseModel):
+    pins: list[PinoutPinUpdate] = Field(min_length=1)
+    expected_edit_sequence: int | None = None
+
+
+class ConnectorPinoutResponse(BaseModel):
+    connector_instance_id: UUID
+    shared_pinout: bool
+    pins: list[PinResponse]
+
+
+class ConnectorInstanceUpdate(BaseModel):
+    nickname: str | None = Field(default=None, max_length=255)
+    expected_edit_sequence: int | None = None
+
+
+class EnclosureInstanceUpdate(BaseModel):
+    nickname: str | None = Field(default=None, max_length=255)
+    expected_edit_sequence: int | None = None
+
+
+class PcbInstanceUpdate(BaseModel):
+    nickname: str | None = Field(default=None, max_length=255)
+    expected_edit_sequence: int | None = None

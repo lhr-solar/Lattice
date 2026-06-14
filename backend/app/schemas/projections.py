@@ -4,7 +4,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 
-ProjectionLevel = Literal["vehicle", "enclosure", "connector", "pin"]
+ProjectionLevel = Literal["vehicle", "enclosure", "node", "connector", "pin"]
 
 
 class DesignNodeDto(BaseModel):
@@ -40,4 +40,27 @@ class DesignGraphProjectionDto(BaseModel):
     nodes: list[DesignNodeDto]
     edges: list[DesignEdgeDto]
     bus_groups: list[BusGroupDto] = []
+    meta: dict[str, Any] = Field(default_factory=dict)
+
+
+class TopologyGraphNodeDto(BaseModel):
+    id: str
+    entity_kind: Literal["enclosure_instance", "pcb_instance"]
+    label: str
+    template_label: str | None = None
+    position: dict[str, float] | None = None
+
+
+class TopologyGraphEdgeDto(BaseModel):
+    id: str
+    source: str
+    target: str
+    wire_count: int
+
+
+class TopologyGraphProjectionDto(BaseModel):
+    revision_id: UUID
+    view_key: str
+    nodes: list[TopologyGraphNodeDto]
+    edges: list[TopologyGraphEdgeDto]
     meta: dict[str, Any] = Field(default_factory=dict)

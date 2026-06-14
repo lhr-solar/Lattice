@@ -1,74 +1,118 @@
 import { apiFetch } from "./client";
 
-export interface HarnessGroup {
-  id: string;
-  name: string;
-  scope: "internal" | "external";
-  enclosure_instance_id: string | null;
-  edge_ids: string[];
+export interface WireManufacturingUserInfo {
+  user_id: string;
+  username: string;
 }
 
-export interface ManufacturingRecord {
-  id: string;
-  harness_group_id: string;
-  harness_group_name: string | null;
+export interface WireRow {
+  edge_id: string;
+  signal_name: string | null;
+  source_node: string | null;
+  source_slot_id: string | null;
+  source_connector: string;
+  source_pin: string;
+  source_pin_number: number;
+  source_pin_name: string;
+  destination_node: string | null;
+  destination_enclosure: string | null;
+  destination_slot_id: string | null;
+  destination_connector_kind: string | null;
+  destination_connector: string;
+  destination_pin: string;
+  destination_pin_number: number;
+  destination_pin_name: string;
+  wire_color: string | null;
+  effective_wire_color: string | null;
+  gauge_label: string;
+  notes: string | null;
   harness_scope: "internal" | "external" | null;
-  built_by: string | null;
-  built_at: string | null;
-  continuity_checked_by: string | null;
+  section_key: string;
+  section_title: string | null;
+  manufactured: boolean;
+  manufactured_by: WireManufacturingUserInfo | null;
+  manufactured_at: string | null;
+  manufactured_stale: boolean;
+  continuity_checked: boolean;
+  continuity_checked_by: WireManufacturingUserInfo | null;
   continuity_checked_at: string | null;
-  status: string;
+  continuity_checked_stale: boolean;
 }
 
-export interface ManufacturingProjection {
+export interface WireTableResponse {
   revision_id: string;
-  internal_groups: HarnessGroup[];
-  external_groups: HarnessGroup[];
-  records: ManufacturingRecord[];
+  edit_sequence: number;
+  rows: WireRow[];
 }
 
-export function fetchManufacturingProjection(vehicleId: string, revisionId: string) {
-  return apiFetch<ManufacturingProjection>(
-    `/vehicles/${vehicleId}/revisions/${revisionId}/manufacturing/projection`,
+export interface BomRow {
+  connector_template_id: string;
+  name: string | null;
+  manufacturer: string | null;
+  pin_count: number | null;
+  wire_gauge_awg: number | null;
+  connector_category: string | null;
+  default_role: string | null;
+  male_part_number: string | null;
+  female_part_number: string | null;
+  male_crimp_part_number: string | null;
+  female_crimp_part_number: string | null;
+  key_code: string | null;
+  is_inline_template: boolean | null;
+  default_is_panel_mount: boolean | null;
+  inline_part_number: string | null;
+  quantity: number;
+}
+
+export interface ManufacturerGroup {
+  manufacturer: string | null;
+  rows: BomRow[];
+}
+
+export interface ConnectorBomResponse {
+  groups: ManufacturerGroup[];
+}
+
+export interface WireTableParams {
+  vehicle_level?: boolean;
+  enclosure_instance_id?: string;
+  pcb_instance_id?: string;
+  connector_instance_id?: string;
+  search?: string;
+}
+
+function wireTableQuery(params: WireTableParams): string {
+  const q = new URLSearchParams();
+  if (params.vehicle_level) q.set("vehicle_level", "true");
+  if (params.enclosure_instance_id) q.set("enclosure_instance_id", params.enclosure_instance_id);
+  if (params.pcb_instance_id) q.set("pcb_instance_id", params.pcb_instance_id);
+  if (params.connector_instance_id) q.set("connector_instance_id", params.connector_instance_id);
+  if (params.search) q.set("search", params.search);
+  const qs = q.toString();
+  return qs ? `?${qs}` : "";
+}
+
+export function fetchWireTable(vehicleId: string, revisionId: string, params: WireTableParams = {}) {
+  return apiFetch<WireTableResponse>(
+    `/vehicles/${vehicleId}/revisions/${revisionId}/manufacturing/wire-table${wireTableQuery(params)}`,
   );
 }
 
-export function syncHarnessGroups(vehicleId: string, revisionId: string) {
-  return apiFetch<HarnessGroup[]>(
-    `/vehicles/${vehicleId}/revisions/${revisionId}/manufacturing/harness-groups/sync`,
-    { method: "POST" },
+export function fetchConnectorBom(vehicleId: string, revisionId: string) {
+  return apiFetch<ConnectorBomResponse>(
+    `/vehicles/${vehicleId}/revisions/${revisionId}/manufacturing/connector-bom`,
+    { timeoutMs: 30_000 },
   );
 }
 
-export function createManufacturingRecord(
+export function updateEdgeManufacturing(
   vehicleId: string,
   revisionId: string,
-  harnessGroupId: string,
+  edgeId: string,
+  payload: { manufactured?: boolean; continuity_checked?: boolean },
 ) {
-  return apiFetch<ManufacturingRecord>(
-    `/vehicles/${vehicleId}/revisions/${revisionId}/manufacturing/records`,
-    { method: "POST", body: JSON.stringify({ harness_group_id: harnessGroupId }) },
-  );
-}
-
-export function markBuilt(vehicleId: string, revisionId: string, recordId: string) {
-  return apiFetch<ManufacturingRecord>(
-    `/vehicles/${vehicleId}/revisions/${revisionId}/manufacturing/records/${recordId}`,
-    {
-      method: "PATCH",
-      body: JSON.stringify({ status: "built" }),
-    },
-  );
-}
-
-export function addContinuityCheck(
-  vehicleId: string,
-  revisionId: string,
-  recordId: string,
-  passed: boolean,
-) {
-  return apiFetch(
-    `/vehicles/${vehicleId}/revisions/${revisionId}/manufacturing/records/${recordId}/continuity-checks`,
-    { method: "POST", body: JSON.stringify({ passed, details: {} }) },
+  return apiFetch<WireRow>(
+    `/vehicles/${vehicleId}/revisions/${revisionId}/manufacturing/edges/${edgeId}/state`,
+    { method: "PATCH", body: JSON.stringify(payload) },
   );
 }

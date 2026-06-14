@@ -8,6 +8,7 @@ from app.schemas.common import SchemaBase
 class PinShortCreate(BaseModel):
     pin_a_id: UUID
     pin_b_id: UUID
+    expected_edit_sequence: int | None = None
 
 
 class PinShortResponse(SchemaBase):

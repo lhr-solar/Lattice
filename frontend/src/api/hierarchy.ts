@@ -4,6 +4,7 @@ export interface HierarchyNode {
   id: string;
   kind: string;
   label: string;
+  template_label?: string | null;
   children: HierarchyNode[];
 }
 

@@ -11,17 +11,32 @@ from app.domains.topology.net_naming import (
     get_pin_endpoint,
 )
 from app.domains.topology.pin_shorts import load_short_index
-from app.infrastructure.db.enums import SignalKind
-from app.infrastructure.db.models.shorts import ConnectorTemplatePinShort, ConnectorTemplatePinShortByName
-from app.infrastructure.db.models.instances import ConnectorInstance, Pin
-from app.infrastructure.db.models.shorts import ConnectorInstancePinShort
-from app.infrastructure.db.models.topology import PinSignalAssignment, Signal
+from app.infra.db.enums import SignalKind
+from app.infra.db.models.shorts import ConnectorTemplatePinShort, ConnectorTemplatePinShortByName
+from app.infra.db.models.instances import ConnectorInstance, Pin
+from app.infra.db.models.shorts import ConnectorInstancePinShort
+from app.infra.db.models.topology import PinSignalAssignment, Signal
 from app.schemas.shorts import PinShortCreate, PinShortResponse, TemplatePinShortCreate
+from app.services.revision_sync_service import DOMAINS_SHORTS, RevisionSyncService
 
 
 class ShortService:
     def __init__(self, db: AsyncSession):
         self.db = db
+
+    async def _sync(
+        self,
+        vehicle_id: UUID,
+        revision_id: UUID,
+        *,
+        changed_by: str | None = None,
+    ) -> None:
+        await RevisionSyncService(self.db).bump_and_notify(
+            vehicle_id=vehicle_id,
+            revision_id=revision_id,
+            domains=DOMAINS_SHORTS,
+            changed_by=changed_by,
+        )
 
     async def list_instance_shorts(
         self, revision_id: UUID, connector_instance_id: UUID
@@ -40,13 +55,23 @@ class ShortService:
         revision_id: UUID,
         connector_instance_id: UUID,
         payload: PinShortCreate,
+        *,
+        changed_by: str | None = None,
     ) -> PinShortResponse:
         await ensure_mutable_revision(self.db, revision_id, vehicle_id)
+        await RevisionSyncService(self.db).check_expected_sequence(
+            revision_id, payload.expected_edit_sequence, vehicle_id
+        )
         pin_a, pin_b = await self._validate_short_pins(
             revision_id, connector_instance_id, payload.pin_a_id, payload.pin_b_id
         )
 
         ordered = (pin_a, pin_b) if str(pin_a) < str(pin_b) else (pin_b, pin_a)
+        locked_pins = (
+            await self.db.execute(select(Pin).where(Pin.id.in_(ordered)).with_for_update())
+        ).scalars().all()
+        if len(locked_pins) != 2 or any(pin.revision_id != revision_id for pin in locked_pins):
+            raise HTTPException(status_code=404, detail="One or both pins not found")
         existing = await self.db.execute(
             select(ConnectorInstancePinShort).where(
                 ConnectorInstancePinShort.connector_instance_id == connector_instance_id,
@@ -70,16 +95,75 @@ class ShortService:
             vehicle_id, revision_id, connector_instance_id, payload.pin_a_id
         )
 
-        return PinShortResponse.model_validate(short)
+        response = PinShortResponse.model_validate(short)
+        sync = RevisionSyncService(self.db)
+        edit_sequence = await sync.bump_and_notify(
+            vehicle_id=vehicle_id,
+            revision_id=revision_id,
+            domains=DOMAINS_SHORTS,
+            changed_by=changed_by,
+        )
+        await sync.queue_mutation_patch(
+            vehicle_id=vehicle_id,
+            revision_id=revision_id,
+            edit_sequence=edit_sequence,
+            domains=DOMAINS_SHORTS,
+            covered_domains=["design-projection", "shorts"],
+            changed_by=changed_by,
+            patch={
+                "kind": "short_created",
+                "short_id": str(short.id),
+                "connector_instance_id": str(short.connector_instance_id),
+                "pin_a_id": str(short.pin_a_id),
+                "pin_b_id": str(short.pin_b_id),
+                "projection_edge_id": f"short:{short.id}",
+            },
+        )
+        return response
 
     async def delete_instance_short(
-        self, vehicle_id: UUID, revision_id: UUID, short_id: UUID
+        self,
+        vehicle_id: UUID,
+        revision_id: UUID,
+        short_id: UUID,
+        *,
+        expected_edit_sequence: int | None = None,
+        changed_by: str | None = None,
     ) -> None:
         await ensure_mutable_revision(self.db, revision_id, vehicle_id)
+        await RevisionSyncService(self.db).check_expected_sequence(
+            revision_id, expected_edit_sequence, vehicle_id
+        )
         short = await self.db.get(ConnectorInstancePinShort, short_id)
         if not short or short.revision_id != revision_id:
             raise HTTPException(status_code=404, detail="Short not found")
+        connector_instance_id = short.connector_instance_id
+        pin_a_id = short.pin_a_id
+        pin_b_id = short.pin_b_id
         await self.db.delete(short)
+        sync = RevisionSyncService(self.db)
+        edit_sequence = await sync.bump_and_notify(
+            vehicle_id=vehicle_id,
+            revision_id=revision_id,
+            domains=DOMAINS_SHORTS,
+            changed_by=changed_by,
+        )
+        await sync.queue_mutation_patch(
+            vehicle_id=vehicle_id,
+            revision_id=revision_id,
+            edit_sequence=edit_sequence,
+            domains=DOMAINS_SHORTS,
+            covered_domains=["design-projection", "shorts"],
+            changed_by=changed_by,
+            patch={
+                "kind": "short_deleted",
+                "short_id": str(short_id),
+                "connector_instance_id": str(connector_instance_id),
+                "pin_a_id": str(pin_a_id),
+                "pin_b_id": str(pin_b_id),
+                "projection_edge_id": f"short:{short_id}",
+            },
+        )
 
     async def apply_template_shorts_to_instance(
         self, revision_id: UUID, connector_instance_id: UUID, template_id: UUID, vehicle_id: UUID

@@ -17,6 +17,16 @@ export default {
       },
       fontFamily: {
         sans: ["Inter", "system-ui", "sans-serif"],
+        logo: [
+          "Orbitron",
+          "Rajdhani",
+          "Eurostile",
+          "Bank Gothic",
+          "Inter Tight",
+          "Sora",
+          "system-ui",
+          "sans-serif",
+        ],
       },
       transitionDuration: {
         DEFAULT: "200ms",

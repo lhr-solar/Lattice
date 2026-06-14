@@ -4,10 +4,12 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
+from app.core.auth_context import UserContext, get_current_user
 from app.schemas.nets import (
     NetCreate,
     NetDeleteResult,
     NetDetail,
+    PinNetAssignmentRequest,
     NetPinInfo,
     NetSummary,
     NetUpdate,
@@ -37,8 +39,11 @@ async def create_net(
     revision_id: UUID,
     payload: NetCreate,
     db: AsyncSession = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
 ) -> NetDetail:
-    return await NetService(db).create_net(vehicle_id, revision_id, payload)
+    return await NetService(db).create_net(
+        vehicle_id, revision_id, payload, changed_by=user.username
+    )
 
 
 @router.get("/pins", response_model=list[NetPinInfo])
@@ -59,8 +64,11 @@ async def pair_pins(
     revision_id: UUID,
     payload: PinPairRequest,
     db: AsyncSession = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
 ) -> PinPairResponse:
-    return await NetService(db).pair_pins(vehicle_id, revision_id, payload)
+    return await NetService(db).pair_pins(
+        vehicle_id, revision_id, payload, changed_by=user.username
+    )
 
 
 @router.get("/{net_id}", response_model=NetDetail)
@@ -81,8 +89,11 @@ async def update_net(
     net_id: UUID,
     payload: NetUpdate,
     db: AsyncSession = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
 ) -> NetDetail:
-    return await NetService(db).update_net(vehicle_id, revision_id, net_id, payload)
+    return await NetService(db).update_net(
+        vehicle_id, revision_id, net_id, payload, changed_by=user.username
+    )
 
 
 @router.delete("/{net_id}", response_model=NetDeleteResult)
@@ -91,8 +102,11 @@ async def delete_net(
     revision_id: UUID,
     net_id: UUID,
     db: AsyncSession = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
 ) -> NetDeleteResult:
-    return await NetService(db).delete_net(vehicle_id, revision_id, net_id)
+    return await NetService(db).delete_net(
+        vehicle_id, revision_id, net_id, changed_by=user.username
+    )
 
 
 @router.post("/{net_id}/pins/{pin_id}", response_model=NetDetail)
@@ -102,5 +116,25 @@ async def add_pin_to_net(
     net_id: UUID,
     pin_id: UUID,
     db: AsyncSession = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
 ) -> NetDetail:
-    return await NetService(db).assign_pin_to_net(vehicle_id, revision_id, net_id, pin_id)
+    return await NetService(db).assign_pin_to_net(
+        vehicle_id, revision_id, net_id, pin_id, changed_by=user.username
+    )
+
+
+@router.put("/pins/{pin_id}/assignment")
+async def set_pin_assignment(
+    vehicle_id: UUID,
+    revision_id: UUID,
+    pin_id: UUID,
+    payload: PinNetAssignmentRequest,
+    db: AsyncSession = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
+) -> NetDetail | dict[str, bool]:
+    detail = await NetService(db).assign_pin_to_net(
+        vehicle_id, revision_id, payload.net_id, pin_id, changed_by=user.username
+    )
+    if detail is None:
+        return {"unassigned": True}
+    return detail

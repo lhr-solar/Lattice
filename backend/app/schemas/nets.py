@@ -3,7 +3,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from app.infrastructure.db.enums import SignalKind
+from app.infra.db.enums import SignalKind
 from app.schemas.common import SchemaBase
 from app.schemas.topology import ConnectionEdgeResponse
 
@@ -13,6 +13,8 @@ class NetPinInfo(BaseModel):
     pin_number: int
     pin_name: str
     connector_instance_id: UUID
+    connector_template_id: UUID
+    shared_pinout: bool = False
     connector_label: str
     primary_net_id: UUID | None = None
     primary_net_name: str | None = None
@@ -24,6 +26,7 @@ class NetSummary(BaseModel):
     signal_kind: SignalKind
     is_auto_named: bool
     pin_count: int
+    default_wire_color: str | None = None
 
 
 class NetDetail(NetSummary):
@@ -34,11 +37,14 @@ class NetDetail(NetSummary):
 class NetCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     signal_kind: SignalKind = SignalKind.CUSTOM
+    default_wire_color: str | None = Field(default=None, max_length=64)
 
 
 class NetUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     signal_kind: SignalKind | None = None
+    default_wire_color: str | None = Field(default=None, max_length=64)
+    expected_edit_sequence: int | None = None
 
 
 class NetDeleteResult(BaseModel):
@@ -53,6 +59,7 @@ class PinPairRequest(BaseModel):
     pin_b_id: UUID
     net_id: UUID | None = None
     net_name: str | None = Field(default=None, min_length=1, max_length=255)
+    expected_edit_sequence: int | None = None
     signal_kind: SignalKind = SignalKind.CUSTOM
     create_edge: bool = True
     wire_color: str | None = None
@@ -64,3 +71,7 @@ class PinPairResponse(BaseModel):
     net: NetDetail
     edge: ConnectionEdgeResponse | None = None
     assignments_created: int
+
+
+class PinNetAssignmentRequest(BaseModel):
+    net_id: UUID | None = None

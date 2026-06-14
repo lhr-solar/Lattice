@@ -1,4 +1,4 @@
-export type ProjectionLevel = "vehicle" | "enclosure" | "connector" | "pin";
+export type ProjectionLevel = "vehicle" | "enclosure" | "node" | "connector" | "pin";
 
 export interface DesignNodeDto {
   id: string;
@@ -39,11 +39,54 @@ export interface Vehicle {
   name: string;
   description: string | null;
   current_revision_id: string | null;
+  current_revision_number?: number | null;
+  current_revision_label?: string | null;
   created_at: string;
   updated_at: string | null;
 }
 
-export interface SessionResponse {
-  session_id: string;
-  display_name: string;
+export interface User {
+  id: string;
+  username: string;
+  is_admin: boolean;
+}
+
+export interface AdminUser extends User {
+  is_connected: boolean;
+}
+
+export interface AuthResponse {
+  user: User;
+}
+
+// --- Topology Graph View ---
+
+export interface TopologyGraphNodeDto {
+  id: string;
+  entity_kind: "enclosure_instance" | "pcb_instance";
+  label: string;
+  template_label: string | null;
+  position: { x: number; y: number } | null;
+}
+
+export interface TopologyGraphEdgeDto {
+  id: string;
+  source: string;
+  target: string;
+  wire_count: number;
+}
+
+export interface TopologyGraphProjectionDto {
+  revision_id: string;
+  view_key: string;
+  nodes: TopologyGraphNodeDto[];
+  edges: TopologyGraphEdgeDto[];
+  meta: Record<string, unknown>;
+}
+
+export interface TopologyLayoutRecord {
+  entity_kind: "enclosure_instance" | "pcb_instance";
+  entity_id: string;
+  x: number;
+  y: number;
 }

@@ -15,6 +15,34 @@
 
   * {
     @apply border-tesla-border;
+    scrollbar-width: thin;
+    scrollbar-color: rgb(107 107 107 / 0.45) transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background-color: rgb(107 107 107 / 0.45);
+    border-radius: 9999px;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: #3b82f6;
+  }
+
+  *::-webkit-scrollbar-thumb:active {
+    background-color: #3b82f6;
   }
 }
 
@@ -35,9 +63,44 @@
   }
 }
 
+.nav-float-enter {
+  animation: navFloatEnter 280ms ease-out forwards;
+}
+
+.nav-float-backdrop {
+  animation: navBackdropEnter 220ms ease-out forwards;
+}
+
+@keyframes navFloatEnter {
+  from {
+    opacity: 0;
+    transform: translateX(-100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes navBackdropEnter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .panel-fade-in {
+  .panel-fade-in,
+  .nav-float-enter,
+  .nav-float-backdrop {
     animation: none;
+  }
+
+  .topbar-search-expand,
+  .topbar-library-collapse {
+    transition: none !important;
   }
 }
 
@@ -47,4 +110,31 @@
 
 .react-flow__minimap {
   background-color: #141414 !important;
+}
+
+.viewport-summary-chrome .react-flow__controls {
+  position: static !important;
+  box-shadow: none !important;
+}
+
+.viewport-summary-chrome .react-flow__minimap {
+  position: static !important;
+  margin: 0 !important;
+}
+
+/* Custom deletable edges use a narrow hit path; disable the default wide interaction stroke. */
+.react-flow__edge-interaction {
+  pointer-events: none;
+}
+
+.deletable-edge-hit {
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+/* Keep label chrome readable where wires pass through — without suppressing wire endpoints. */
+.topology-label {
+  position: relative;
+  z-index: 1;
+  isolation: isolate;
 }

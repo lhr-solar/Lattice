@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.infrastructure.db.models.vehicle import Revision
+from app.infra.db.models.vehicle import Revision
 
 
 async def get_revision_or_404(db: AsyncSession, revision_id: UUID, vehicle_id: UUID | None = None) -> Revision:

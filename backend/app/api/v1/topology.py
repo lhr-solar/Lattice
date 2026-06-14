@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
-from app.core.auth_context import UserContext, get_optional_user_context
+from app.core.auth_context import UserContext, get_current_user
 from app.schemas.topology import (
     ConnectionEdgeCreate,
     ConnectionEdgeResponse,
@@ -38,8 +38,11 @@ async def create_edge(
     revision_id: UUID,
     payload: ConnectionEdgeCreate,
     db: AsyncSession = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
 ) -> ConnectionEdgeResponse:
-    return await TopologyService(db).create_edge(vehicle_id, revision_id, payload)
+    return await TopologyService(db).create_edge(
+        vehicle_id, revision_id, payload, changed_by=user.username
+    )
 
 
 @router.patch("/edges/{edge_id}", response_model=ConnectionEdgeResponse)
@@ -49,10 +52,11 @@ async def update_edge(
     edge_id: UUID,
     payload: ConnectionEdgeUpdate,
     db: AsyncSession = Depends(get_db),
-    user: UserContext | None = Depends(get_optional_user_context),
+    user: UserContext = Depends(get_current_user),
 ) -> ConnectionEdgeResponse:
-    _ = user
-    return await TopologyService(db).update_edge(vehicle_id, revision_id, edge_id, payload)
+    return await TopologyService(db).update_edge(
+        vehicle_id, revision_id, edge_id, payload, changed_by=user.username
+    )
 
 
 @router.delete("/edges/{edge_id}", status_code=204)
@@ -61,6 +65,9 @@ async def delete_edge(
     revision_id: UUID,
     edge_id: UUID,
     db: AsyncSession = Depends(get_db),
+    user: UserContext = Depends(get_current_user),
 ) -> Response:
-    await TopologyService(db).delete_edge(vehicle_id, revision_id, edge_id)
+    await TopologyService(db).delete_edge(
+        vehicle_id, revision_id, edge_id, changed_by=user.username
+    )
     return Response(status_code=204)

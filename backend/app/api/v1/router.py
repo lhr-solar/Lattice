@@ -1,6 +1,10 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from app.api.v1 import (
+    admin,
+    auth,
+    connections,
+    realtime,
     connector_templates,
     graph,
     hierarchy,
@@ -8,29 +12,42 @@ from app.api.v1 import (
     layouts,
     manufacturing,
     nets,
+    pin_names,
+    pin_templates,
     projections,
     revisions,
     shorts,
-    session,
     templates,
     topology,
+    topology_graph,
     validation,
     vehicles,
 )
+from app.core.auth_context import get_current_user
 
 api_router = APIRouter()
-api_router.include_router(session.router)
-api_router.include_router(connector_templates.router)
-api_router.include_router(vehicles.router)
-api_router.include_router(templates.router)
-api_router.include_router(revisions.router)
-api_router.include_router(instances.router)
-api_router.include_router(hierarchy.router)
-api_router.include_router(topology.router)
-api_router.include_router(nets.router)
-api_router.include_router(shorts.router)
-api_router.include_router(graph.router)
-api_router.include_router(projections.router)
-api_router.include_router(validation.router)
-api_router.include_router(manufacturing.router)
-api_router.include_router(layouts.router)
+api_router.include_router(auth.router)
+api_router.include_router(realtime.router)
+
+protected_router = APIRouter(dependencies=[Depends(get_current_user)])
+protected_router.include_router(admin.router)
+protected_router.include_router(connector_templates.router)
+protected_router.include_router(vehicles.router)
+protected_router.include_router(templates.router)
+protected_router.include_router(revisions.router)
+protected_router.include_router(instances.router)
+protected_router.include_router(hierarchy.router)
+protected_router.include_router(topology.router)
+protected_router.include_router(nets.router)
+protected_router.include_router(pin_names.router)
+protected_router.include_router(pin_templates.router)
+protected_router.include_router(connections.router)
+protected_router.include_router(shorts.router)
+protected_router.include_router(graph.router)
+protected_router.include_router(projections.router)
+protected_router.include_router(topology_graph.router)
+protected_router.include_router(validation.router)
+protected_router.include_router(manufacturing.router)
+protected_router.include_router(layouts.router)
+
+api_router.include_router(protected_router)
