@@ -29,6 +29,7 @@ import { WireColorPresetButton, WireColorSwatch } from "@/components/wiring/Wire
 import { WIRE_COLOR_PRESETS } from "@/lib/wireColors";
 import { useAutoDismiss } from "@/hooks/useAutoDismiss";
 import { invalidateRevisionDomains } from "@/lib/revisionInvalidation";
+import { isBlueSectionTitle } from "@/lib/tableSectionStyles";
 import { TopologyDestinationPicker } from "@/features/connections/TopologyDestinationPicker";
 import { useRevisionSyncStore } from "@/stores/revisionSyncStore";
 
@@ -67,6 +68,14 @@ interface TableSection {
 }
 
 const KIND_RANK: Record<string, number> = { panel: 0, pigtail: 1, pcb: 2, inline: 3 };
+
+function connectorKindLabel(kind: string | null | undefined): string {
+  if (kind === "panel") return "panel mount";
+  if (kind === "pigtail") return "pigtail";
+  if (kind === "pcb") return "node";
+  if (kind === "inline") return "inline";
+  return kind ?? "";
+}
 
 /** Group pins by connector, then into level-appropriate sections that mirror the
  *  flow "bubbling": vehicle -> container, enclosure -> node + panel/pigtail. */
@@ -327,7 +336,12 @@ export function ConnectionTable() {
                 <div key={section.key}>
                   {section.title && (
                     <div className="sticky top-0 z-[2] flex items-baseline gap-2 border-b border-tesla-border bg-tesla-surface/95 px-3 py-1.5 backdrop-blur">
-                      <span className="text-xs font-semibold uppercase tracking-wide text-tesla-text">
+                      <span
+                        className={clsx(
+                          "text-xs font-semibold uppercase tracking-wide",
+                          isBlueSectionTitle(section.key) ? "text-tesla-accent" : "text-tesla-text",
+                        )}
+                      >
                         {section.title}
                       </span>
                       {section.subtitle && (
@@ -531,10 +545,12 @@ function ConnectorGroup({
                 ? "bg-amber-500/15 text-amber-300"
                 : kindTag === "panel"
                   ? "bg-sky-500/15 text-sky-300"
-                  : "bg-tesla-border/40 text-tesla-muted",
+                  : kindTag === "pcb"
+                    ? "bg-emerald-500/15 text-emerald-300"
+                    : "bg-tesla-border/40 text-tesla-muted",
             )}
           >
-            {kindTag}
+            {connectorKindLabel(kindTag)}
           </span>
         )}
         {container && <span className="text-xs text-tesla-muted">{container}</span>}
@@ -771,9 +787,10 @@ function NetCell({
         className={clsx(
           "w-full truncate rounded border px-2 py-1 text-left text-xs transition",
           row.primary_net_name
-            ? row.is_auto_net
-              ? "border-tesla-border bg-tesla-bg text-tesla-muted hover:border-tesla-accent"
-              : "border-tesla-accent/40 bg-tesla-accent/5 text-tesla-text hover:border-tesla-accent"
+            ? clsx(
+                "border-tesla-accent/40 bg-tesla-accent/5 hover:border-tesla-accent",
+                row.is_auto_net ? "text-tesla-muted" : "text-tesla-text",
+              )
             : "border-dashed border-tesla-border text-tesla-muted hover:border-tesla-accent",
         )}
         title={row.primary_net_name ?? "Assign net"}

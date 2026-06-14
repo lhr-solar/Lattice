@@ -9,6 +9,7 @@ import {
 } from "@/api/manufacturing";
 import { useAppStore } from "@/stores/appStore";
 import { invalidateRevisionDomains } from "@/lib/revisionInvalidation";
+import { isBlueSectionTitle } from "@/lib/tableSectionStyles";
 import { WireColorSwatch } from "@/components/wiring/WireColorSwatch";
 
 type SortKey =
@@ -305,7 +306,12 @@ export function WireTableView({
             <div key={group.key}>
               {groupMode !== "none" && (
                 <div className="sticky top-0 z-[2] border-b border-tesla-border bg-tesla-surface/95 px-3 py-1.5 backdrop-blur">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-tesla-text">
+                  <span
+                    className={clsx(
+                      "text-xs font-semibold uppercase tracking-wide",
+                      isBlueSectionTitle(group.key) ? "text-tesla-accent" : "text-tesla-text",
+                    )}
+                  >
                     {group.title}
                   </span>
                   <span className="ml-2 text-[11px] text-tesla-muted">

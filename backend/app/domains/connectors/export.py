@@ -53,18 +53,46 @@ def supports_node_slot_template(template: ConnectorTemplate) -> bool:
     return template.connector_category == ConnectorCategory.WIRE_TO_BOARD
 
 
+def is_node_slot_panel_mount_template(template: ConnectorTemplate) -> bool:
+    return (
+        template.connector_category == ConnectorCategory.WIRE_TO_BOARD
+        and template.default_is_panel_mount
+    )
+
+
 def is_pigtail_instance(conn: ConnectorInstance, template: ConnectorTemplate) -> bool:
-    """Exported from a node slot and shown as a pigtail (not bubbled panel mount)."""
-    if conn.source_pcb_instance_id is None:
+    """Node-slot connector shown as pigtail (dotted), not panel mount."""
+    if conn.pcb_instance_id is not None and not conn.is_panel_mount:
+        if template.connector_category == ConnectorCategory.WIRE_TO_BOARD:
+            return not template.default_is_panel_mount
         return False
-    if template.connector_category == ConnectorCategory.WIRE_TO_BOARD:
-        return not template.default_is_panel_mount
-    return True
+
+    # Exported from a node slot — pigtail unless the template auto-bubbles as panel mount.
+    if conn.pcb_instance_id is not None and conn.is_panel_mount:
+        return not is_node_slot_panel_mount_template(template)
+
+    if conn.source_pcb_instance_id is not None:
+        return not is_node_slot_panel_mount_template(template)
+
+    return False
 
 
 def connector_kind_for_instance(conn: ConnectorInstance, template: ConnectorTemplate) -> str:
-    if is_pigtail_instance(conn, template):
+    # On-board node slot, not exported to the enclosure panel area.
+    if conn.pcb_instance_id is not None and not conn.is_panel_mount:
+        return "pcb"
+
+    # Exported from a node slot (is_panel_mount); classify by template bubble behavior.
+    if conn.pcb_instance_id is not None and conn.is_panel_mount:
+        if is_node_slot_panel_mount_template(template):
+            return "panel"
         return "pigtail"
+
+    if conn.source_pcb_instance_id is not None:
+        if is_node_slot_panel_mount_template(template):
+            return "panel"
+        return "pigtail"
+
     if conn.is_panel_mount:
         return "panel"
     if conn.pcb_instance_id is not None:
