@@ -50,42 +50,67 @@ export function isRevisionPublishedError(
   return error instanceof ApiError && Boolean(error.revisionPublished);
 }
 
+export interface ApiFetchOptions extends RequestInit {
+  timeoutMs?: number;
+}
+
 export async function apiFetch<T>(
   path: string,
-  options: RequestInit = {},
+  options: ApiFetchOptions = {},
 ): Promise<T> {
-  const headers = new Headers(options.headers);
-  if (options.body) {
+  const { timeoutMs, ...fetchOptions } = options;
+  const headers = new Headers(fetchOptions.headers);
+  if (fetchOptions.body) {
     headers.set("Content-Type", "application/json");
   }
 
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers,
-    credentials: "include",
-  });
+  let controller: AbortController | undefined;
+  let timeoutId: any;
 
-  if (!response.ok) {
-    const body = await response.text();
-    let message = body || response.statusText;
-    let detail: ApiErrorDetail | undefined;
-    try {
-      const parsed = JSON.parse(body) as { detail?: ApiErrorDetail };
-      detail = parsed.detail;
-      if (typeof detail === "string") {
-        message = detail;
-      } else if (detail && typeof detail === "object" && "message" in detail) {
-        message = detail.message;
+  if (timeoutMs) {
+    controller = new AbortController();
+    fetchOptions.signal = controller.signal;
+    timeoutId = setTimeout(() => controller?.abort(), timeoutMs);
+  }
+
+  try {
+    const response = await fetch(`${API_BASE}${path}`, {
+      ...fetchOptions,
+      headers,
+      credentials: "include",
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      let message = body || response.statusText;
+      let detail: ApiErrorDetail | undefined;
+      try {
+        const parsed = JSON.parse(body) as { detail?: ApiErrorDetail };
+        detail = parsed.detail;
+        if (typeof detail === "string") {
+          message = detail;
+        } else if (detail && typeof detail === "object" && "message" in detail) {
+          message = detail.message;
+        }
+      } catch {
+        // keep raw body
       }
-    } catch {
-      // keep raw body
+      throw new ApiError(message, response.status, detail);
     }
-    throw new ApiError(message, response.status, detail);
-  }
 
-  if (response.status === 204) {
-    return undefined as T;
-  }
+    if (response.status === 204) {
+      return undefined as T;
+    }
 
-  return response.json() as Promise<T>;
+    return response.json() as Promise<T>;
+  } catch (err: any) {
+    if (err.name === "AbortError") {
+      throw new ApiError("Request timed out", 0);
+    }
+    throw err;
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  }
 }

@@ -344,8 +344,6 @@ function ChevronIcon({ expanded }: { expanded: boolean }) {
 export function HierarchyNav() {
   const queryClient = useQueryClient();
   const mode = useAppStore((s) => s.mode);
-  const manufacturingNavOpen = useAppStore((s) => s.manufacturingNavOpen);
-  const setManufacturingNavOpen = useAppStore((s) => s.setManufacturingNavOpen);
   const vehicleId = useAppStore((s) => s.selectedVehicleId);
   const revisionId = useAppStore((s) => s.selectedRevisionId);
   const selectedNodeId = useAppStore((s) => s.selectedNodeId);
@@ -484,60 +482,7 @@ export function HierarchyNav() {
   }, [searchQuery, filteredRoot, collapsedIds]);
 
   if (isManufacturing) {
-    return (
-      <>
-        {!manufacturingNavOpen && (
-          <button
-            type="button"
-            title="Open navigation"
-            aria-label="Open navigation"
-            onClick={() => setManufacturingNavOpen(true)}
-            className="absolute left-0 top-1/2 z-30 flex h-14 w-5 -translate-y-1/2 items-center justify-center rounded-r-md border border-l-0 border-tesla-border bg-tesla-surface/95 text-tesla-muted shadow-md backdrop-blur transition hover:w-6 hover:border-tesla-accent hover:bg-tesla-surface hover:text-tesla-text"
-          >
-            <span className="text-sm leading-none">›</span>
-          </button>
-        )}
-
-        {manufacturingNavOpen && (
-          <>
-            <button
-              type="button"
-              aria-label="Close navigation"
-              className="nav-float-backdrop absolute inset-0 z-30 bg-black/40"
-              onClick={() => setManufacturingNavOpen(false)}
-            />
-            <nav className="nav-float-enter absolute bottom-0 left-0 top-0 z-40 flex w-48 flex-col border-r border-tesla-border bg-tesla-surface shadow-2xl">
-              <div className="flex items-center justify-between border-b border-tesla-border px-2 py-2">
-                <span className="text-[10px] font-medium uppercase tracking-wider text-tesla-muted">
-                  Navigation
-                </span>
-                <button
-                  type="button"
-                  title="Collapse"
-                  onClick={() => setManufacturingNavOpen(false)}
-                  className="rounded px-1.5 py-0.5 text-sm text-tesla-muted transition hover:bg-tesla-border/50 hover:text-tesla-text"
-                >
-                  «
-                </button>
-              </div>
-              <div className="border-b border-tesla-border px-2 py-1.5">
-                <span className="text-[10px] font-medium uppercase tracking-wider text-tesla-muted">
-                  Vehicles
-                </span>
-              </div>
-              <VehiclesList
-                vehicles={vehicles}
-                vehicleId={vehicleId}
-                isLoading={isLoading}
-                onSelect={handleVehicleSelect}
-                compact
-              />
-              <UtilitiesButtons disabled={!vehicleId} compact vertical />
-            </nav>
-          </>
-        )}
-      </>
-    );
+    return null;
   }
 
   return (

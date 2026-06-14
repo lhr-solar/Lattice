@@ -58,3 +58,35 @@ export interface AdminUser extends User {
 export interface AuthResponse {
   user: User;
 }
+
+// --- Topology Graph View ---
+
+export interface TopologyGraphNodeDto {
+  id: string;
+  entity_kind: "enclosure_instance" | "pcb_instance";
+  label: string;
+  template_label: string | null;
+  position: { x: number; y: number } | null;
+}
+
+export interface TopologyGraphEdgeDto {
+  id: string;
+  source: string;
+  target: string;
+  wire_count: number;
+}
+
+export interface TopologyGraphProjectionDto {
+  revision_id: string;
+  view_key: string;
+  nodes: TopologyGraphNodeDto[];
+  edges: TopologyGraphEdgeDto[];
+  meta: Record<string, unknown>;
+}
+
+export interface TopologyLayoutRecord {
+  entity_kind: "enclosure_instance" | "pcb_instance";
+  entity_id: string;
+  x: number;
+  y: number;
+}

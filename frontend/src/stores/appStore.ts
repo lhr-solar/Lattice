@@ -6,10 +6,12 @@ export type PinTemplatesMode = "manage" | "pick";
 export type PinTemplatesTab = "names" | "templates";
 
 export type AppMode = "design" | "manufacturing";
+export type GraphSubMode = "canvas" | "graph";
 export type LibraryTab = "connector" | "node" | "enclosure";
 
 interface AppState {
   mode: AppMode;
+  graphSubMode: GraphSubMode;
   selectedVehicleId: string | null;
   selectedRevisionId: string | null;
   projectionLevel: ProjectionLevel;
@@ -30,9 +32,8 @@ interface AppState {
   showHelpModal: boolean;
   libraryTab: LibraryTab;
   searchQuery: string;
-  manufacturingNavOpen: boolean;
   setMode: (mode: AppMode) => void;
-  setManufacturingNavOpen: (open: boolean) => void;
+  setGraphSubMode: (mode: GraphSubMode) => void;
   selectVehicle: (vehicleId: string | null, revisionId: string | null) => void;
   setProjectionLevel: (level: ProjectionLevel) => void;
   setFocus: (focusId: string | null, kind?: string | null) => void;
@@ -58,6 +59,7 @@ interface AppState {
 
 export const useAppStore = create<AppState>((set) => ({
   mode: "design",
+  graphSubMode: "canvas",
   selectedVehicleId: null,
   selectedRevisionId: null,
   projectionLevel: "vehicle",
@@ -78,10 +80,8 @@ export const useAppStore = create<AppState>((set) => ({
   showHelpModal: false,
   libraryTab: "connector",
   searchQuery: "",
-  manufacturingNavOpen: false,
-  setMode: (mode) =>
-    set(mode === "manufacturing" ? { mode, manufacturingNavOpen: false } : { mode }),
-  setManufacturingNavOpen: (manufacturingNavOpen) => set({ manufacturingNavOpen }),
+  setMode: (mode) => set({ mode }),
+  setGraphSubMode: (graphSubMode) => set({ graphSubMode }),
   selectVehicle: (vehicleId, revisionId) =>
     set({
       selectedVehicleId: vehicleId,
@@ -90,6 +90,7 @@ export const useAppStore = create<AppState>((set) => ({
       selectedNodeId: null,
       selectedNodeKind: null,
       projectionLevel: "vehicle",
+      graphSubMode: "canvas",
     }),
   setProjectionLevel: (projectionLevel) => set({ projectionLevel }),
   setFocus: (focusId, kind = null) => set({ focusId, selectedNodeId: focusId, selectedNodeKind: kind }),

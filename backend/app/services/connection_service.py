@@ -470,7 +470,10 @@ class ConnectionService:
                 other_node_label=octx.node_label if octx else None,
                 other_enclosure_label=octx.enclosure_label if octx else None,
                 other_connector_kind=octx.connector_kind if octx else None,
+                other_slot_key=octx.slot_key if octx else None,
                 other_path_label=self._path_label(octx, other),
+
+
                 wire_color=edge.wire_color,
                 effective_wire_color=effective_wire_color(edge.wire_color, net_default),
                 net_default_wire_color=net_default,

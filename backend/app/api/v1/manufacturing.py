@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_db
 from app.core.auth_context import UserContext, get_current_user
 from app.schemas.manufacturing import (
+    ConnectorBomResponse,
     ContinuityCheckCreate,
     ContinuityCheckResponse,
     EdgeManufacturingUpdate,
@@ -30,6 +31,13 @@ async def manufacturing_projection(
     vehicle_id: UUID, revision_id: UUID, db: AsyncSession = Depends(get_db)
 ) -> ManufacturingProjectionResponse:
     return await ManufacturingService(db).get_projection(vehicle_id, revision_id)
+
+
+@router.get("/connector-bom", response_model=ConnectorBomResponse)
+async def connector_bom(
+    vehicle_id: UUID, revision_id: UUID, db: AsyncSession = Depends(get_db)
+) -> ConnectorBomResponse:
+    return await ManufacturingService(db).build_connector_bom(vehicle_id, revision_id)
 
 
 @router.post("/harness-groups/sync", response_model=list[HarnessGroupResponse])

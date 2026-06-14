@@ -3,8 +3,36 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from app.infra.db.enums import HarnessScope
+from app.infra.db.enums import ConnectorCategory, ConnectorRole, HarnessScope
 from app.schemas.common import SchemaBase
+
+
+class BomRow(BaseModel):
+    connector_template_id: UUID
+    name: str | None
+    manufacturer: str | None
+    pin_count: int | None
+    wire_gauge_awg: float | None
+    connector_category: ConnectorCategory | None
+    default_role: ConnectorRole | None
+    male_part_number: str | None
+    female_part_number: str | None
+    male_crimp_part_number: str | None
+    female_crimp_part_number: str | None
+    key_code: str | None
+    is_inline_template: bool | None
+    default_is_panel_mount: bool | None
+    inline_part_number: str | None  # sourced from ConnectorTemplate.part_number
+    quantity: int
+
+
+class ManufacturerGroup(BaseModel):
+    manufacturer: str | None  # canonical trimmed label, or None for Unassigned
+    rows: list[BomRow]
+
+
+class ConnectorBomResponse(BaseModel):
+    groups: list[ManufacturerGroup]
 
 
 class HarnessGroupResponse(SchemaBase):
@@ -73,12 +101,14 @@ class WireRow(SchemaBase):
     edge_id: UUID
     signal_name: str | None
     source_node: str | None
+    source_slot_id: str | None
     source_connector: str
     source_pin: str
     source_pin_number: int
     source_pin_name: str
     destination_node: str | None
     destination_enclosure: str | None
+    destination_slot_id: str | None
     destination_connector_kind: str | None = None
     destination_connector: str
     destination_pin: str

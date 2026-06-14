@@ -9,12 +9,14 @@ export interface WireRow {
   edge_id: string;
   signal_name: string | null;
   source_node: string | null;
+  source_slot_id: string | null;
   source_connector: string;
   source_pin: string;
   source_pin_number: number;
   source_pin_name: string;
   destination_node: string | null;
   destination_enclosure: string | null;
+  destination_slot_id: string | null;
   destination_connector_kind: string | null;
   destination_connector: string;
   destination_pin: string;
@@ -43,6 +45,34 @@ export interface WireTableResponse {
   rows: WireRow[];
 }
 
+export interface BomRow {
+  connector_template_id: string;
+  name: string | null;
+  manufacturer: string | null;
+  pin_count: number | null;
+  wire_gauge_awg: number | null;
+  connector_category: string | null;
+  default_role: string | null;
+  male_part_number: string | null;
+  female_part_number: string | null;
+  male_crimp_part_number: string | null;
+  female_crimp_part_number: string | null;
+  key_code: string | null;
+  is_inline_template: boolean | null;
+  default_is_panel_mount: boolean | null;
+  inline_part_number: string | null;
+  quantity: number;
+}
+
+export interface ManufacturerGroup {
+  manufacturer: string | null;
+  rows: BomRow[];
+}
+
+export interface ConnectorBomResponse {
+  groups: ManufacturerGroup[];
+}
+
 export interface WireTableParams {
   vehicle_level?: boolean;
   enclosure_instance_id?: string;
@@ -65,6 +95,13 @@ function wireTableQuery(params: WireTableParams): string {
 export function fetchWireTable(vehicleId: string, revisionId: string, params: WireTableParams = {}) {
   return apiFetch<WireTableResponse>(
     `/vehicles/${vehicleId}/revisions/${revisionId}/manufacturing/wire-table${wireTableQuery(params)}`,
+  );
+}
+
+export function fetchConnectorBom(vehicleId: string, revisionId: string) {
+  return apiFetch<ConnectorBomResponse>(
+    `/vehicles/${vehicleId}/revisions/${revisionId}/manufacturing/connector-bom`,
+    { timeoutMs: 30_000 },
   );
 }
 

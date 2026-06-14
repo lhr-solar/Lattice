@@ -19,6 +19,7 @@ class ConnectionDestination(BaseModel):
     other_node_label: str | None = None
     other_enclosure_label: str | None = None
     other_connector_kind: str | None = None
+    other_slot_key: str | None = None
     # Full readable path: enclosure / board / connector (or slot) / pin (or #).
     other_path_label: str = ""
     wire_color: str | None = None

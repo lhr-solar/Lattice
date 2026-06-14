@@ -30,15 +30,15 @@ export function SegmentedControl<T extends string>({
       role="group"
       aria-label={ariaLabel}
       className={clsx(
-        "relative inline-flex h-6 shrink-0 rounded border border-tesla-border bg-tesla-bg p-0.5",
+        "relative inline-flex h-8 shrink-0 rounded-md border border-tesla-border bg-tesla-bg p-1",
         className,
       )}
     >
       <span
         aria-hidden
-        className="absolute bottom-0.5 left-0.5 top-0.5 rounded bg-tesla-accent transition-transform duration-200 ease-out"
+        className="absolute bottom-1 left-1 top-1 rounded bg-tesla-accent transition-transform duration-200 ease-out"
         style={{
-          width: `calc((100% - 0.25rem) / ${options.length})`,
+          width: `calc((100% - 0.5rem) / ${options.length})`,
           transform: `translateX(${selectedIndex * 100}%)`,
         }}
       />
@@ -50,10 +50,10 @@ export function SegmentedControl<T extends string>({
           aria-checked={value === option.value}
           onClick={() => onChange(option.value)}
           className={clsx(
-            "relative z-10 flex flex-1 items-center justify-center rounded px-2 text-xs transition-colors",
+            "relative z-10 flex flex-1 items-center justify-center whitespace-nowrap rounded px-4 text-xs font-medium transition-colors",
             value === option.value
               ? "text-white"
-              : "text-tesla-muted hover:bg-tesla-accent/20 hover:text-tesla-accent",
+              : "text-tesla-muted hover:bg-tesla-accent/10 hover:text-tesla-accent",
           )}
         >
           {option.label}

@@ -19,6 +19,7 @@ from app.api.v1 import (
     shorts,
     templates,
     topology,
+    topology_graph,
     validation,
     vehicles,
 )
@@ -44,6 +45,7 @@ protected_router.include_router(connections.router)
 protected_router.include_router(shorts.router)
 protected_router.include_router(graph.router)
 protected_router.include_router(projections.router)
+protected_router.include_router(topology_graph.router)
 protected_router.include_router(validation.router)
 protected_router.include_router(manufacturing.router)
 protected_router.include_router(layouts.router)

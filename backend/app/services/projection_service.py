@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from uuid import UUID
 
 from sqlalchemy import or_, select
@@ -32,7 +33,77 @@ from app.schemas.projections import (
     DesignGraphProjectionDto,
     DesignNodeDto,
     ProjectionLevel,
+    TopologyGraphEdgeDto,
+    TopologyGraphNodeDto,
+    TopologyGraphProjectionDto,
 )
+
+
+@dataclass
+class OwnershipResolver:
+    """Resolves a pin or connector to the top-level graph node that owns it.
+
+    Backed entirely by bulk precomputed maps so every resolution is a pure
+    in-memory lookup/walk (no per-pin database queries). Used by
+    ``build_topology_graph_projection`` to attribute each ``ConnectionEdge``
+    pin to either its top-level enclosure node or a standalone PCB node.
+
+    Ownership chain (Req 2.6):
+      pin -> connector instance -> (pcb instance -> enclosure instance)
+                                 or (enclosure panel slot -> enclosure instance)
+    Sub-enclosures roll up to their top-level ancestor enclosure node.
+    """
+
+    enclosure_by_pcb: dict[UUID, UUID | None]
+    parent_by_enclosure: dict[UUID, UUID | None]
+    standalone_pcb_ids: set[UUID]
+    connector_by_pin: dict[UUID, ConnectorInstance]
+
+    def top_level_node_for_enclosure(self, enclosure_id: UUID) -> str:
+        """Walk ``parent_enclosure_instance_id`` up to the top-level ancestor.
+
+        Returns the graph node id (``"tg-node:{root_enclosure_id}"``) for the
+        top-level enclosure that became a graph node. Guards against cycles.
+        """
+        root = enclosure_id
+        seen: set[UUID] = set()
+        while root not in seen:
+            seen.add(root)
+            parent = self.parent_by_enclosure.get(root)
+            if parent is None:
+                break
+            root = parent
+        return f"tg-node:{root}"
+
+    def resolve_owner_node_id(self, conn: ConnectorInstance) -> str | None:
+        """Resolve a connector instance to its owning graph node id, or None.
+
+        Board connectors resolve to their PCB's top-level enclosure (or the
+        standalone PCB node); panel mounts / enclosure-attached connectors
+        resolve to the top-level enclosure; inline / unattached connectors
+        with no PCB or enclosure owner resolve to ``None``.
+        """
+        # 1. Board connector: seated in a PCB.
+        pcb_id = conn.pcb_instance_id or conn.source_pcb_instance_id
+        if pcb_id is not None:
+            enclosure_id = self.enclosure_by_pcb.get(pcb_id)
+            if enclosure_id is not None:
+                return self.top_level_node_for_enclosure(enclosure_id)
+            if pcb_id in self.standalone_pcb_ids:
+                return f"tg-node:{pcb_id}"
+            return None
+        # 2. Panel mount / enclosure-attached connector.
+        if conn.enclosure_instance_id is not None:
+            return self.top_level_node_for_enclosure(conn.enclosure_instance_id)
+        # 3. Inline / wire-to-wire connector with no PCB or enclosure owner.
+        return None
+
+    def owner_node_id_for_pin(self, pin_id: UUID) -> str | None:
+        """Resolve a pin id to its owning graph node id via its connector."""
+        conn = self.connector_by_pin.get(pin_id)
+        if conn is None:
+            return None
+        return self.resolve_owner_node_id(conn)
 
 
 class ProjectionService:
@@ -57,6 +128,146 @@ class ProjectionService:
         if level == "connector":
             return await self._connector_projection(revision_id, view_key, layouts, focus_id)
         return await self._pin_projection(revision_id, view_key, layouts, focus_id)
+
+    async def build_topology_graph_projection(
+        self,
+        revision_id: UUID,
+        view_key: str,
+        saved_positions: dict[str, tuple[float, float]],
+    ) -> TopologyGraphProjectionDto:
+        """Build the flattened topology graph projection for a revision.
+
+        Nodes are the top-level enclosures (``parent_enclosure_instance_id IS
+        NULL``) and standalone PCBs (``enclosure_instance_id IS NULL``). Edges
+        collapse every ``ConnectionEdge`` whose two pins resolve (via the
+        ownership chain) to two distinct graph nodes into a single edge per
+        unordered node pair, carrying a ``wire_count`` of the contributing
+        edges. Self-loops and pins with no owning graph node are skipped.
+
+        ``saved_positions`` maps a node ``id`` (``"tg-node:{uuid}"``) to an
+        ``(x, y)`` pair; a node's ``position`` is populated from it when present
+        and left ``None`` otherwise (so the frontend applies the circular
+        layout).
+        """
+        # 1. Collect nodes: top-level enclosures + standalone PCBs.
+        enclosure_rows = (
+            await self.db.execute(
+                select(EnclosureInstance, EnclosureTemplate)
+                .join(
+                    EnclosureTemplate,
+                    EnclosureInstance.enclosure_template_id == EnclosureTemplate.id,
+                )
+                .where(
+                    EnclosureInstance.revision_id == revision_id,
+                    EnclosureInstance.parent_enclosure_instance_id.is_(None),
+                )
+            )
+        ).all()
+        pcb_rows = (
+            await self.db.execute(
+                select(PcbInstance, PcbTemplate)
+                .join(PcbTemplate, PcbInstance.pcb_template_id == PcbTemplate.id)
+                .where(
+                    PcbInstance.revision_id == revision_id,
+                    PcbInstance.enclosure_instance_id.is_(None),
+                )
+            )
+        ).all()
+
+        nodes: list[TopologyGraphNodeDto] = []
+        valid_node_ids: set[str] = set()
+
+        for enc, tmpl in enclosure_rows:
+            node_id = f"tg-node:{enc.id}"
+            label, template_label = resolve_connector_labels(
+                template_name=tmpl.name,
+                nickname=enc.nickname,
+                use_template_name=enc.use_template_name,
+            )
+            nodes.append(
+                TopologyGraphNodeDto(
+                    id=node_id,
+                    entity_kind="enclosure_instance",
+                    label=label,
+                    template_label=template_label,
+                    position=self._position_from_saved(node_id, saved_positions),
+                )
+            )
+            valid_node_ids.add(node_id)
+
+        for pcb, tmpl in pcb_rows:
+            node_id = f"tg-node:{pcb.id}"
+            label, template_label = resolve_connector_labels(
+                template_name=tmpl.name,
+                nickname=pcb.nickname,
+                use_template_name=pcb.use_template_name,
+            )
+            nodes.append(
+                TopologyGraphNodeDto(
+                    id=node_id,
+                    entity_kind="pcb_instance",
+                    label=label,
+                    template_label=template_label,
+                    position=self._position_from_saved(node_id, saved_positions),
+                )
+            )
+            valid_node_ids.add(node_id)
+
+        # 2. Resolve pin ownership via the bulk precomputed maps (task 2.1).
+        resolver = await self._build_ownership_resolver(revision_id)
+
+        # 3. Aggregate ConnectionEdge rows into one edge per unordered node pair.
+        edge_rows = (
+            await self.db.execute(
+                select(ConnectionEdge.pin_a_id, ConnectionEdge.pin_b_id).where(
+                    ConnectionEdge.revision_id == revision_id
+                )
+            )
+        ).all()
+
+        wire_count_by_pair: dict[tuple[str, str], int] = {}
+        for pin_a_id, pin_b_id in edge_rows:
+            node_a = resolver.owner_node_id_for_pin(pin_a_id)
+            node_b = resolver.owner_node_id_for_pin(pin_b_id)
+            # Skip pins not owned by a graph node (e.g. inline connectors).
+            if node_a is None or node_b is None:
+                continue
+            if node_a not in valid_node_ids or node_b not in valid_node_ids:
+                continue
+            # Skip self-loops (Req 2.7).
+            if node_a == node_b:
+                continue
+            pair = (node_a, node_b) if node_a < node_b else (node_b, node_a)
+            wire_count_by_pair[pair] = wire_count_by_pair.get(pair, 0) + 1
+
+        # 4. Emit one edge DTO per connected pair (ids sorted lexicographically).
+        edges = [
+            TopologyGraphEdgeDto(
+                id=f"tg-edge:{node_a_id}:{node_b_id}",
+                source=node_a_id,
+                target=node_b_id,
+                wire_count=count,
+            )
+            for (node_a_id, node_b_id), count in wire_count_by_pair.items()
+        ]
+
+        return TopologyGraphProjectionDto(
+            revision_id=revision_id,
+            view_key=view_key,
+            nodes=nodes,
+            edges=edges,
+            meta={},
+        )
+
+    @staticmethod
+    def _position_from_saved(
+        node_id: str, saved_positions: dict[str, tuple[float, float]]
+    ) -> dict[str, float] | None:
+        """Return ``{"x", "y"}`` for a node id when saved, else ``None``."""
+        saved = saved_positions.get(node_id)
+        if saved is None:
+            return None
+        return {"x": saved[0], "y": saved[1]}
 
     async def _vehicle_projection(
         self, revision_id: UUID, view_key: str, layouts: dict[str, tuple[float, float]]
@@ -957,6 +1168,59 @@ class ProjectionService:
             if slot_id and slot_id in lookup:
                 return lookup[slot_id]
         return None, None
+
+    async def _build_ownership_resolver(self, revision_id: UUID) -> OwnershipResolver:
+        """Build the bulk ownership maps for a revision and wrap them in a resolver.
+
+        All maps are populated with set-based queries scoped to the revision so
+        that pin/connector ownership resolution requires no per-pin queries.
+        """
+        # pcb_instance_id -> enclosure_instance_id (None when standalone).
+        enclosure_by_pcb: dict[UUID, UUID | None] = {}
+        standalone_pcb_ids: set[UUID] = set()
+        pcb_rows = (
+            await self.db.execute(
+                select(PcbInstance.id, PcbInstance.enclosure_instance_id).where(
+                    PcbInstance.revision_id == revision_id
+                )
+            )
+        ).all()
+        for pcb_id, enclosure_id in pcb_rows:
+            enclosure_by_pcb[pcb_id] = enclosure_id
+            if enclosure_id is None:
+                standalone_pcb_ids.add(pcb_id)
+
+        # enclosure_instance_id -> parent_enclosure_instance_id (None at top level).
+        parent_by_enclosure: dict[UUID, UUID | None] = {}
+        enclosure_rows = (
+            await self.db.execute(
+                select(
+                    EnclosureInstance.id,
+                    EnclosureInstance.parent_enclosure_instance_id,
+                ).where(EnclosureInstance.revision_id == revision_id)
+            )
+        ).all()
+        for enclosure_id, parent_id in enclosure_rows:
+            parent_by_enclosure[enclosure_id] = parent_id
+
+        # pin_id -> ConnectorInstance (pins joined to their connector instance).
+        connector_by_pin: dict[UUID, ConnectorInstance] = {}
+        pin_connector_rows = (
+            await self.db.execute(
+                select(Pin.id, ConnectorInstance)
+                .join(ConnectorInstance, Pin.connector_instance_id == ConnectorInstance.id)
+                .where(Pin.revision_id == revision_id)
+            )
+        ).all()
+        for pin_id, connector in pin_connector_rows:
+            connector_by_pin[pin_id] = connector
+
+        return OwnershipResolver(
+            enclosure_by_pcb=enclosure_by_pcb,
+            parent_by_enclosure=parent_by_enclosure,
+            standalone_pcb_ids=standalone_pcb_ids,
+            connector_by_pin=connector_by_pin,
+        )
 
     async def _load_layouts(self, revision_id: UUID, view_key: str) -> dict[str, tuple[float, float]]:
         result = await self.db.execute(

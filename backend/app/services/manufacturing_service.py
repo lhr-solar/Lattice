@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from fastapi import HTTPException
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth_context import UserContext
@@ -10,6 +10,8 @@ from app.core.time import utc_now
 from app.domains.manufacturing.classifier import classify_edge_scope, harness_group_key
 from app.domains.topology.pin_context import load_pin_context
 from app.infra.db.enums import HarnessScope
+from app.infra.db.models.catalog import ConnectorTemplate
+from app.infra.db.models.instances import ConnectorInstance, Pin
 from app.infra.db.models.manufacturing import (
     ContinuityCheck,
     EdgeManufacturingAudit,
@@ -17,15 +19,17 @@ from app.infra.db.models.manufacturing import (
     HarnessGroupEdge,
     ManufacturingRecord,
 )
-from app.infra.db.models.instances import Pin
 from app.infra.db.models.topology import ConnectionEdge
 from app.schemas.connections import ConnectionDestination, PinConnectionRow
 from app.infra.db.models.user import User
 from app.schemas.manufacturing import (
+    BomRow,
+    ConnectorBomResponse,
     ContinuityCheckCreate,
     ContinuityCheckResponse,
     EdgeManufacturingUpdate,
     HarnessGroupResponse,
+    ManufacturerGroup,
     ManufacturingProjectionResponse,
     ManufacturingRecordCreate,
     ManufacturingRecordResponse,
@@ -89,6 +93,102 @@ class ManufacturingService:
 
         await self.db.flush()
         return [await self._group_response(g) for g in groups]
+
+    async def build_connector_bom(self, vehicle_id: UUID, revision_id: UUID) -> ConnectorBomResponse:
+        await get_revision_or_404(self.db, revision_id, vehicle_id)
+
+        # Count instances per template scoped to the revision
+        counts_result = await self.db.execute(
+            select(ConnectorInstance.connector_template_id, func.count())
+            .where(ConnectorInstance.revision_id == revision_id)
+            .group_by(ConnectorInstance.connector_template_id)
+        )
+        counts = {tid: n for tid, n in counts_result.all()}
+
+        if not counts:
+            return ConnectorBomResponse(groups=[])
+
+        # Load only participating templates
+        templates_result = await self.db.execute(
+            select(ConnectorTemplate).where(ConnectorTemplate.id.in_(counts.keys()))
+        )
+        templates = templates_result.scalars().all()
+
+        return self._aggregate_bom(templates, counts)
+
+    def _aggregate_bom(self, templates: list[ConnectorTemplate], counts: dict[UUID, int]) -> ConnectorBomResponse:
+        import unicodedata
+
+        def normalize_manufacturer(m: str | None) -> str | None:
+            if m is None or not m.strip():
+                return None
+            return m.strip().casefold()
+
+        def normalize_name(name: str | None) -> str:
+            if name is None:
+                return ""
+            return unicodedata.normalize("NFKD", name).casefold()
+
+        # Group templates by normalized manufacturer
+        groups_by_norm: dict[str | None, list[ConnectorTemplate]] = {}
+        for tmpl in templates:
+            norm = normalize_manufacturer(tmpl.manufacturer)
+            groups_by_norm.setdefault(norm, []).append(tmpl)
+
+        manufacturer_groups: list[ManufacturerGroup] = []
+
+        # Sort groups by normalized key, Unassigned (None) last
+        sorted_keys = sorted([k for k in groups_by_norm.keys() if k is not None])
+        if None in groups_by_norm:
+            sorted_keys.append(None)
+
+        for norm in sorted_keys:
+            members = groups_by_norm[norm]
+
+            # Canonical label: trimmed, original-case manufacturer of earliest-created member
+            if norm is None:
+                canonical_label = None
+            else:
+                # Earliest created_at, break ties with id
+                canonical_tmpl = min(members, key=lambda t: (t.created_at, t.id))
+                canonical_label = canonical_tmpl.manufacturer.strip()
+
+            # Build and sort rows within group
+            rows: list[BomRow] = []
+            for tmpl in members:
+                rows.append(
+                    BomRow(
+                        connector_template_id=tmpl.id,
+                        name=tmpl.name,
+                        manufacturer=tmpl.manufacturer,
+                        pin_count=tmpl.pin_count,
+                        wire_gauge_awg=float(tmpl.wire_gauge_awg) if tmpl.wire_gauge_awg is not None else None,
+                        connector_category=tmpl.connector_category,
+                        default_role=tmpl.default_role,
+                        male_part_number=tmpl.male_part_number,
+                        female_part_number=tmpl.female_part_number,
+                        male_crimp_part_number=tmpl.male_crimp_part_number,
+                        female_crimp_part_number=tmpl.female_crimp_part_number,
+                        key_code=tmpl.key_code,
+                        is_inline_template=tmpl.is_inline_template,
+                        default_is_panel_mount=tmpl.default_is_panel_mount,
+                        inline_part_number=tmpl.part_number,
+                        quantity=counts[tmpl.id],
+                    )
+                )
+
+            # Sort rows by name ascending, null/empty last
+            rows.sort(
+                key=lambda r: (
+                    r.name is None or not r.name.strip(),
+                    normalize_name(r.name),
+                    r.connector_template_id,
+                )
+            )
+
+            manufacturer_groups.append(ManufacturerGroup(manufacturer=canonical_label, rows=rows))
+
+        return ConnectorBomResponse(groups=manufacturer_groups)
 
     async def get_projection(self, vehicle_id: UUID, revision_id: UUID) -> ManufacturingProjectionResponse:
         await get_revision_or_404(self.db, revision_id, vehicle_id)
@@ -237,12 +337,14 @@ class ManufacturingService:
                         "edge_id": dest.edge_id,
                         "signal_name": row.primary_net_name,
                         "source_node": row.node_label,
+                        "source_slot_id": row.slot_key,
                         "source_connector": row.connector_label,
                         "source_pin": pin_label,
                         "source_pin_number": row.pin_number,
                         "source_pin_name": row.pin_name,
                         "destination_node": dest.other_node_label,
                         "destination_enclosure": dest.other_enclosure_label,
+                        "destination_slot_id": dest.other_slot_key,
                         "destination_connector_kind": dest.other_connector_kind,
                         "destination_connector": dest.other_connector_label,
                         "destination_pin": dest_pin_label,
@@ -308,12 +410,14 @@ class ManufacturingService:
                     edge_id=edge.id,
                     signal_name=draft["signal_name"],
                     source_node=draft["source_node"],
+                    source_slot_id=draft.get("source_slot_id"),
                     source_connector=draft["source_connector"],
                     source_pin=draft["source_pin"],
                     source_pin_number=draft["source_pin_number"],
                     source_pin_name=draft["source_pin_name"],
                     destination_node=draft["destination_node"],
                     destination_enclosure=draft["destination_enclosure"],
+                    destination_slot_id=draft.get("destination_slot_id"),
                     destination_connector_kind=draft["destination_connector_kind"],
                     destination_connector=draft["destination_connector"],
                     destination_pin=draft["destination_pin"],
@@ -559,12 +663,14 @@ class ManufacturingService:
             edge_id=edge.id,
             signal_name=draft["signal_name"],
             source_node=draft["source_node"],
+            source_slot_id=draft.get("source_slot_id"),
             source_connector=draft["source_connector"],
             source_pin=draft["source_pin"],
             source_pin_number=draft["source_pin_number"],
             source_pin_name=draft["source_pin_name"],
             destination_node=draft["destination_node"],
             destination_enclosure=draft["destination_enclosure"],
+            destination_slot_id=draft.get("destination_slot_id"),
             destination_connector_kind=draft["destination_connector_kind"],
             destination_connector=draft["destination_connector"],
             destination_pin=draft["destination_pin"],
